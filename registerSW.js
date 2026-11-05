@@ -1,0 +1,1 @@
+if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/gestor-propiedades/sw.js', { scope: '/gestor-propiedades/' })})}
