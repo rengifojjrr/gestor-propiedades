@@ -44,7 +44,8 @@ import {
   type User,
 } from '@/domain/types';
 import { clock, nowIso, todayIn, todayLocal } from '@/lib/clock';
-import { addDays, addMonthsToKey, monthKeyOf } from '@/lib/dates';
+import { addDays, addMonthsToKey, formatDate, formatTime, monthKeyOf, monthLabel } from '@/lib/dates';
+import { formatMoney } from '@/lib/money';
 import { newId } from '@/lib/ids';
 import { z } from 'zod';
 import { autoProgressBookings } from './bookings';
@@ -138,7 +139,7 @@ export async function listNotifications(actor: Actor): Promise<NotificationView[
   if (user.role === 'owner') {
     for (const o of await listOrders(actor)) {
       if (o.approval.status !== 'pending') continue;
-      add({ id: `d:approval:${o.id}`, at: o.createdAt, kind: 'approval', title: 'Gasto por aprobar', body: `${o.code} · ${o.title} · ${o.approval.amount ?? o.estimate ?? ''} ${o.currency}`, link: `/operacion/mantenimiento/${o.id}`, propertyId: o.propertyId, derived: true });
+      add({ id: `d:approval:${o.id}`, at: o.createdAt, kind: 'approval', title: 'Gasto por aprobar', body: `${o.code} · ${o.title}${o.approval.amount ?? o.estimate ? ` · ${formatMoney((o.approval.amount ?? o.estimate)!, o.currency)}` : ''}`, link: `/operacion/mantenimiento/${o.id}`, propertyId: o.propertyId, derived: true });
     }
   }
   // Rentas atrasadas y renovaciones
@@ -151,14 +152,17 @@ export async function listNotifications(actor: Actor): Promise<NotificationView[
           at: `${r.dueDate}T12:00:00.000Z`,
           kind: 'payment',
           title: user.role === 'tenant' ? 'Tu pago está atrasado' : 'Renta atrasada',
-          body: user.role === 'tenant' ? `Renta de ${r.period}: ${r.rent} ${l.currency} + recargo ${r.lateFee}.` : `${l.tenantName} · ${l.propertyName} · ${r.period} (${r.daysLate} días)`,
+          body:
+            user.role === 'tenant'
+              ? `Renta de ${monthLabel(r.period).toLowerCase()}: ${formatMoney(r.rent, l.currency)} + recargo ${formatMoney(r.lateFee, l.currency)}.`
+              : `${l.tenantName} · ${l.propertyName} · ${monthLabel(r.period).toLowerCase()} (${r.daysLate} días)`,
           link: user.role === 'tenant' ? '/inquilino' : `/contratos/${l.id}`,
           propertyId: l.propertyId,
           derived: true,
           tone: 'urgent',
         });
       if (l.renewalDue && user.role !== 'accountant')
-        add({ id: `d:renew:${l.id}`, at: now, kind: 'renewal', title: user.role === 'tenant' ? 'Tu contrato termina pronto' : 'Renovación de contrato', body: `${l.code} termina en ${l.daysToEnd} días (${l.end}).`, link: user.role === 'tenant' ? '/inquilino' : `/contratos/${l.id}`, propertyId: l.propertyId, derived: true });
+        add({ id: `d:renew:${l.id}`, at: now, kind: 'renewal', title: user.role === 'tenant' ? 'Tu contrato termina pronto' : 'Renovación de contrato', body: `${l.code} termina en ${l.daysToEnd} días (${formatDate(l.end, { year: true })}).`, link: user.role === 'tenant' ? '/inquilino' : `/contratos/${l.id}`, propertyId: l.propertyId, derived: true });
     }
   }
   // Documentos por vencer o vencidos
@@ -183,9 +187,9 @@ export async function listNotifications(actor: Actor): Promise<NotificationView[
     for (const t of await listCleaning(actor, { status: ['pending', 'in_progress'] })) {
       const today = todayIn(t.timezone);
       if (t.date < today)
-        add({ id: `d:clean:${t.id}`, at: `${t.date}T12:00:00.000Z`, kind: 'cleaning', title: 'Limpieza sin hacer', body: `${t.propertyName} · era para ${t.date}`, link: user.role === 'cleaner' ? `/limpieza/tarea/${t.id}` : `/operacion/limpieza/${t.id}`, propertyId: t.propertyId, derived: true, tone: 'urgent' });
+        add({ id: `d:clean:${t.id}`, at: `${t.date}T12:00:00.000Z`, kind: 'cleaning', title: 'Limpieza sin hacer', body: `${t.propertyName} · era para el ${formatDate(t.date)}`, link: user.role === 'cleaner' ? `/limpieza/tarea/${t.id}` : `/operacion/limpieza/${t.id}`, propertyId: t.propertyId, derived: true, tone: 'urgent' });
       else if (t.date === today && user.role === 'cleaner')
-        add({ id: `d:cleantoday:${t.id}`, at: now, kind: 'cleaning', title: 'Limpieza de hoy', body: `${t.propertyName} · ${t.time}`, link: `/limpieza/tarea/${t.id}`, propertyId: t.propertyId, derived: true });
+        add({ id: `d:cleantoday:${t.id}`, at: now, kind: 'cleaning', title: 'Limpieza de hoy', body: `${t.propertyName} · ${formatTime(t.time)}`, link: `/limpieza/tarea/${t.id}`, propertyId: t.propertyId, derived: true });
     }
   }
   return out.sort((a, b) => Number(a.read) - Number(b.read) || b.at.localeCompare(a.at));
