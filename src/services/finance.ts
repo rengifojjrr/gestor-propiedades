@@ -18,7 +18,7 @@ import {
 import { nowIso, todayLocal } from '@/lib/clock';
 import { addDays, diffDays, lastMonths, monthEndExclusive, monthKeyOf, monthLabel, monthStart } from '@/lib/dates';
 import { newId } from '@/lib/ids';
-import { round2 } from '@/lib/money';
+import { formatMoney, round2 } from '@/lib/money';
 import { z } from 'zod';
 import {
   allowed,
@@ -119,7 +119,7 @@ export async function recordManual(actor: Actor, raw: ManualTxInput): Promise<Tr
     await pushNotification({
       kind: 'approval',
       title: 'Gasto por aprobar',
-      body: `${tx.description}: ${tx.amount} ${tx.currency}.`,
+      body: `${tx.description}: ${formatMoney(tx.amount, tx.currency)}.`,
       link: '/finanzas',
       propertyId: tx.propertyId,
       roles: ['owner'],
@@ -227,9 +227,10 @@ function totals(txs: Transaction[]) {
   return { income: round2(income), expenses: round2(expenses), net: round2(income - expenses) };
 }
 
-function byCategory(txs: Transaction[], type: 'income' | 'expense', custom: { key: string; label: string }[]): CategoryAmount[] {
+/** Suma por categoría; `field` = 'amountBase' (consolidado) o 'amount' (moneda de la propiedad). */
+function byCategory(txs: Transaction[], type: 'income' | 'expense', custom: { key: string; label: string }[], field: 'amountBase' | 'amount' = 'amountBase'): CategoryAmount[] {
   const map = new Map<string, number>();
-  for (const t of txs) if (t.type === type && t.status === 'posted') map.set(t.category, (map.get(t.category) ?? 0) + t.amountBase);
+  for (const t of txs) if (t.type === type && t.status === 'posted') map.set(t.category, (map.get(t.category) ?? 0) + t[field]);
   return [...map.entries()]
     .map(([category, amount]) => ({ category, label: categoryLabel(category, custom), amount: round2(amount) }))
     .sort((a, b) => b.amount - a.amount);
@@ -374,11 +375,15 @@ export interface PortfolioKpis {
 
 /** Ocupación, ADR y RevPAR del portafolio (solo propiedades por noches o mixtas para ADR/RevPAR). */
 export async function portfolioKpis(actor: Actor, month: string): Promise<PortfolioKpis> {
-  const rows = await propertyPerformance(actor, month);
+  const [rows, settings, rates] = await Promise.all([propertyPerformance(actor, month), getSettings(), data().fxRates.all()]);
   const nightly = rows.filter((r) => r.rentalMode !== 'monthly');
   const nightsSold = nightly.reduce((s, r) => s + r.nightsSold, 0);
   const availableNights = nightly.reduce((s, r) => s + r.availableNights, 0);
-  const roomRevenue = nightly.reduce((s, r) => s + (r.adr ?? 0) * r.nightsSold, 0);
+  // ADR y RevPAR de cada propiedad van en su moneda: se convierten a la base antes de sumar.
+  const roomRevenue = nightly.reduce(
+    (s, r) => s + convert((r.adr ?? 0) * r.nightsSold, r.currency, settings.baseCurrency, settings.baseCurrency, rates, monthStart(month)),
+    0,
+  );
   return {
     occupancy: rows.length ? rows.reduce((s, r) => s + r.occupancy, 0) / rows.length : 0,
     adr: nightsSold ? round2(roomRevenue / nightsSold) : 0,
@@ -473,8 +478,8 @@ export async function ownerStatement(actor: Actor, month: string): Promise<Owner
       propertyId: pid || null,
       propertyName: p?.name ?? 'Portafolio (gastos generales)',
       currency: p?.currency ?? settings.baseCurrency,
-      income: byCategory(list, 'income', settings.customExpenseCategories),
-      expenses: byCategory(list, 'expense', settings.customExpenseCategories),
+      income: byCategory(list, 'income', settings.customExpenseCategories, 'amount'),
+      expenses: byCategory(list, 'expense', settings.customExpenseCategories, 'amount'),
       totalIncome: sum('income'),
       totalExpenses: sum('expense'),
       net: round2(sum('income') - sum('expense')),

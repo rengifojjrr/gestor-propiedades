@@ -20,7 +20,7 @@ export function monthOptions(count = 12): { value: string; label: string }[] {
   const current = svc.finance.currentMonth();
   return lastMonths(current, count)
     .reverse()
-    .map((m) => ({ value: m, label: m === current ? `${monthLabel(m)} (en curso)` : monthLabel(m) }));
+    .map((m) => ({ value: m, label: monthLabel(m) }));
 }
 
 /**
@@ -54,7 +54,7 @@ export function useMonthParam(allowAll = false): [string, (m: string) => void] {
 export function MonthSelect({ value, onChange, allowAll = false, className }: { value: string; onChange: (m: string) => void; allowAll?: boolean; className?: string }) {
   const options = monthOptions();
   return (
-    <div className={className ?? 'w-full sm:w-72'}>
+    <div className={className ?? 'w-full sm:w-56'}>
       <Select
         aria-label="Mes"
         value={value}
