@@ -22,6 +22,15 @@ import { LANG_LABEL, SPEAKS } from './text';
 
 const LEASE_STATUS = { active: 'Vigente', ended: 'Terminado', terminated: 'Cancelado' } as const;
 
+/** El motivo de «No volver a alquilar» se agrega a las notas con este prefijo (y la fecha). */
+const DNR_PREFIX = 'No volver a alquilar';
+
+/** Motivo para la franja roja: la última nota, sin el prefijo que se agrega al marcar. */
+function doNotRentReason(notes: string): string {
+  const last = notes.split('\n').map((l) => l.trim()).filter(Boolean).slice(-1)[0] ?? '';
+  return last.replace(new RegExp(`^${DNR_PREFIX}[^:]*:\\s*`, 'i'), '');
+}
+
 function NotesCard({ person, canWrite }: { person: PersonView; canWrite: boolean }) {
   const actor = useActor();
   const [run, busy] = useBusyAction();
@@ -66,7 +75,8 @@ function SafetyCard({ person, canWrite }: { person: PersonView; canWrite: boolea
 
   const markDoNotRent = async () => {
     setSaving(true);
-    const done = await run(() => svc.people.setDoNotRent(actor, person.id, true, reason.trim() ? `No volver a alquilar: ${reason.trim()}` : ''), {
+    const note = reason.trim() ? `${DNR_PREFIX} (${formatDate(todayLocal(), { year: true })}): ${reason.trim()}` : '';
+    const done = await run(() => svc.people.setDoNotRent(actor, person.id, true, note), {
       success: `${person.name} quedó marcado: no volver a alquilar`,
     });
     setSaving(false);
@@ -299,7 +309,7 @@ export default function PersonDetailPage() {
 
       {p.doNotRent && (
         <Banner tone="bad" icon={Ban} className="mb-6">
-          <strong>No volver a alquilar.</strong> {p.notes ? p.notes.split('\n').slice(-1)[0] : 'Sin motivo anotado.'}
+          <strong>No volver a alquilar</strong> · {doNotRentReason(p.notes) || 'Sin motivo anotado.'}
         </Banner>
       )}
 

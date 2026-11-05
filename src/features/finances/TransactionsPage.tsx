@@ -102,7 +102,7 @@ export default function TransactionsPage() {
         <div className="mb-3 flex items-center gap-2 text-label-md text-primary">
           <Filter size={16} aria-hidden /> Filtros
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto]">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1fr)_auto]">
           <MonthSelect value={month} onChange={setMonth} allowAll className="w-full" />
           <Select
             aria-label="Propiedad"

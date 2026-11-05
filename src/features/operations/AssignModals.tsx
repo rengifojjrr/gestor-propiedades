@@ -156,7 +156,9 @@ export function AssignOrderModal({ order, onClose }: { order: OrderView; onClose
         <strong className="text-on-surface">{order.code}</strong> · {order.title} · {order.propertyName}
       </p>
       <AssigneeOptions value={value} onChange={setValue} category={order.category} name={`asignar-${order.id}`} />
-      <TextInput type="date" label="Fecha programada (opcional)" value={date} onChange={(e) => setDate(e.target.value)} className="mt-1" />
+      <div className="mt-5">
+        <TextInput type="date" label="Fecha programada (opcional)" value={date} onChange={(e) => setDate(e.target.value)} />
+      </div>
     </Modal>
   );
 }
