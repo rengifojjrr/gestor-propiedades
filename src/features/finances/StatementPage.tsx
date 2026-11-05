@@ -85,7 +85,7 @@ export default function StatementPage() {
           <h1 className="text-headline-lg text-primary md:text-headline-xl">Estado de cuenta</h1>
           <p className="mt-1 text-body-md text-on-surface-variant">Resumen mensual para el propietario. Imprímelo o guárdalo en PDF.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 md:shrink-0 md:flex-nowrap">
           <MonthSelect value={month} onChange={setMonth} />
           <Button icon={Printer} onClick={() => window.print()} disabled={!st} data-testid="imprimir-estado">
             Imprimir o guardar PDF
@@ -131,10 +131,10 @@ function StatementSheet({ st, logoUrl }: { st: OwnerStatement; logoUrl: string }
       {/* Resumen */}
       <section className="print-avoid-break mt-6" aria-label="Resumen del mes">
         <h2 className="mb-3 text-label-sm tracking-widest text-on-surface-variant uppercase">Resumen del mes · {base}</h2>
-        <div className="grid grid-cols-3 overflow-hidden rounded-md border border-outline-variant">
+        <div className="grid grid-cols-1 overflow-hidden rounded-md border border-outline-variant sm:grid-cols-3 print:grid-cols-3">
           <SummaryBox label="Ingresos" value={formatMoney(st.totals.income, base)} />
-          <SummaryBox label="Gastos" value={formatMoney(st.totals.expenses, base)} className="border-l border-outline-variant" />
-          <SummaryBox label="Neto" value={formatMoney(st.totals.net, base)} strong className="border-l border-outline-variant bg-surface-low" />
+          <SummaryBox label="Gastos" value={formatMoney(st.totals.expenses, base)} className="border-t border-outline-variant sm:border-t-0 sm:border-l print:border-t-0 print:border-l" />
+          <SummaryBox label="Neto" value={formatMoney(st.totals.net, base)} strong className="border-t border-outline-variant bg-surface-low sm:border-t-0 sm:border-l print:border-t-0 print:border-l" />
         </div>
       </section>
 
@@ -154,7 +154,7 @@ function StatementSheet({ st, logoUrl }: { st: OwnerStatement; logoUrl: string }
                     <h3 className="text-label-md text-primary">{row.propertyName}</h3>
                     <span className="text-label-sm font-normal text-on-surface-variant">Moneda: {row.currency}</span>
                   </div>
-                  <div className="grid gap-x-6 gap-y-4 p-4 sm:grid-cols-2">
+                  <div className="grid grid-cols-1 gap-x-6 gap-y-4 p-4 sm:grid-cols-2">
                     <LineList title="Ingresos por categoría" lines={income} total={row.totalIncome} currency={row.currency} />
                     <LineList title="Gastos por categoría" lines={expenses} total={row.totalExpenses} currency={row.currency} />
                   </div>
@@ -262,9 +262,9 @@ function StatementSheet({ st, logoUrl }: { st: OwnerStatement; logoUrl: string }
 
 function SummaryBox({ label, value, strong, className }: { label: string; value: string; strong?: boolean; className?: string }) {
   return (
-    <div className={cn('min-w-0 px-3 py-3 sm:px-4', className)}>
+    <div className={cn('flex min-w-0 items-baseline justify-between gap-3 px-4 py-3 sm:block print:block', className)}>
       <p className="text-label-sm text-on-surface-variant">{label}</p>
-      <p className={cn('tabular mt-1 truncate text-body-lg sm:text-headline-md', strong ? 'font-bold text-primary' : 'font-semibold text-on-surface')}>{value}</p>
+      <p className={cn('tabular truncate text-body-lg sm:mt-1 sm:text-headline-md print:mt-1 print:text-headline-md', strong ? 'font-bold text-primary' : 'font-semibold text-on-surface')}>{value}</p>
     </div>
   );
 }

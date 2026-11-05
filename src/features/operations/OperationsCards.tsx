@@ -31,17 +31,15 @@ export function UrgentOrderCard({ order, onAssign, wide }: { order: OrderView; o
         </div>
         <div className="space-y-1.5">
           <InfoLine icon={Wrench}>
-            {order.code} · {ORDER_STATUS_LABEL[order.status]} · {ago(order.createdAt)}
+            {order.code} · reportada {ago(order.createdAt)}
           </InfoLine>
-          <InfoLine icon={UserRound} className={cn(!who && 'text-error')}>
+          <InfoLine icon={UserRound} tone={who ? undefined : 'bad'}>
             {who ?? 'Sin asignar'}
           </InfoLine>
-          {order.scheduledDate && (
-            <InfoLine icon={CalendarClock} className={cn(order.overdue && 'text-error')}>
-              {order.overdue ? 'Atrasada: era ' : 'Programada: '}
-              {dayLabel(order.scheduledDate, today).toLowerCase()}
-            </InfoLine>
-          )}
+          <InfoLine icon={CalendarClock} tone={order.overdue ? 'bad' : undefined}>
+            {ORDER_STATUS_LABEL[order.status]} ·{' '}
+            {order.scheduledDate ? `${order.overdue ? 'era ' : ''}${dayLabel(order.scheduledDate, today).toLowerCase()}` : 'sin fecha'}
+          </InfoLine>
         </div>
         <div className="mt-auto flex gap-2 pt-1">
           {onAssign && (
@@ -84,7 +82,7 @@ export function LoadCard({ cleanings, orders, people }: { cleanings: number; ord
   );
 }
 
-export function PendingOrderRow({ order }: { order: OrderView }) {
+export function PendingOrderRow({ order, canManage }: { order: OrderView; canManage?: boolean }) {
   const today = todayIn(order.timezone);
   return (
     <li className="flex items-start gap-3 border-b border-outline-variant/60 pb-4 last:border-b-0 last:pb-0">
@@ -95,11 +93,11 @@ export function PendingOrderRow({ order }: { order: OrderView }) {
           <PriorityBadge priority={order.priority} />
         </div>
         <p className="text-body-sm text-on-surface-variant">{order.title}</p>
-        <p className={cn('mt-0.5 text-label-sm font-normal text-on-surface-variant', order.overdue && 'text-error')}>
+        <p className={cn('mt-0.5 text-label-sm font-normal', order.overdue ? 'text-error' : 'text-on-surface-variant')}>
           {order.scheduledDate ? `${order.overdue ? 'Atrasada · era ' : ''}${dayLabel(order.scheduledDate, today)}` : 'Sin fecha'} · {order.assigneeName ?? order.vendorName ?? 'Sin asignar'}
         </p>
         <Link to={`/operacion/mantenimiento/${order.id}`} className="mt-2 inline-block text-label-sm text-secondary hover:underline">
-          {order.scheduledDate ? 'Ver orden' : 'Programar arreglo'}
+          {order.scheduledDate || !canManage ? 'Ver orden' : 'Programar arreglo'}
         </Link>
       </div>
     </li>
@@ -123,7 +121,7 @@ export function CleaningCard({ task, onAssign }: { task: CleaningTaskView; onAss
       <h3 className="text-headline-md text-primary">{task.propertyName}</h3>
       <p className="text-body-sm text-on-surface-variant">{CLEANING_TYPE_LABEL[task.type]}</p>
       <div className="mt-4 space-y-2">
-        <InfoLine icon={UserRound} className={cn(!task.assigneeName && 'text-error')}>
+        <InfoLine icon={UserRound} tone={task.assigneeName ? undefined : 'bad'}>
           {task.assigneeName ?? 'Sin asignar'}
         </InfoLine>
         <InfoLine icon={Clock}>{whenLabel(task.date, task.time, today)}</InfoLine>

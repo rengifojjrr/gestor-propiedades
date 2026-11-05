@@ -9,7 +9,7 @@ import { parseAmount } from '@/lib/money';
 import type { BookingView } from '@/services';
 import { svc } from '@/services';
 import { Button, Card, Modal, Select, TextInput } from '@/ui';
-import { CHANNEL_OPTIONS, MoneyBreakdown } from './shared';
+import { CHANNEL_OPTIONS, MoneyBreakdown, withFriendlyDates } from './shared';
 
 export function BookingEditModal({ booking, taxRate, capacity, onClose }: { booking: BookingView; taxRate?: number; capacity?: number; onClose: () => void }) {
   const actor = useActor();
@@ -37,7 +37,7 @@ export function BookingEditModal({ booking, taxRate, capacity, onClose }: { book
   const submit = async () => {
     if (!valid) return;
     const ok = await run(
-      () => svc.bookings.updateBooking(actor, booking.id, { checkIn, checkOut, guests: guestCount, nightlyRate, cleaningFee, channel }),
+      () => withFriendlyDates(() => svc.bookings.updateBooking(actor, booking.id, { checkIn, checkOut, guests: guestCount, nightlyRate, cleaningFee, channel })),
       { success: `Reserva ${booking.code} actualizada` },
     );
     if (ok) onClose();
@@ -60,7 +60,7 @@ export function BookingEditModal({ booking, taxRate, capacity, onClose }: { book
         </>
       }
     >
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <TextInput

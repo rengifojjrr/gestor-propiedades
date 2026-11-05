@@ -3,7 +3,7 @@
  * Los modales se montan solo mientras están abiertos (así su estado empieza limpio).
  */
 import type { LucideIcon } from 'lucide-react';
-import { Sparkles, Truck } from 'lucide-react';
+import { ChevronDown, Sparkles, Truck } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useBusyAction } from '@/app/hooks';
 import { useActor } from '@/app/session';
@@ -64,13 +64,30 @@ function ChoiceRow({ name, value, checked, onChange, title, subtitle, avatar, ic
   );
 }
 
-/** Técnicos con la app y proveedores (primero los especialistas de la categoría). */
+/** Técnicos con la app y proveedores: primero los especialistas de la categoría; los demás, a un toque. */
 export function AssigneeOptions({ value, onChange, category, name, allowAuto }: { value: AssigneeValue; onChange: (v: AssigneeValue) => void; category: MaintenanceCategory; name: string; allowAuto?: boolean }) {
   const { technicians, vendors, loading } = useFieldStaff();
+  const [showAll, setShowAll] = useState(false);
   if (loading) return <Loading label="Cargando el equipo…" className="py-4" />;
-  const sorted = [...vendors].sort((a, b) => Number(b.specialties.includes(category)) - Number(a.specialties.includes(category)) || b.rating - a.rating);
+  const byRating = [...vendors].sort((a, b) => b.rating - a.rating);
+  const specialists = byRating.filter((v) => v.specialties.includes(category));
+  const others = byRating.filter((v) => !v.specialties.includes(category));
+  const expanded = showAll || others.some((v) => value === `v:${v.id}`) || specialists.length === 0;
+  const vendorRow = (v: VendorView) => (
+    <ChoiceRow
+      key={v.id}
+      name={name}
+      value={`v:${v.id}`}
+      checked={value === `v:${v.id}`}
+      onChange={onChange}
+      icon={Truck}
+      title={v.name}
+      subtitle={v.specialties.map((s) => MAINTENANCE_CATEGORY_LABEL[s]).join(' · ')}
+      badge={v.specialties.includes(category) ? <Badge tone="info">Especialista</Badge> : undefined}
+    />
+  );
   return (
-    <fieldset className="space-y-2">
+    <fieldset className="min-w-0 space-y-2">
       <legend className="mb-1.5 text-label-md text-on-surface">¿Quién lo atiende?</legend>
       {allowAuto && (
         <ChoiceRow name={name} value="" checked={value === ''} onChange={onChange} icon={Sparkles} title="Automático" subtitle={`El proveedor habitual de ${MAINTENANCE_CATEGORY_LABEL[category].toLowerCase()}`} />
@@ -89,20 +106,19 @@ export function AssigneeOptions({ value, onChange, category, name, allowAuto }: 
           badge={<Badge tone="good">Usa la app</Badge>}
         />
       ))}
-      <p className="pt-1 text-label-sm uppercase text-on-surface-variant">Proveedores</p>
-      {sorted.map((v) => (
-        <ChoiceRow
-          key={v.id}
-          name={name}
-          value={`v:${v.id}`}
-          checked={value === `v:${v.id}`}
-          onChange={onChange}
-          icon={Truck}
-          title={v.name}
-          subtitle={v.specialties.map((s) => MAINTENANCE_CATEGORY_LABEL[s]).join(' · ')}
-          badge={v.specialties.includes(category) ? <Badge tone="info">Especialista</Badge> : undefined}
-        />
-      ))}
+      <p className="pt-1 text-label-sm uppercase text-on-surface-variant">Proveedores de {MAINTENANCE_CATEGORY_LABEL[category].toLowerCase()}</p>
+      {specialists.length ? specialists.map(vendorRow) : <p className="text-body-sm text-on-surface-variant">Ninguno con esta especialidad.</p>}
+      {others.length > 0 &&
+        (expanded ? (
+          <>
+            <p className="pt-1 text-label-sm uppercase text-on-surface-variant">Otros proveedores</p>
+            {others.map(vendorRow)}
+          </>
+        ) : (
+          <Button variant="ghost" size="sm" icon={ChevronDown} onClick={() => setShowAll(true)}>
+            Otros proveedores ({others.length})
+          </Button>
+        ))}
     </fieldset>
   );
 }
@@ -178,7 +194,7 @@ export function AssignCleaningModal({ task, onClose }: { task: CleaningTaskView;
       {loading ? (
         <Loading className="py-4" />
       ) : (
-        <fieldset className="space-y-2">
+        <fieldset className="min-w-0 space-y-2">
           <legend className="mb-1.5 text-label-md text-on-surface">Persona de limpieza</legend>
           {cleaners.map((c) => (
             <ChoiceRow

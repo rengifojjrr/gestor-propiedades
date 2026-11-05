@@ -1,6 +1,7 @@
 /**
  * Movimientos: todo lo registrado, con filtros (mes, propiedad, tipo, pendientes), exportación a CSV
- * y «Anular» (propietario y administración). Lista en el teléfono, tabla en la computadora.
+ * y «Anular» (propietario y administración). Lista en el teléfono, tabla en la computadora; tocar un
+ * movimiento abre su detalle.
  */
 import { Ban, Check, Download, Filter, Receipt } from 'lucide-react';
 import { useState } from 'react';
@@ -10,11 +11,17 @@ import { useLive, useLiveResult } from '@/data/live';
 import { formatDate } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { svc, type TransactionView } from '@/services';
-import { Button, Card, cn, EmptyState, ErrorState, Eyebrow, LinkButton, Loading, PageHeader, Select, Toggle, useConfirm } from '@/ui';
+import { Button, Card, cn, EmptyState, ErrorState, Eyebrow, IconButton, LinkButton, Loading, PageHeader, Select, Toggle, useConfirm } from '@/ui';
 import { withMonth } from './FinanceSections';
 import { methodText, MonthSelect, TX_SOURCE_LABEL, TxAmount, TxIcon, TxRow, TxStatusBadge, useFinancePerms, useMonthParam } from './shared';
+import { TxDetailModal } from './TxDetailModal';
 
 const PAGE = 60;
+
+/** El origen solo se nombra cuando la categoría no lo dice ya. */
+function subline(t: TransactionView): string {
+  return t.source.kind === 'manual' || t.source.kind === 'recurring' ? `${t.categoryLabel} · ${TX_SOURCE_LABEL[t.source.kind]}` : t.categoryLabel;
+}
 
 export default function TransactionsPage() {
   const actor = useActor();
@@ -29,6 +36,7 @@ export default function TransactionsPage() {
   const [limit, setLimit] = useState(PAGE);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [selected, setSelected] = useState<TransactionView | null>(null);
 
   const filter = { month: month === 'todos' ? undefined : month, propertyId: propertyId || undefined, type: type || undefined, includePending };
   const res = useLiveResult(() => svc.finance.listTransactions(actor, filter), [actor, month, propertyId, type, includePending]);
@@ -52,11 +60,7 @@ export default function TransactionsPage() {
   const voidTx = async (t: TransactionView) => {
     const ok = await confirm({
       title: '¿Anular este movimiento?',
-      body: (
-        <>
-          «{t.description}» ({formatMoney(t.amount, t.currency)}) deja de sumar en las cuentas. No se borra: queda anulado y en la auditoría.
-        </>
-      ),
+      body: `«${t.description}» (${formatMoney(t.amount, t.currency)}) deja de sumar en las cuentas. No se borra: queda anulado y en la auditoría.`,
       confirmLabel: 'Anular',
       danger: true,
     });
@@ -72,20 +76,6 @@ export default function TransactionsPage() {
     setBusyId(null);
   };
 
-  const actionsFor = (t: TransactionView) =>
-    perms.canWrite ? (
-      <>
-        {perms.canApprove && t.status === 'pending_approval' && (
-          <Button size="sm" variant="success" icon={Check} loading={busyId === t.id} onClick={() => approve(t)}>
-            Aprobar
-          </Button>
-        )}
-        <Button size="sm" variant="ghost" icon={Ban} disabled={busyId === t.id} onClick={() => voidTx(t)} aria-label={`Anular «${t.description}»`}>
-          Anular
-        </Button>
-      </>
-    ) : null;
-
   const visible = rows?.slice(0, limit) ?? [];
 
   return (
@@ -93,9 +83,9 @@ export default function TransactionsPage() {
       <PageHeader
         back="/finanzas"
         title="Movimientos"
-        subtitle="Todo lo registrado: ingresos y gastos con su moneda. Nada se borra; lo anulado sale de las cuentas."
+        subtitle="Todo lo registrado, con su moneda. Nada se borra: lo anulado deja de sumar."
         actions={
-          <>
+          <div className="flex flex-wrap gap-2 xl:flex-nowrap">
             <Button variant="secondary" icon={Download} onClick={exportCsv} loading={exporting}>
               Exportar CSV
             </Button>
@@ -104,7 +94,7 @@ export default function TransactionsPage() {
                 Estado de cuenta
               </LinkButton>
             )}
-          </>
+          </div>
         }
       />
 
@@ -112,7 +102,7 @@ export default function TransactionsPage() {
         <div className="mb-3 flex items-center gap-2 text-label-md text-primary">
           <Filter size={16} aria-hidden /> Filtros
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto]">
           <MonthSelect value={month} onChange={setMonth} allowAll className="w-full" />
           <Select
             aria-label="Propiedad"
@@ -143,47 +133,47 @@ export default function TransactionsPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <SummaryTile label="Movimientos" value={String(rows.length)} />
+            <SummaryTile label="Movimientos" value={String(rows.length)} hint={pendingCount ? `${pendingCount} por aprobar` : undefined} />
             <SummaryTile label="Ingresos" value={formatMoney(income, base)} tone="income" />
             <SummaryTile label="Gastos" value={formatMoney(expenses, base)} tone="expense" />
-            <SummaryTile label="Neto" value={formatMoney(income - expenses, base)} hint={pendingCount ? `${pendingCount} por aprobar (no suman)` : `en ${base}`} />
+            <SummaryTile label="Neto" value={formatMoney(income - expenses, base)} hint={pendingCount ? 'Sin contar lo por aprobar' : `En ${base}`} />
           </div>
 
           {rows.length === 0 ? (
             <EmptyState icon={Receipt} title="No hay movimientos con estos filtros" body="Prueba con otro mes o con todas las propiedades." />
           ) : (
             <Card padding="none" className="overflow-hidden">
-              {/* Teléfono */}
+              {/* Teléfono y tableta: toca un movimiento para ver el detalle y sus acciones */}
               <ul className="divide-y divide-outline-variant/50 px-4 lg:hidden">
                 {visible.map((t) => (
-                  <TxRow key={t.id} tx={t} base={base} actions={actionsFor(t)} />
+                  <TxRow key={t.id} tx={t} base={base} onOpen={setSelected} />
                 ))}
               </ul>
               {/* Computadora */}
               <div className="hidden overflow-x-auto lg:block">
                 <table className="w-full text-left text-body-sm">
-                  <thead className="bg-surface-low text-[12px] font-bold tracking-wider text-on-surface-variant uppercase">
+                  <thead className="bg-surface-low text-[11px] font-bold tracking-wide whitespace-nowrap text-on-surface-variant uppercase">
                     <tr>
-                      <th scope="col" className="py-3 pr-3 pl-5">
+                      <th scope="col" className="py-3 pr-2 pl-5">
                         Fecha
                       </th>
-                      <th scope="col" className="px-3 py-3">
+                      <th scope="col" className="px-2 py-3">
                         Movimiento
                       </th>
-                      <th scope="col" className="px-3 py-3">
+                      <th scope="col" className="px-2 py-3">
                         Propiedad
                       </th>
-                      <th scope="col" className="px-3 py-3 text-right">
+                      <th scope="col" className="px-2 py-3">
+                        Método · ref.
+                      </th>
+                      <th scope="col" className="px-2 py-3 text-right">
                         Monto
                       </th>
-                      <th scope="col" className="px-3 py-3">
+                      <th scope="col" className={cn('py-3 pl-2', perms.canWrite ? 'pr-2' : 'pr-5')}>
                         Estado
                       </th>
-                      <th scope="col" className="px-3 py-3">
-                        Método / referencia
-                      </th>
                       {perms.canWrite && (
-                        <th scope="col" className="py-3 pr-5 pl-3 text-right">
+                        <th scope="col" className="py-3 pr-4 pl-1">
                           <span className="sr-only">Acciones</span>
                         </th>
                       )}
@@ -191,38 +181,43 @@ export default function TransactionsPage() {
                   </thead>
                   <tbody className="divide-y divide-outline-variant/30">
                     {visible.map((t) => (
-                      <tr key={t.id} className="align-top transition-colors hover:bg-surface-low/60">
-                        <td className="tabular py-3 pr-3 pl-5 whitespace-nowrap text-on-surface">{formatDate(t.date, { year: month === 'todos' })}</td>
-                        <td className="px-3 py-3">
-                          <div className="flex items-start gap-3">
+                      <tr key={t.id} className="transition-colors hover:bg-surface-low/60">
+                        <td className="tabular py-2.5 pr-2 pl-5 whitespace-nowrap text-on-surface">{formatDate(t.date, { year: month === 'todos' })}</td>
+                        <td className="px-2 py-2.5">
+                          <button type="button" onClick={() => setSelected(t)} className="group flex items-center gap-3 text-left">
                             <TxIcon type={t.type} />
-                            <div className="min-w-0">
-                              <p className="max-w-64 truncate text-label-md text-primary" title={t.description}>
+                            <span className="min-w-0">
+                              <span className="block max-w-60 truncate text-label-md text-primary group-hover:underline" title={t.description}>
                                 {t.description}
-                              </p>
-                              <p className="text-label-sm font-normal text-on-surface-variant">
-                                {t.categoryLabel} · {TX_SOURCE_LABEL[t.source.kind]}
-                              </p>
-                            </div>
-                          </div>
+                              </span>
+                              <span className="block max-w-60 truncate text-label-sm font-normal text-on-surface-variant">{subline(t)}</span>
+                            </span>
+                          </button>
                         </td>
-                        <td className="px-3 py-3 text-on-surface">
-                          <span className="block max-w-44 truncate" title={t.propertyName}>
+                        <td className="px-2 py-2.5 text-on-surface">
+                          <span className="block max-w-40 truncate" title={t.propertyName}>
                             {t.propertyName}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-right">
+                        <td className="px-2 py-2.5 text-on-surface-variant">
+                          <span className="block max-w-36 truncate" title={methodText(t)}>
+                            {methodText(t) || '—'}
+                          </span>
+                        </td>
+                        <td className="px-2 py-2.5 text-right">
                           <TxAmount tx={t} base={base} />
                         </td>
-                        <td className="px-3 py-3">
+                        <td className={cn('py-2.5 pl-2', perms.canWrite ? 'pr-2' : 'pr-5')}>
                           <TxStatusBadge status={t.status} />
                         </td>
-                        <td className="px-3 py-3 text-on-surface-variant">
-                          <span className="block max-w-40 truncate">{methodText(t) || '—'}</span>
-                        </td>
                         {perms.canWrite && (
-                          <td className="py-2 pr-5 pl-3">
-                            <div className="flex justify-end gap-1">{actionsFor(t)}</div>
+                          <td className="py-1.5 pr-4 pl-1">
+                            <div className="flex justify-end gap-0.5">
+                              {perms.canApprove && t.status === 'pending_approval' && (
+                                <IconButton icon={Check} size="sm" variant="tonal" label={`Aprobar «${t.description}»`} disabled={busyId === t.id} onClick={() => approve(t)} />
+                              )}
+                              <IconButton icon={Ban} size="sm" label={`Anular «${t.description}»`} disabled={busyId === t.id} onClick={() => voidTx(t)} />
+                            </div>
                           </td>
                         )}
                       </tr>
@@ -240,17 +235,19 @@ export default function TransactionsPage() {
             </Card>
           )}
           <p className="text-body-sm text-on-surface-variant">
-            Montos en la moneda de cada movimiento; cuando es otra, debajo va el equivalente en {base} con la tasa manual de su fecha.
+            Cada monto va en la moneda de su movimiento; cuando es otra, debajo aparece el equivalente en {base} con la tasa manual de su fecha.
           </p>
         </>
       )}
+
+      {selected && <TxDetailModal tx={selected} base={base} onClose={() => setSelected(null)} />}
     </div>
   );
 }
 
 function SummaryTile({ label, value, tone, hint }: { label: string; value: string; tone?: 'income' | 'expense'; hint?: string }) {
   return (
-    <div className="rounded-lg border border-outline-variant/40 bg-surface-lowest p-4 shadow-card">
+    <div className="min-w-0 rounded-lg border border-outline-variant/40 bg-surface-lowest p-4 shadow-card">
       <Eyebrow>{label}</Eyebrow>
       <p className={cn('mt-1 truncate text-headline-md', tone === 'income' ? 'text-secondary' : tone === 'expense' ? 'text-error' : 'text-primary')}>{value}</p>
       {hint && <p className="text-label-sm font-normal text-on-surface-variant">{hint}</p>}

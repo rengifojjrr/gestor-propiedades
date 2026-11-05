@@ -103,6 +103,11 @@ export function BookingMonth({ manage, canOpenLeases }: { manage: boolean; canOp
   const blockedNights = monthItems.filter((i) => i.kind === 'block').reduce((s, i) => s + nightsInPeriod(i.start, i.end, mStart, mEnd), 0);
 
   const covering = (d: string) => items.find((i) => i.start <= d && d < i.end);
+  /** Primer día libre desde hoy (para proponer el inicio del bloqueo). */
+  const firstFreeDay = () => {
+    for (let d = today, i = 0; i < 180; i++, d = addDays(d, 1)) if (!covering(d)) return d;
+    return today;
+  };
 
   const selectProperty = (id: string) =>
     setParams(
@@ -133,18 +138,19 @@ export function BookingMonth({ manage, canOpenLeases }: { manage: boolean; canOp
     <div className="space-y-4">
       <Card padding="none" className="overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-outline-variant px-4 py-3 md:flex-row md:items-center md:justify-between md:px-5">
-          <Select aria-label="Propiedad" value={property.id} onChange={(e) => selectProperty(e.target.value)} options={properties.map((p) => ({ value: p.id, label: p.name }))} className="md:w-72" />
+          <Select aria-label="Propiedad" value={property.id} onChange={(e) => selectProperty(e.target.value)} options={properties.map((p) => ({ value: p.id, label: p.name }))} className="md:w-80" />
           <div className="flex items-center justify-between gap-2 md:justify-end">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <IconButton icon={ChevronLeft} label="Mes anterior" variant="secondary" size="sm" onClick={() => setMonth(addMonthsToKey(month, -1))} />
-              <p className="min-w-36 text-center text-label-md text-primary" aria-live="polite">
+              <p className="min-w-28 text-center text-label-md text-primary md:min-w-36" aria-live="polite">
                 {monthLabel(month)}
               </p>
               <IconButton icon={ChevronRight} label="Mes siguiente" variant="secondary" size="sm" onClick={() => setMonth(addMonthsToKey(month, 1))} />
             </div>
             {manage && !isMonthly && (
-              <Button size="sm" icon={Lock} onClick={() => setBlockAt({ start: today })} data-testid="bloquear-fechas">
-                Bloquear fechas
+              <Button size="sm" icon={Lock} onClick={() => setBlockAt({ start: firstFreeDay() })} data-testid="bloquear-fechas" aria-label="Bloquear fechas">
+                <span className="md:hidden">Bloquear</span>
+                <span className="hidden md:inline">Bloquear fechas</span>
               </Button>
             )}
           </div>
@@ -234,13 +240,13 @@ export function BookingMonth({ manage, canOpenLeases }: { manage: boolean; canOp
           })}
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-outline-variant px-4 py-3 md:flex-row md:items-center md:justify-between md:px-5">
+        <div className="space-y-2 border-t border-outline-variant px-4 py-3 md:px-5">
           <OccupancyLegend />
           {manage && !isMonthly && <p className="text-label-sm font-normal text-on-surface-variant">Toca un día libre para bloquearlo, o un bloqueo para quitarlo.</p>}
         </div>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
         <Card>
           <CardHeader
             title={`En ${monthLabel(month).toLowerCase()}`}

@@ -44,6 +44,13 @@ export function fMonth(key: string, lang: Lang): string {
   return parseDate(`${key}-01`).setLocale(EN).toFormat('LLLL yyyy');
 }
 
+/** Solo el nombre del mes: «noviembre» / «November». */
+export function fMonthName(key: string, lang: Lang): string {
+  return parseDate(`${key}-01`)
+    .setLocale(lang === 'en' ? EN : 'es')
+    .toFormat('LLLL');
+}
+
 /** Hora de un mensaje («3:05 p. m.» / «3:05 PM») en la zona del navegador. */
 export function fClock(isoTimestamp: string, lang: Lang): string {
   return DateTime.fromISO(isoTimestamp)

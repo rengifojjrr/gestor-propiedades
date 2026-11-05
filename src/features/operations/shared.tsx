@@ -62,14 +62,29 @@ export function dayLabel(date: string, today: string): string {
   return formatDate(date, { weekday: true });
 }
 
+/** «4:00 p. m.» sin que se parta en dos líneas. */
+export function timeLabel(hm: string): string {
+  return formatTime(hm).replace(/\s/g, '\u00a0');
+}
+
 /** «Hoy, 10:00 a. m.» */
 export function whenLabel(date: string, time: string | undefined, today: string): string {
-  return `${dayLabel(date, today)}${time ? `, ${formatTime(time)}` : ''}`;
+  return `${dayLabel(date, today)}${time ? `, ${timeLabel(time)}` : ''}`;
 }
 
 /** «hace 3 h» (con el reloj de la app). */
 export function ago(isoTimestamp: string): string {
   return timeAgo(isoTimestamp, clock.now());
+}
+
+/**
+ * «3 nov, 11:20 p. m.» en la zona de la propiedad. (formatDateTime de @/lib/dates borra el primer
+ * punto, que en español cae en «p. m.»; por eso aquí va aparte.)
+ */
+export function stamp(isoTimestamp: string, timezone?: string): string {
+  let d = DateTime.fromISO(isoTimestamp);
+  if (timezone) d = d.setZone(timezone);
+  return d.setLocale('es').toFormat('d LLL, h:mm a');
 }
 
 /** Fecha (AAAA-MM-DD) de una marca de tiempo en la zona de la propiedad. */
@@ -160,6 +175,7 @@ export function SegmentedChoice<T extends string>({
   onChange,
   size = 'lg',
   hideLabel,
+  columns,
 }: {
   name: string;
   label: ReactNode;
@@ -168,11 +184,13 @@ export function SegmentedChoice<T extends string>({
   onChange: (value: T) => void;
   size?: 'md' | 'lg';
   hideLabel?: boolean;
+  /** Columnas (por defecto, una por opción hasta 4). */
+  columns?: 2 | 3 | 4;
 }) {
   return (
     <fieldset className="min-w-0">
       <legend className={cn('mb-1.5 text-label-md text-on-surface', hideLabel && 'sr-only')}>{label}</legend>
-      <div className={cn('grid gap-2', COLS[options.length] ?? 'grid-cols-2')}>
+      <div className={cn('grid gap-2', COLS[columns ?? options.length] ?? 'grid-cols-2')}>
         {options.map((o) => {
           const checked = o.value === value;
           return (
@@ -285,10 +303,10 @@ export function Requirements({ items, className }: { items: { ok: boolean; label
   );
 }
 
-/** Línea con ícono (dato corto de una tarjeta). */
-export function InfoLine({ icon: Icon, children, className }: { icon: LucideIcon; children: ReactNode; className?: string }) {
+/** Línea con ícono (dato corto de una tarjeta). `tone` la pinta de rojo (falta algo) o ámbar (pronto). */
+export function InfoLine({ icon: Icon, children, className, tone }: { icon: LucideIcon; children: ReactNode; className?: string; tone?: 'bad' | 'warn' }) {
   return (
-    <p className={cn('flex min-w-0 items-center gap-2 text-body-sm text-on-surface-variant', className)}>
+    <p className={cn('flex min-w-0 items-center gap-2 text-body-sm', tone === 'bad' ? 'text-error' : tone === 'warn' ? 'text-on-warning-container' : 'text-on-surface-variant', className)}>
       <Icon size={18} className="shrink-0" aria-hidden />
       <span className="min-w-0 truncate">{children}</span>
     </p>

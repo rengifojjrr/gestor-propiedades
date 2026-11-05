@@ -29,10 +29,10 @@ import type { AccessCodeView, Lang } from '@/domain/types';
 import { diffDays } from '@/lib/dates';
 import { useLang } from '@/lib/i18n';
 import { svc, type GuestHome } from '@/services';
-import { Badge, buttonClass, Card, EmptyState, ErrorState, LazyMap, Loading, useToast, type Tone } from '@/ui';
+import { Badge, buttonClass, Card, cn, EmptyState, ErrorState, LazyMap, Loading, useToast, type Tone } from '@/ui';
 import { fDate, fDateLong, firstName, fRange, fTime, mapsUrl } from './format';
 import { CODE_KIND, COMMON, GUEST, makeT } from './i18n';
-import { HeroChip, InfoCard, PersonHero } from './PersonHero';
+import { HeroChip, InfoCard, PersonHero, QuickTiles } from './PersonHero';
 
 const CODE_ICON: Record<AccessCodeView['kind'], LucideIcon> = { door: DoorOpen, lockbox: KeyRound, gate: Fence, alarm: ShieldAlert, wifi: Wifi };
 
@@ -60,11 +60,15 @@ function CopyButton({ value, what, lang }: { value: string; what: string; lang: 
   );
 }
 
+/** Orden en que se usan al llegar: portón, puerta o caja de llaves, alarma. */
+const CODE_ORDER: AccessCodeView['kind'][] = ['gate', 'door', 'lockbox', 'alarm', 'wifi'];
+
 function CodesCard({ home, lang }: { home: Home; lang: Lang }) {
   const t = makeT(GUEST, lang);
   const visible = home.codes.some((c) => c.value);
-  const keys = home.codes.filter((c) => c.kind !== 'wifi');
-  const wifi = home.codes.filter((c) => c.kind === 'wifi');
+  const sorted = [...home.codes].sort((a, b) => CODE_ORDER.indexOf(a.kind) - CODE_ORDER.indexOf(b.kind));
+  const keys = sorted.filter((c) => c.kind !== 'wifi');
+  const wifi = sorted.filter((c) => c.kind === 'wifi');
   const range = fRange(home.booking.checkIn, home.booking.checkOut, lang);
   return (
     <Card tone="dark" padding="lg" as="section" aria-label={t('codesTitle')} data-testid="codigos">
@@ -87,19 +91,18 @@ function CodesCard({ home, lang }: { home: Home; lang: Lang }) {
               const Icon = CODE_ICON[c.kind];
               const kind = CODE_KIND[lang][c.kind];
               return (
-                <div key={c.id} className="rounded-md bg-on-primary-container/10 p-4">
+                <div key={c.id} className="min-w-0 rounded-md bg-on-primary-container/10 p-4">
                   <p className="flex items-center gap-2 text-label-md text-on-primary-container-muted">
-                    <Icon size={18} aria-hidden />
+                    <Icon size={18} className="shrink-0" aria-hidden />
                     <span className="truncate">{kind}</span>
                   </p>
                   {c.value ? (
-                    <div className="mt-1 flex items-center justify-between gap-1">
-                      <span className="tabular font-mono text-headline-xl tracking-[0.12em] break-all">{c.value}</span>
-                      <CopyButton value={c.value} what={kind} lang={lang} />
-                    </div>
+                    <p className={cn('mt-2 font-mono tracking-[0.12em] tabular', c.value.length > 4 ? 'text-headline-lg' : 'text-headline-xl')}>
+                      {c.value}
+                    </p>
                   ) : (
-                    <p className="mt-2 flex items-center gap-2 font-mono text-headline-lg tracking-widest text-on-primary-container-muted" aria-label={`${kind}: ${t('hidden')}`}>
-                      <Lock size={18} aria-hidden />
+                    <p className="mt-2 flex items-center gap-2 font-mono text-headline-md tracking-widest text-on-primary-container-muted" aria-label={`${kind}: ${t('hidden')}`}>
+                      <Lock size={16} className="shrink-0" aria-hidden />
                       <span aria-hidden>{c.masked}</span>
                     </p>
                   )}
@@ -130,8 +133,8 @@ function CodesCard({ home, lang }: { home: Home; lang: Lang }) {
                     </div>
                   </dl>
                 ) : (
-                  <p className="mt-2 flex items-center gap-2 font-mono text-headline-lg tracking-widest text-on-primary-container-muted" aria-label={`${CODE_KIND[lang].wifi}: ${t('hidden')}`}>
-                    <Lock size={18} aria-hidden />
+                  <p className="mt-2 flex items-center gap-2 font-mono text-headline-md tracking-widest text-on-primary-container-muted" aria-label={`${CODE_KIND[lang].wifi}: ${t('hidden')}`}>
+                    <Lock size={16} aria-hidden />
                     <span aria-hidden>{c.masked}</span>
                   </p>
                 )}
@@ -229,16 +232,13 @@ function Stay({ home, lang }: { home: Home; lang: Lang }) {
         <HeroChip>{fRange(b.checkIn, b.checkOut, lang)}</HeroChip>
       </PersonHero>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Link to="/huesped/mensajes" className={buttonClass('primary', 'lg', true, 'h-16')}>
-          <MessageSquare size={22} aria-hidden />
-          {tc('messageUs')}
-        </Link>
-        <Link to="/huesped/reportar" className={buttonClass('secondary', 'lg', true, 'h-16')}>
-          <Siren size={22} aria-hidden />
-          <span className="truncate">{tc('reportProblem')}</span>
-        </Link>
-      </div>
+      <QuickTiles
+        label={t('needTitle')}
+        items={[
+          { to: '/huesped/mensajes', icon: MessageSquare, label: tc('messageUs'), primary: true },
+          { to: '/huesped/reportar', icon: Siren, label: tc('reportProblem') },
+        ]}
+      />
 
       <DatesCard home={home} lang={lang} />
       <CodesCard home={home} lang={lang} />

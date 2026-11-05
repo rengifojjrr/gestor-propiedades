@@ -2,8 +2,9 @@
 import type { LucideIcon } from 'lucide-react';
 import { MapPin } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { Link } from 'react-router';
 import type { Photo } from '@/domain/types';
-import { Card, PropertyImage } from '@/ui';
+import { Card, cn, PropertyImage } from '@/ui';
 
 export function PersonHero({
   photo,
@@ -24,8 +25,8 @@ export function PersonHero({
     <section className="relative isolate overflow-hidden rounded-lg bg-primary-container shadow-pop">
       <PropertyImage photo={photo} alt={alt} className="h-72 w-full md:h-80" />
       {/* Dos capas de sombra para que el texto blanco se lea sobre cualquier foto. */}
-      <div aria-hidden className="absolute inset-0 bg-linear-to-t from-image-scrim via-image-scrim/40 to-transparent" />
-      <div aria-hidden className="absolute inset-x-0 bottom-0 h-3/4 bg-linear-to-t from-image-scrim to-transparent" />
+      <div aria-hidden className="absolute inset-0 bg-linear-to-t from-image-scrim via-image-scrim/50 to-transparent" />
+      <div aria-hidden className="absolute inset-x-0 bottom-0 h-4/5 bg-linear-to-t from-image-scrim via-image-scrim/70 to-transparent" />
       <div className="absolute inset-x-0 bottom-0 p-5 text-on-image md:p-7">
         <p className="flex items-center gap-1.5 text-label-md">
           <MapPin size={16} aria-hidden />
@@ -59,5 +60,26 @@ export function InfoCard({ icon: Icon, title, children, action }: { icon: Lucide
       </div>
       {children}
     </Card>
+  );
+}
+
+/** Atajos grandes (mensajes, reportar…): el texto puede ir en dos líneas sin cortarse. */
+export function QuickTiles({ items, label }: { items: { to: string; icon: LucideIcon; label: string; primary?: boolean }[]; label: string }) {
+  return (
+    <nav className="grid grid-cols-2 gap-3" aria-label={label}>
+      {items.map((it) => (
+        <Link
+          key={it.to}
+          to={it.to}
+          className={cn(
+            'flex min-h-18 items-center gap-3 rounded-lg px-4 py-3 shadow-card transition-all active:scale-[0.98]',
+            it.primary ? 'bg-primary text-on-primary hover:shadow-lift' : 'border border-outline-variant bg-surface-lowest text-primary hover:bg-surface-low',
+          )}
+        >
+          <it.icon size={26} className="shrink-0" aria-hidden />
+          <span className="text-body-lg leading-tight font-semibold">{it.label}</span>
+        </Link>
+      ))}
+    </nav>
   );
 }

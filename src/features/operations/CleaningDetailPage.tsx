@@ -11,11 +11,10 @@ import { useActor } from '@/app/session';
 import { useLive, useLiveResult } from '@/data/live';
 import { CLEANING_TYPE_LABEL } from '@/domain/labels';
 import { todayIn } from '@/lib/clock';
-import { formatDateTime } from '@/lib/dates';
 import { svc } from '@/services';
 import { Badge, Button, Card, CardHeader, CleaningStatusBadge, ErrorState, KeyValue, Loading, Money, PageHeader, PriorityBadge, ProgressBar, PropertyImage, useConfirm } from '@/ui';
 import { AssignCleaningModal } from './AssignModals';
-import { ago, firstName, INCIDENT_STATUS_LABEL, PhotoGrid, useOpsAccess, whenLabel } from './shared';
+import { ago, firstName, INCIDENT_STATUS_LABEL, PhotoGrid, stamp, useOpsAccess, whenLabel } from './shared';
 
 export default function CleaningDetailPage() {
   const { id = '' } = useParams();
@@ -75,14 +74,72 @@ export default function CleaningDetailPage() {
         <div className="space-y-6 lg:col-span-2">
           <Card padding="none" className="overflow-hidden">
             <PropertyImage src={t.heroSrc} alt={t.propertyName} className="h-48 w-full md:h-56" />
-            <div className="flex flex-wrap items-center gap-2 p-4 md:p-5">
-              <CleaningStatusBadge status={t.status} />
-              {t.priority === 'high' ? <PriorityBadge priority="high" /> : <Badge>Prioridad normal</Badge>}
-              {t.overdue && <Badge tone="bad">Atrasada</Badge>}
-              <p className="flex w-full items-center gap-1.5 text-body-sm text-on-surface-variant">
-                <MapPin size={16} aria-hidden /> {t.propertyAddress}
+            <div className="p-4 md:p-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <CleaningStatusBadge status={t.status} />
+                {t.priority === 'high' ? <Badge tone="bad">Prioridad alta</Badge> : <Badge>Prioridad normal</Badge>}
+                {t.overdue && <Badge tone="bad">Atrasada</Badge>}
+              </div>
+              <p className="mt-2 flex items-start gap-1.5 text-body-sm text-on-surface-variant">
+                <MapPin size={16} className="mt-0.5 shrink-0" aria-hidden /> {t.propertyAddress}
                 {t.propertyCity ? ` · ${t.propertyCity}` : ''}
               </p>
+              <dl className="mt-3 grid gap-x-8 sm:grid-cols-2">
+                <KeyValue label="Fecha" value={whenLabel(t.date, t.time, today)} />
+                <KeyValue
+                  label="Hace la limpieza"
+                  value={
+                    <span className="inline-flex items-center gap-2">
+                      <UserRound size={16} aria-hidden className="text-on-surface-variant" />
+                      {t.assigneeName ?? <span className="text-error">Sin asignar</span>}
+                    </span>
+                  }
+                />
+                {t.guestName && (
+                  <KeyValue
+                    label="Sale"
+                    value={
+                      <span className="inline-flex items-center gap-2">
+                        <LogOut size={16} aria-hidden className="text-on-surface-variant" />
+                        {firstName(t.guestName)}
+                      </span>
+                    }
+                  />
+                )}
+                {t.nextCheckIn && (
+                  <KeyValue
+                    label="Próxima entrada"
+                    value={
+                      <span className="inline-flex items-center gap-2">
+                        <DoorOpen size={16} aria-hidden className="text-on-surface-variant" />
+                        {whenLabel(t.nextCheckIn.date, t.nextCheckIn.time, today)}
+                      </span>
+                    }
+                  />
+                )}
+                {t.startedAt && <KeyValue label="Empezó" value={stamp(t.startedAt, t.timezone)} />}
+                {t.completedAt && <KeyValue label="Terminó" value={stamp(t.completedAt, t.timezone)} />}
+                {canManage && <KeyValue label="Pago de la tarea" value={<Money amount={t.fee} currency={t.currency} />} />}
+              </dl>
+              {canManage && open && (
+                <Button variant="tonal" className="mt-4 w-full sm:w-auto" icon={UserRound} onClick={() => setAssigning(true)} data-testid="reasignar-limpieza">
+                  {t.assigneeId ? 'Reasignar' : 'Asignar'}
+                </Button>
+              )}
+            </div>
+          </Card>
+
+          <Card padding="lg">
+            <CardHeader title="Fotos" subtitle="Obligatorias para cerrar: al menos una de antes y una de después." />
+            <div className="grid gap-5 md:grid-cols-2">
+              <div>
+                <p className="mb-2 text-label-md text-on-surface">Antes · {before.length}</p>
+                <PhotoGrid fileIds={before} alt="Foto de antes" emptyText="Sin fotos todavía." />
+              </div>
+              <div>
+                <p className="mb-2 text-label-md text-on-surface">Después · {after.length}</p>
+                <PhotoGrid fileIds={after} alt="Foto de después" emptyText="Sin fotos todavía." />
+              </div>
             </div>
           </Card>
 
@@ -110,69 +167,9 @@ export default function CleaningDetailPage() {
               ))}
             </div>
           </Card>
-
-          <Card padding="lg">
-            <CardHeader title="Fotos" subtitle="Obligatorias para cerrar: al menos una de antes y una de después." />
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <p className="mb-2 text-label-md text-on-surface">Antes · {before.length}</p>
-                <PhotoGrid fileIds={before} alt="Foto de antes" emptyText="Sin fotos todavía." />
-              </div>
-              <div>
-                <p className="mb-2 text-label-md text-on-surface">Después · {after.length}</p>
-                <PhotoGrid fileIds={after} alt="Foto de después" emptyText="Sin fotos todavía." />
-              </div>
-            </div>
-          </Card>
         </div>
 
         <div className="space-y-6">
-          <Card padding="lg">
-            <CardHeader title="Datos" />
-            <dl>
-              <KeyValue label="Fecha" value={whenLabel(t.date, t.time, today)} />
-              <KeyValue
-                label="Hace la limpieza"
-                value={
-                  <span className="inline-flex items-center gap-2">
-                    <UserRound size={16} aria-hidden className="text-on-surface-variant" />
-                    {t.assigneeName ?? <span className="text-error">Sin asignar</span>}
-                  </span>
-                }
-              />
-              {t.guestName && (
-                <KeyValue
-                  label="Sale"
-                  value={
-                    <span className="inline-flex items-center gap-2">
-                      <LogOut size={16} aria-hidden className="text-on-surface-variant" />
-                      {firstName(t.guestName)}
-                    </span>
-                  }
-                />
-              )}
-              {t.nextCheckIn && (
-                <KeyValue
-                  label="Próxima entrada"
-                  value={
-                    <span className="inline-flex items-center gap-2">
-                      <DoorOpen size={16} aria-hidden className="text-on-surface-variant" />
-                      {whenLabel(t.nextCheckIn.date, t.nextCheckIn.time, today)}
-                    </span>
-                  }
-                />
-              )}
-              {t.startedAt && <KeyValue label="Empezó" value={formatDateTime(t.startedAt, t.timezone)} />}
-              {t.completedAt && <KeyValue label="Terminó" value={formatDateTime(t.completedAt, t.timezone)} />}
-              {canManage && <KeyValue label="Pago de la tarea" value={<Money amount={t.fee} currency={t.currency} />} />}
-            </dl>
-            {canManage && open && (
-              <Button variant="tonal" fullWidth className="mt-4" icon={UserRound} onClick={() => setAssigning(true)}>
-                {t.assigneeId ? 'Reasignar' : 'Asignar'}
-              </Button>
-            )}
-          </Card>
-
           <Card padding="lg">
             <CardHeader title="Faltantes" subtitle="Lo que reportó la limpieza." />
             {t.supplies.length ? (

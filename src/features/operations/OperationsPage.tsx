@@ -133,7 +133,7 @@ export default function OperationsPage() {
           </section>
 
           {isOwner && (
-            <Section title="Gastos por aprobar" action={approvals.length ? <span className="text-label-md text-on-surface-variant">{approvals.length} pendientes</span> : undefined}>
+            <Section title="Gastos por aprobar" action={approvals.length ? <span className="text-label-md text-on-surface-variant">{approvals.length} {approvals.length === 1 ? 'pendiente' : 'pendientes'}</span> : undefined}>
               {approvals.length ? (
                 <Card padding="none">
                   <ul className="divide-y divide-outline-variant/50">
@@ -149,31 +149,29 @@ export default function OperationsPage() {
           )}
         </div>
 
-        <div className="grid content-start gap-6 md:grid-cols-2 xl:col-span-4 xl:grid-cols-1">
+        <div className="grid content-start gap-6 md:grid-cols-2 xl:col-span-4 xl:row-span-2 xl:grid-cols-1">
           <LoadCard cleanings={weekCleanings} orders={weekOrders} people={people} />
           <Card padding="lg" className="self-start">
-            <div className="mb-5 flex items-center justify-between gap-2">
-              <h2 className="text-headline-md text-primary">Mantenimiento pendiente</h2>
-              {canManage && (
-                <LinkButton to="/operacion/mantenimiento/nueva" variant="ghost" size="sm" icon={Plus}>
-                  Orden
-                </LinkButton>
-              )}
-            </div>
+            <h2 className="mb-5 text-headline-md text-primary">Mantenimiento pendiente</h2>
             {pendingOrders.length ? (
               <ul className="space-y-4">
                 {pendingOrders.map((o) => (
-                  <PendingOrderRow key={o.id} order={o} />
+                  <PendingOrderRow key={o.id} order={o} canManage={canManage} />
                 ))}
               </ul>
             ) : (
               <p className="text-body-sm text-on-surface-variant">Todo al día.</p>
             )}
+            {canManage && (
+              <LinkButton to="/operacion/mantenimiento/nueva" variant="tonal" size="sm" icon={Plus} fullWidth className="mt-5">
+                Nueva orden
+              </LinkButton>
+            )}
           </Card>
         </div>
 
         <Section
-          className="xl:col-span-12"
+          className="xl:col-span-8"
           title="Limpiezas pendientes"
           action={
             canManage ? (
@@ -184,7 +182,7 @@ export default function OperationsPage() {
           }
         >
           {pendingCleanings.length ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-2">
               {pendingCleanings.map((t) => (
                 <CleaningCard key={t.id} task={t} onAssign={canManage ? () => setAssigningTask(t) : undefined} />
               ))}

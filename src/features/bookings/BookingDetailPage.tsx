@@ -41,6 +41,9 @@ const STATUS_ICON: Record<BookingStatus, typeof LogIn> = {
   cancelled: XCircle,
 };
 
+/** Evita que «4:00 p. m.» se parta en dos renglones. */
+const nbsp = (text: string) => text.replace(/\s/g, '\u00a0');
+
 function Tile({ icon: Icon, label, value, sub }: { icon: typeof LogIn; label: string; value: ReactNode; sub?: ReactNode }) {
   return (
     <div className="rounded-md bg-surface-low p-3">
@@ -120,6 +123,34 @@ export default function BookingDetailPage() {
     if (r) setNote('');
   };
 
+  const guestCard = (className: string) => (
+    <Card className={className}>
+      <CardHeader title="Huésped" />
+      <div className="flex items-center gap-3">
+        <Avatar name={b.guestName} size="lg" />
+        <div className="min-w-0">
+          <p className="truncate text-label-md text-primary">{b.guestName}</p>
+          <p className="text-body-sm text-on-surface-variant">Idioma: {b.guestLanguage === 'en' ? 'inglés' : 'español'}</p>
+          {b.guestDoNotRent && (
+            <Badge tone="bad" icon={AlertTriangle} className="mt-1">
+              No volver a alquilar
+            </Badge>
+          )}
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <LinkButton to={`/personas/${b.guestId}`} variant="secondary" size="sm" icon={UserRound}>
+          Ver ficha
+        </LinkButton>
+        {b.threadId && (
+          <LinkButton to={`/mensajes/${b.threadId}`} variant="secondary" size="sm" icon={MessageSquare}>
+            Conversación
+          </LinkButton>
+        )}
+      </div>
+    </Card>
+  );
+
   const actions = (canCheckIn || canCheckOut || canEdit || canCancel) && (
     <>
       {canCheckIn && (
@@ -197,7 +228,7 @@ export default function BookingDetailPage() {
             )
           }
         >
-          <strong>Importada del .ics: completa los datos.</strong> El calendario no trae huésped ni montos: los montos son estimados con la tarifa de la propiedad.
+          <strong>Importada del .ics: completa los datos.</strong> El calendario no trae huésped ni montos: los montos son estimados con la tarifa de la propiedad. Edita personas, tarifa y canal; el nombre del huésped se cambia en su ficha.
         </Banner>
       )}
       {b.guestDoNotRent && (
@@ -206,13 +237,13 @@ export default function BookingDetailPage() {
         </Banner>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
           <Card>
             <CardHeader title="Estadía" subtitle={b.status === 'in_progress' ? `En curso · sale ${relativeDay(b.checkOut, b.today).toLowerCase()}` : b.status === 'confirmed' ? `Entra ${relativeDay(b.checkIn, b.today).toLowerCase()}` : BOOKING_STATUS_LABEL[b.status]} />
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <Tile icon={LogIn} label="Entrada" value={formatDate(b.checkIn, { weekday: true })} sub={`desde las ${formatTime(b.checkInTime)}`} />
-              <Tile icon={LogOut} label="Salida" value={formatDate(b.checkOut, { weekday: true })} sub={`hasta las ${formatTime(b.checkOutTime)}`} />
+              <Tile icon={LogIn} label="Entrada" value={formatDate(b.checkIn, { weekday: true })} sub={`desde las ${nbsp(formatTime(b.checkInTime))}`} />
+              <Tile icon={LogOut} label="Salida" value={formatDate(b.checkOut, { weekday: true })} sub={`hasta las ${nbsp(formatTime(b.checkOutTime))}`} />
               <Tile icon={BedDouble} label="Noches" value={b.nights} />
               <Tile icon={Users} label="Personas" value={b.guests} sub={property?.capacity ? `máximo ${property.capacity}` : undefined} />
             </div>
@@ -225,6 +256,8 @@ export default function BookingDetailPage() {
               <ArrowRight size={18} className="shrink-0 text-on-surface-variant" aria-hidden />
             </Link>
           </Card>
+
+          {guestCard('lg:hidden')}
 
           {money && (
             <Card>
@@ -261,31 +294,7 @@ export default function BookingDetailPage() {
         </div>
 
         <div className="space-y-5">
-          <Card>
-            <CardHeader title="Huésped" />
-            <div className="flex items-center gap-3">
-              <Avatar name={b.guestName} size="lg" />
-              <div className="min-w-0">
-                <p className="truncate text-label-md text-primary">{b.guestName}</p>
-                <p className="text-body-sm text-on-surface-variant">Idioma: {b.guestLanguage === 'en' ? 'inglés' : 'español'}</p>
-                {b.guestDoNotRent && (
-                  <Badge tone="bad" icon={AlertTriangle} className="mt-1">
-                    No volver a alquilar
-                  </Badge>
-                )}
-              </div>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <LinkButton to={`/personas/${b.guestId}`} variant="secondary" size="sm" icon={UserRound}>
-                Ver ficha
-              </LinkButton>
-              {b.threadId && (
-                <LinkButton to={`/mensajes/${b.threadId}`} variant="secondary" size="sm" icon={MessageSquare} data-testid="abrir-conversacion">
-                  Conversación
-                </LinkButton>
-              )}
-            </div>
-          </Card>
+          {guestCard('hidden lg:block')}
 
           {cleaning && (
             <Card>

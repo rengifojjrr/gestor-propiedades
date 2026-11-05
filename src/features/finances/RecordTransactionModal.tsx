@@ -123,7 +123,7 @@ function RecordForm({ type, setType, onDone, setBusy }: { type: TxType; setType:
         hint={propertyId ? `Los movimientos de esta propiedad van en ${currency}, su moneda.` : 'Gastos o ingresos que no son de una sola propiedad.'}
       />
       <Select label="Categoría" value={category} onChange={(e) => setCategory(e.target.value)} options={categoryOptions} />
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <TextInput
           label={`Monto (${currency})`}
           inputMode="decimal"
@@ -145,7 +145,7 @@ function RecordForm({ type, setType, onDone, setBusy }: { type: TxType; setType:
         error={errors.description}
         data-testid="descripcion-movimiento"
       />
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Select
           label="Método"
           value={method}

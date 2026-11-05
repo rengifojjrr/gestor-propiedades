@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { CHANNEL_LABEL } from '@/domain/labels';
 import { rangesOverlap } from '@/domain/rules';
 import type { Block, BookingStatus, Channel, Role } from '@/domain/types';
-import { addDays, diffDays } from '@/lib/dates';
+import { addDays, diffDays, formatDate } from '@/lib/dates';
 import { formatMoney, formatPercent, round2 } from '@/lib/money';
 import type { CalendarData } from '@/services';
 import { Badge, cn, Money } from '@/ui';
@@ -15,6 +15,21 @@ export const canManageBookings = (role?: Role | null): boolean => role === 'owne
 export const seesBookingMoney = (role?: Role | null): boolean => role === 'owner' || role === 'admin';
 
 export const firstName = (name: string): string => name.trim().split(/\s+/)[0] ?? name;
+
+/** «Se cruza con la reserva R-1143 (2026-11-10 → 2026-11-13)» → «… (10 nov → 13 nov)». */
+export function humanizeDates(message: string): string {
+  return message.replace(/\b(\d{4}-\d{2}-\d{2})\b/g, (d) => formatDate(d));
+}
+
+/** Corre una acción y deja legibles las fechas del mensaje de error (para el aviso). */
+export async function withFriendlyDates<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof Error) err.message = humanizeDates(err.message);
+    throw err;
+  }
+}
 
 /** Botón con borde y texto rojo (acciones que deshacen algo: cancelar, terminar). */
 export const DANGER_OUTLINE =
@@ -45,7 +60,7 @@ export function bookingBarClass(b: { status: BookingStatus; needsDetails: boolea
     case 'confirmed':
       return 'bg-primary text-on-primary';
     case 'completed':
-      return 'bg-surface-high text-on-surface-variant';
+      return 'bg-outline-variant/60 text-on-surface';
     default:
       return 'bg-error-container text-on-error-container';
   }
@@ -59,7 +74,7 @@ export function OccupancyLegend({ className }: { className?: string }) {
   const items: { label: string; cls: string }[] = [
     { label: 'En curso', cls: 'bg-secondary' },
     { label: 'Confirmada', cls: 'bg-primary' },
-    { label: 'Terminada', cls: 'bg-surface-high' },
+    { label: 'Terminada', cls: 'bg-outline-variant/60' },
     { label: 'Por completar (.ics)', cls: 'bg-warning-container' },
     { label: 'Bloqueo', cls: BLOCK_BAR_CLASS },
     { label: 'Contrato', cls: LEASE_BAR_CLASS },

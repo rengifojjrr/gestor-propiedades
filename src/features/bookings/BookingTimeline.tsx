@@ -69,15 +69,20 @@ export function BookingTimeline({ canOpenLeases }: { canOpenLeases: boolean }) {
   const todayX = diffDays(from, today) * DAY_W + DAY_W / 2;
   const showToday = today >= from && today < to;
 
-  const barShape = (p: BarPos) => cn('absolute top-2.5 flex h-9 items-center overflow-hidden px-2 text-label-sm', p.clipL ? 'rounded-l-none' : 'rounded-l-md', p.clipR ? 'rounded-r-none' : 'rounded-r-md');
+  const barShape = (p: BarPos) => cn('absolute top-2.5 flex h-9 items-center px-2 text-label-sm', p.clipL ? 'rounded-l-none' : 'rounded-l-md', p.clipR ? 'rounded-r-none' : 'rounded-r-md');
+  /** La etiqueta se queda a la vista al deslizar (justo a la derecha de la columna fija). */
+  const LABEL = 'sticky left-[120px] block min-w-0 truncate md:left-[232px]';
 
   return (
     <Card padding="none" className="overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant px-4 py-3 md:px-5">
         <div>
-          <h2 className="text-headline-md text-primary">Ocupación de todas las propiedades</h2>
+          <h2 className="text-headline-md text-primary">
+            Ocupación<span className="hidden md:inline"> de todas las propiedades</span>
+          </h2>
           <p className="text-body-sm text-on-surface-variant">
-            {formatDate(from, { year: parseDate(from).year !== parseDate(today).year })} – {formatDate(addDays(to, -1), { year: true })} · toca una reserva para abrirla
+            {formatDate(from, { year: parseDate(from).year !== parseDate(today).year })} – {formatDate(addDays(to, -1), { year: true })}
+            <span className="hidden md:inline"> · toca una reserva para abrirla</span>
           </p>
         </div>
         <div className="flex items-center gap-1.5">
@@ -168,11 +173,11 @@ export function BookingTimeline({ canOpenLeases }: { canOpenLeases: boolean }) {
                     const cls = cn(barShape(ps), LEASE_BAR_CLASS);
                     return canOpenLeases ? (
                       <Link key={l.id} to={`/contratos/${l.id}`} className={cls} style={{ left: ps.left, width: ps.width }} title={`${label} (${formatRange(l.start, l.end)})`}>
-                        <span className="truncate">{label}</span>
+                        <span className={LABEL}>{label}</span>
                       </Link>
                     ) : (
                       <div key={l.id} className={cls} style={{ left: ps.left, width: ps.width }} title={`${label} (${formatRange(l.start, l.end)})`}>
-                        <span className="truncate">{label}</span>
+                        <span className={LABEL}>{label}</span>
                       </div>
                     );
                   })}
@@ -188,7 +193,7 @@ export function BookingTimeline({ canOpenLeases }: { canOpenLeases: boolean }) {
                         style={{ left: ps.left, width: ps.width }}
                         title={`${BLOCK_REASON_LABEL[bl.reason]}${bl.note ? ` · ${bl.note}` : ''} (${formatDate(bl.start)} → ${formatDate(bl.end)})`}
                       >
-                        <span className="truncate">{label}</span>
+                        <span className={LABEL}>{label}</span>
                       </div>
                     );
                   })}
@@ -206,7 +211,7 @@ export function BookingTimeline({ canOpenLeases }: { canOpenLeases: boolean }) {
                         aria-label={`${b.guestName}, ${formatRange(b.checkIn, b.checkOut)}, ${BOOKING_STATUS_LABEL[b.status]}`}
                         title={`${b.guestName} · ${formatRange(b.checkIn, b.checkOut)} · ${BOOKING_STATUS_LABEL[b.status]}`}
                       >
-                        <span className="truncate font-semibold">{label}</span>
+                        <span className={cn(LABEL, 'font-semibold')}>{label}</span>
                       </Link>
                     );
                   })}

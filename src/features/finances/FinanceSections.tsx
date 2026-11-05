@@ -40,7 +40,7 @@ export function HeroCards({ summary, isCurrent }: { summary: MonthSummary; isCur
   const incomeDiff = summary.income - summary.previous.income;
   const budgetUse = summary.budget ? summary.expenses / summary.budget : null;
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
       <Card tone="dark" padding="lg" className="relative flex min-h-44 flex-col justify-between overflow-hidden md:col-span-2">
         <div className="relative z-10">
           <p className="text-label-sm tracking-widest text-on-primary-container-muted uppercase">Ganancia neta · {summary.label}</p>
@@ -173,6 +173,8 @@ function YieldBadge({ label }: { label: PropertyKpis['yieldLabel'] }) {
 
 const pct = (v: number) => formatPercent(v);
 const money = (v: number | null, currency: string) => (v == null ? '—' : formatMoney(v, currency, { whole: true }));
+/** ADR sin noches vendidas no existe: «—» en vez de $0. */
+const adr = (r: PerformanceRow) => (r.adr == null || r.nightsSold === 0 ? '—' : formatMoney(r.adr, r.currency, { whole: true }));
 
 /** Desempeño por propiedad: tabla en computadora, tarjetas en el teléfono. */
 export function PerformanceSection({ rows, base, showRoi }: { rows: PerformanceRow[]; base: string; showRoi: boolean }) {
@@ -197,19 +199,21 @@ export function PerformanceSection({ rows, base, showRoi }: { rows: PerformanceR
           <ul className="divide-y divide-outline-variant/40 lg:hidden">
             {rows.map((r) => (
               <li key={r.propertyId} className="px-5 py-4">
-                <Link to={`/propiedades/${r.propertyId}`} className="flex items-center gap-3">
-                  <PropertyImage photo={r.photo} src={r.heroSrc} alt="" className="h-12 w-12 shrink-0 rounded-md" />
+                <Link to={`/propiedades/${r.propertyId}`} className="flex items-start gap-3">
+                  <PropertyImage photo={r.photo} src={r.heroSrc} alt="" className="h-14 w-14 shrink-0 rounded-md" />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-label-md text-primary">{r.propertyName}</span>
+                    <span className="block text-label-md text-primary">{r.propertyName}</span>
                     <span className="block truncate text-body-sm text-on-surface-variant">
                       {r.city} · {RENTAL_MODE_LABEL[r.rentalMode]}
                     </span>
+                    <span className="mt-1.5 block">
+                      <YieldBadge label={r.yieldLabel} />
+                    </span>
                   </span>
-                  <YieldBadge label={r.yieldLabel} />
                 </Link>
                 <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2 text-body-sm">
                   <Metric label="Ocupación" value={pct(r.occupancy)} />
-                  <Metric label="ADR" value={money(r.adr, r.currency)} />
+                  <Metric label="ADR" value={adr(r)} />
                   <Metric label="RevPAR" value={money(r.revpar, r.currency)} />
                   <Metric label="Ingresos" value={money(r.income, base)} />
                   <Metric label="Gastos" value={money(r.expenses, base)} />
@@ -222,34 +226,34 @@ export function PerformanceSection({ rows, base, showRoi }: { rows: PerformanceR
           {/* Computadora */}
           <div className="hidden overflow-x-auto lg:block">
             <table className="w-full text-left text-body-sm">
-              <thead className="bg-surface-low text-[12px] font-bold tracking-wider text-on-surface-variant uppercase">
+              <thead className="bg-surface-low text-[11px] font-bold tracking-wide whitespace-nowrap text-on-surface-variant uppercase">
                 <tr>
-                  <th scope="col" className="px-5 py-3">
+                  <th scope="col" className="py-3 pr-2.5 pl-5">
                     Propiedad
                   </th>
-                  <th scope="col" className="px-3 py-3">
+                  <th scope="col" className="px-2.5 py-3">
                     Rendimiento
                   </th>
-                  <th scope="col" className="px-3 py-3 text-right">
+                  <th scope="col" className="px-2.5 py-3 text-right">
                     Ocupación
                   </th>
-                  <th scope="col" className="px-3 py-3 text-right">
+                  <th scope="col" className="px-2.5 py-3 text-right">
                     ADR
                   </th>
-                  <th scope="col" className="px-3 py-3 text-right">
+                  <th scope="col" className="px-2.5 py-3 text-right">
                     RevPAR
                   </th>
-                  <th scope="col" className="px-3 py-3 text-right">
+                  <th scope="col" className="px-2.5 py-3 text-right">
                     Ingresos
                   </th>
-                  <th scope="col" className="px-3 py-3 text-right">
+                  <th scope="col" className="px-2.5 py-3 text-right">
                     Gastos
                   </th>
-                  <th scope="col" className={cn('py-3 pl-3 text-right', showRoi ? 'pr-3' : 'pr-5')}>
+                  <th scope="col" className={cn('py-3 pl-2.5 text-right', showRoi ? 'pr-2.5' : 'pr-5')}>
                     Neto
                   </th>
                   {showRoi && (
-                    <th scope="col" className="py-3 pr-5 pl-3 text-right" title="Ganancia neta anualizada de los últimos 12 meses sobre el precio de compra">
+                    <th scope="col" className="py-3 pr-5 pl-2.5 text-right" title="Ganancia neta anualizada de los últimos 12 meses sobre el precio de compra">
                       ROI
                     </th>
                   )}
@@ -258,27 +262,27 @@ export function PerformanceSection({ rows, base, showRoi }: { rows: PerformanceR
               <tbody className="divide-y divide-outline-variant/30">
                 {rows.map((r) => (
                   <tr key={r.propertyId} className="transition-colors hover:bg-surface-low/60">
-                    <td className="px-5 py-3">
+                    <td className="py-3 pr-2.5 pl-5">
                       <Link to={`/propiedades/${r.propertyId}`} className="flex items-center gap-3">
                         <PropertyImage photo={r.photo} src={r.heroSrc} alt="" className="h-11 w-11 shrink-0 rounded-md" />
                         <span className="min-w-0">
-                          <span className="block max-w-52 truncate text-label-md text-primary">{r.propertyName}</span>
+                          <span className="line-clamp-2 block max-w-44 text-label-md text-primary">{r.propertyName}</span>
                           <span className="block text-label-sm font-normal text-on-surface-variant">
                             {r.city} · {RENTAL_MODE_LABEL[r.rentalMode]}
                           </span>
                         </span>
                       </Link>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-2.5 py-3">
                       <YieldBadge label={r.yieldLabel} />
                     </td>
-                    <td className="tabular px-3 py-3 text-right text-on-surface">{pct(r.occupancy)}</td>
-                    <td className="tabular px-3 py-3 text-right text-on-surface">{money(r.adr, r.currency)}</td>
-                    <td className="tabular px-3 py-3 text-right text-on-surface">{money(r.revpar, r.currency)}</td>
-                    <td className="tabular px-3 py-3 text-right text-on-surface">{money(r.income, base)}</td>
-                    <td className="tabular px-3 py-3 text-right text-on-surface">{money(r.expenses, base)}</td>
-                    <td className={cn('tabular py-3 pl-3 text-right font-bold text-primary', showRoi ? 'pr-3' : 'pr-5')}>{money(r.net, base)}</td>
-                    {showRoi && <td className="tabular py-3 pr-5 pl-3 text-right text-on-surface">{r.roi ? formatPercent(r.roi.roi, 1) : '—'}</td>}
+                    <td className="tabular px-2.5 py-3 text-right whitespace-nowrap text-on-surface">{pct(r.occupancy)}</td>
+                    <td className="tabular px-2.5 py-3 text-right text-on-surface">{adr(r)}</td>
+                    <td className="tabular px-2.5 py-3 text-right whitespace-nowrap text-on-surface">{money(r.revpar, r.currency)}</td>
+                    <td className="tabular px-2.5 py-3 text-right whitespace-nowrap text-on-surface">{money(r.income, base)}</td>
+                    <td className="tabular px-2.5 py-3 text-right whitespace-nowrap text-on-surface">{money(r.expenses, base)}</td>
+                    <td className={cn('tabular py-3 pl-2.5 text-right font-bold whitespace-nowrap text-primary', showRoi ? 'pr-2.5' : 'pr-5')}>{money(r.net, base)}</td>
+                    {showRoi && <td className="tabular py-3 pr-5 pl-2.5 text-right whitespace-nowrap text-on-surface">{r.roi ? formatPercent(r.roi.roi, 1) : '—'}</td>}
                   </tr>
                 ))}
               </tbody>
@@ -371,16 +375,18 @@ export function CategoryBreakdownCard({ items, base }: { items: CategoryAmount[]
 }
 
 /** Los últimos movimientos del mes. */
-export function RecentTransactionsCard({ items, base, allLink }: { items: TransactionView[]; base: string; allLink: string }) {
+export function RecentTransactionsCard({ items, base, allLink, onOpen }: { items: TransactionView[]; base: string; allLink: string; onOpen?: (t: TransactionView) => void }) {
   return (
     <Card padding="lg" as="section" aria-label="Últimos movimientos">
       <CardHeader
         title="Últimos movimientos"
         subtitle={items.length ? `Los ${items.length} más recientes del mes` : undefined}
         action={
-          <LinkButton to={allLink} variant="ghost" size="sm" iconRight={ChevronRight}>
-            Ver todos
-          </LinkButton>
+          <span className="hidden sm:block">
+            <LinkButton to={allLink} variant="ghost" size="sm" iconRight={ChevronRight}>
+              Ver todos
+            </LinkButton>
+          </span>
         }
       />
       {items.length === 0 ? (
@@ -388,10 +394,13 @@ export function RecentTransactionsCard({ items, base, allLink }: { items: Transa
       ) : (
         <ul className="divide-y divide-outline-variant/50">
           {items.map((t) => (
-            <TxRow key={t.id} tx={t} base={base} />
+            <TxRow key={t.id} tx={t} base={base} onOpen={onOpen} />
           ))}
         </ul>
       )}
+      <LinkButton to={allLink} variant="secondary" fullWidth iconRight={ChevronRight} className="mt-3 sm:hidden">
+        Ver todos los movimientos
+      </LinkButton>
     </Card>
   );
 }

@@ -10,7 +10,7 @@ import { useActor } from '@/app/session';
 import { useLive, useLiveResult } from '@/data/live';
 import { formatMoney } from '@/lib/money';
 import { svc, type TransactionView } from '@/services';
-import { Banner, Button, Card, CardHeader, ErrorState, LinkButton, Loading, PageHeader, useConfirm } from '@/ui';
+import { Banner, Button, Card, ErrorState, LinkButton, Loading, PageHeader, useConfirm } from '@/ui';
 import { CashflowChart, ChartLegend, useIsDark } from './CashflowChart';
 import {
   CategoryBreakdownCard,
@@ -24,6 +24,7 @@ import {
   type PerformanceRow,
 } from './FinanceSections';
 import { RecordTransactionModal } from './RecordTransactionModal';
+import { TxDetailModal } from './TxDetailModal';
 import { MonthSelect, useFinancePerms, useMonthParam } from './shared';
 
 export default function FinancesPage() {
@@ -37,6 +38,7 @@ export default function FinancesPage() {
   const [recording, setRecording] = useState<'income' | 'expense' | null>(null);
   const [exporting, setExporting] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<TransactionView | null>(null);
 
   const summaryRes = useLiveResult(() => svc.finance.monthSummary(actor, month), [actor, month]);
   const summary = summaryRes.data;
@@ -87,7 +89,7 @@ export default function FinancesPage() {
         title="Finanzas"
         subtitle="Lo registrado del portafolio: ingresos, gastos y ganancia."
         actions={
-          <>
+          <div className="flex flex-wrap gap-2 xl:flex-nowrap">
             <MonthSelect value={month} onChange={setMonth} />
             <Button variant="secondary" icon={Download} onClick={exportCsv} loading={exporting} data-testid="exportar-csv">
               Exportar CSV
@@ -95,7 +97,7 @@ export default function FinancesPage() {
             <LinkButton to={withMonth('/finanzas/estado-de-cuenta', month, current)} variant="secondary" icon={Receipt}>
               Estado de cuenta
             </LinkButton>
-          </>
+          </div>
         }
       />
 
@@ -111,9 +113,15 @@ export default function FinancesPage() {
         <PendingApprovalsCard items={pending} base={base} onApprove={approve} onReject={reject} busyId={busyId} />
       )}
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card padding="lg" className="lg:col-span-2" as="section" aria-label="Ingresos vs. gastos (6 meses)">
-          <CardHeader title="Ingresos vs. gastos (6 meses)" subtitle={`Flujo de caja registrado, en ${base}`} action={<ChartLegend dark={dark} />} />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="text-headline-md text-primary">Ingresos vs. gastos (6 meses)</h2>
+              <p className="text-body-sm text-on-surface-variant">Flujo de caja registrado, en {base}</p>
+            </div>
+            <ChartLegend dark={dark} />
+          </div>
           {series ? <CashflowChart data={series} currency={base} selected={month} className="mt-4" /> : <Loading className="h-64" />}
         </Card>
         <MarginCard summary={summary} canWrite={perms.canWrite} onRecord={setRecording} />
@@ -121,12 +129,12 @@ export default function FinancesPage() {
 
       {performance ? <PerformanceSection rows={performance} base={base} showRoi={showRoi} /> : <Loading />}
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {kpis ? <PortfolioKpisCard kpis={kpis} base={base} /> : <Loading />}
         <CategoryBreakdownCard items={summary.expensesByCategory} base={base} />
       </div>
 
-      {recent ? <RecentTransactionsCard items={recent} base={base} allLink={withMonth('/finanzas/movimientos', month, current)} /> : <Loading />}
+      {recent ? <RecentTransactionsCard items={recent} base={base} allLink={withMonth('/finanzas/movimientos', month, current)} onOpen={setSelected} /> : <Loading />}
 
       <p className="flex items-start gap-2 text-body-sm text-on-surface-variant">
         <Info size={16} className="mt-0.5 shrink-0" aria-hidden />
@@ -134,6 +142,7 @@ export default function FinancesPage() {
       </p>
 
       {recording && <RecordTransactionModal initialType={recording} onClose={() => setRecording(null)} />}
+      {selected && <TxDetailModal tx={selected} base={base} onClose={() => setSelected(null)} />}
     </div>
   );
 }

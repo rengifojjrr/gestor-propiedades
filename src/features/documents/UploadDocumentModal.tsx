@@ -187,7 +187,7 @@ function UploadForm({ onDone, setBusy, defaultPropertyId }: { onDone: () => void
 
       <TextInput label="Nombre" value={name} onChange={(e) => setName(e.target.value)} error={errors.name} placeholder="Ej.: Póliza de seguro 2027" data-testid="nombre-documento" />
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Select
           label="Categoría"
           value={category}

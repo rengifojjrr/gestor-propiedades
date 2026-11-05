@@ -74,7 +74,6 @@ export function ChatView() {
 
           <div className="px-3 py-4 md:px-5">
             <ChatMessages messages={data.messages} viewer="person" lang={lang} now={clock.now()} large />
-            <div ref={endRef} />
           </div>
 
           {actor.readOnly ? (
@@ -121,6 +120,8 @@ export function ChatView() {
         <Lock size={16} className="mt-0.5 shrink-0" aria-hidden />
         {t('footnote')}
       </p>
+      {/* Al abrir se baja hasta aquí: quedan a la vista los últimos mensajes y el redactor. */}
+      <div ref={endRef} className="scroll-mb-36" aria-hidden />
     </div>
   );
 }

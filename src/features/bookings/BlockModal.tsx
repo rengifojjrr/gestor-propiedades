@@ -6,7 +6,7 @@ import type { Block } from '@/domain/types';
 import { addDays, diffDays, formatDate, formatDateLong } from '@/lib/dates';
 import { svc } from '@/services';
 import { Banner, Button, Modal, Select, TextInput } from '@/ui';
-import { BLOCK_REASON_LABEL } from './shared';
+import { BLOCK_REASON_LABEL, withFriendlyDates } from './shared';
 
 export interface BlockModalProps {
   properties: { id: string; name: string }[];
@@ -29,7 +29,7 @@ export function BlockModal({ properties, propertyId: initialProperty, start: ini
 
   const submit = async () => {
     if (!valid) return;
-    const ok = await run(() => svc.bookings.createBlock(actor, { propertyId, start, end, reason, note: note.trim() }), { success: 'Fechas bloqueadas' });
+    const ok = await run(() => withFriendlyDates(() => svc.bookings.createBlock(actor, { propertyId, start, end, reason, note: note.trim() })), { success: 'Fechas bloqueadas' });
     if (ok) onClose();
   };
 

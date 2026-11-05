@@ -6,11 +6,10 @@ import { Ban, CircleCheck, Hourglass } from 'lucide-react';
 import { useState } from 'react';
 import { useBusyAction } from '@/app/hooks';
 import { useActor } from '@/app/session';
-import { formatDateTime } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { svc, type OrderView } from '@/services';
 import { Button, cn, Modal, Money, TextArea } from '@/ui';
-import { useOpsAccess } from './shared';
+import { stamp, useOpsAccess } from './shared';
 
 export interface Threshold {
   amount: number;
@@ -109,16 +108,16 @@ export function ApprovalBox({ order, threshold }: { order: OrderView; threshold?
               {isOwner ? 'Tú decides si se hace.' : 'Espera la decisión del propietario.'}
             </p>
           )}
-          {a.decidedAt && <p className="mt-1 text-body-sm">{formatDateTime(a.decidedAt, order.timezone)}</p>}
+          {a.decidedAt && <p className="mt-1 text-body-sm">{stamp(a.decidedAt, order.timezone)}</p>}
           {a.note && <p className="mt-1 text-body-sm">«{a.note}»</p>}
         </div>
       </div>
       {a.status === 'pending' && isOwner && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button variant="success" icon={CircleCheck} onClick={() => setDeciding('approve')} data-testid="aprobar-gasto">
+        <div className="mt-3 flex gap-2 sm:max-w-sm">
+          <Button variant="success" icon={CircleCheck} className="flex-1" onClick={() => setDeciding('approve')} data-testid="aprobar-gasto">
             Aprobar
           </Button>
-          <Button variant="secondary" icon={Ban} onClick={() => setDeciding('reject')} data-testid="rechazar-gasto">
+          <Button variant="secondary" icon={Ban} className="flex-1" onClick={() => setDeciding('reject')} data-testid="rechazar-gasto">
             Rechazar
           </Button>
         </div>

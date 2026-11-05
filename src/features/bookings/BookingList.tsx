@@ -11,12 +11,11 @@ import { formatRange } from '@/lib/dates';
 import { svc, type BookingView } from '@/services';
 import { Avatar, Banner, BookingStatusBadge, Button, Card, cn, EmptyState, LinkButton, Loading, Money, SearchInput, Select } from '@/ui';
 import { CancelBookingModal } from './CancelBookingModal';
-import { ChannelBadge } from './shared';
 
 type StatusFilter = 'active' | BookingStatus | 'all';
 
 const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
-  { value: 'active', label: 'Activas (confirmadas y en curso)' },
+  { value: 'active', label: 'Activas' },
   { value: 'confirmed', label: 'Confirmadas' },
   { value: 'in_progress', label: 'En curso' },
   { value: 'completed', label: 'Terminadas' },
@@ -104,7 +103,7 @@ export function BookingList({ manage, money }: { manage: boolean; money: boolean
     </div>
   );
 
-  const title = STATUS_OPTIONS.find((o) => o.value === status)?.label.replace(/ \(.*\)$/, '') ?? 'Reservas';
+  const title = STATUS_OPTIONS.find((o) => o.value === status)?.label ?? 'Reservas';
 
   return (
     <div className="space-y-4">
@@ -129,8 +128,8 @@ export function BookingList({ manage, money }: { manage: boolean; money: boolean
             </h2>
             <span className="rounded-full bg-surface-container px-2.5 py-1 text-label-sm text-on-surface-variant">{bookings ? rows.length : '…'}</span>
           </div>
-          <div className="grid gap-2 md:grid-cols-[1fr_220px_240px]">
-            <SearchInput value={q} onChange={setQ} placeholder="Buscar huésped, código o propiedad" label="Buscar reservas" />
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_260px_170px]">
+            <SearchInput value={q} onChange={setQ} placeholder="Buscar huésped o código" label="Buscar reservas" />
             <Select aria-label="Propiedad" value={propertyId} onChange={(e) => setPropertyId(e.target.value)} placeholder="Todas las propiedades" options={propertyOptions} />
             <Select aria-label="Estado" value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)} options={STATUS_OPTIONS} />
           </div>
@@ -194,14 +193,13 @@ export function BookingList({ manage, money }: { manage: boolean; money: boolean
             </ul>
 
             {/* Computadora: tabla */}
-            <div className="hidden lg:block">
+            <div className="hidden overflow-x-auto lg:block">
               <table className="w-full border-collapse text-left">
                 <thead className="bg-surface-low text-on-surface-variant">
                   <tr>
                     <th scope="col" className="px-5 py-3 text-label-md">Huésped</th>
                     <th scope="col" className="px-3 py-3 text-label-md">Propiedad</th>
                     <th scope="col" className="px-3 py-3 text-label-md">Fechas</th>
-                    <th scope="col" className="px-3 py-3 text-label-md">Canal</th>
                     {money && <th scope="col" className="px-3 py-3 text-right text-label-md">Pago neto</th>}
                     <th scope="col" className="px-3 py-3 text-label-md">Estado</th>
                     <th scope="col" className="px-5 py-3 text-right text-label-md">Acciones</th>
@@ -214,20 +212,19 @@ export function BookingList({ manage, money }: { manage: boolean; money: boolean
                         <Link to={`/reservas/${b.id}`} className="flex items-center gap-3">
                           <Avatar name={b.guestName} />
                           <span className="min-w-0">
-                            <span className="block max-w-48 truncate text-label-md text-primary">{b.guestName}</span>
-                            <span className="text-label-sm font-normal text-on-surface-variant">{b.code}</span>
+                            <span className="block max-w-44 truncate text-label-md text-primary">{b.guestName}</span>
+                            <span className="text-label-sm font-normal whitespace-nowrap text-on-surface-variant">
+                              {b.code} · {CHANNEL_LABEL[b.channel]}
+                            </span>
                           </span>
                         </Link>
                       </td>
-                      <td className="max-w-52 px-3 py-3.5 text-body-sm text-on-surface-variant">
+                      <td className="max-w-44 px-3 py-3.5 text-body-sm text-on-surface-variant">
                         <span className="line-clamp-2">{b.propertyName}</span>
                       </td>
                       <td className="px-3 py-3.5 text-body-sm whitespace-nowrap text-on-surface-variant">
                         <span className="block text-on-surface">{formatRange(b.checkIn, b.checkOut)}</span>
                         {b.nights} {b.nights === 1 ? 'noche' : 'noches'} · {b.guests} pers.
-                      </td>
-                      <td className="px-3 py-3.5">
-                        <ChannelBadge channel={b.channel} />
                       </td>
                       {money && (
                         <td className="px-3 py-3.5 text-right">

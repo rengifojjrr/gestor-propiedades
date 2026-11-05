@@ -52,6 +52,16 @@ export function ChartLegend({ dark }: { dark: boolean }) {
   );
 }
 
+/** Marcas redondas para el eje (0 / 10 K / 20 K…), nunca 8.5 K. */
+export function niceTicks(max: number, count = 4): number[] {
+  if (!(max > 0)) return [0, 1];
+  const raw = max / count;
+  const pow = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((st) => st >= raw) ?? raw;
+  const top = Math.ceil(max / step) * step;
+  return Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step);
+}
+
 export function useIsDark(): boolean {
   // useTokenColors vuelve a pintar al cambiar la clase .dark, así que leerla aquí está al día.
   useTokenColors();
@@ -63,6 +73,7 @@ export function CashflowChart({ data, currency, selected, className }: { data: S
   const dark = useIsDark();
   const first = data[0]?.label;
   const last = data[data.length - 1]?.label;
+  const ticks = niceTicks(Math.max(0, ...data.map((p) => Math.max(p.income, p.expenses))));
   return (
     <div className={className}>
       <div className="h-64 w-full" role="img" aria-label={`Ingresos y gastos por mes, de ${first} a ${last}. Detalle en la tabla.`}>
@@ -84,6 +95,8 @@ export function CashflowChart({ data, currency, selected, className }: { data: S
             />
             <YAxis
               width={52}
+              ticks={ticks}
+              domain={[0, ticks[ticks.length - 1]]}
               tickLine={false}
               axisLine={false}
               tick={{ fill: c['on-surface-variant'], fontSize: 12 }}

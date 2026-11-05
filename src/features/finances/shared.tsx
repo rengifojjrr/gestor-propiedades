@@ -31,7 +31,10 @@ export function useMonthParam(allowAll = false): [string, (m: string) => void] {
   const [params, setParams] = useSearchParams();
   const raw = params.get('mes');
   const current = svc.finance.currentMonth();
-  const month = raw && (MONTH_RE.test(raw) || (allowAll && raw === 'todos')) && raw <= current ? raw : current;
+  // Solo los 12 meses del selector (o «todos» donde se permite); cualquier otra cosa vuelve al mes en curso.
+  const oldest = lastMonths(current, 12)[0];
+  const valid = !!raw && ((MONTH_RE.test(raw) && raw >= oldest && raw <= current) || (allowAll && raw === 'todos'));
+  const month = valid && raw ? raw : current;
   const setMonth = useCallback(
     (m: string) =>
       setParams(
@@ -51,13 +54,15 @@ export function useMonthParam(allowAll = false): [string, (m: string) => void] {
 export function MonthSelect({ value, onChange, allowAll = false, className }: { value: string; onChange: (m: string) => void; allowAll?: boolean; className?: string }) {
   const options = monthOptions();
   return (
-    <Select
-      aria-label="Mes"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      options={allowAll ? [...options, { value: 'todos', label: 'Todos los meses' }] : options}
-      className={cn('w-auto min-w-48 font-semibold text-primary', className)}
-    />
+    <div className={className ?? 'w-full sm:w-72'}>
+      <Select
+        aria-label="Mes"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        options={allowAll ? [...options, { value: 'todos', label: 'Todos los meses' }] : options}
+        className="font-semibold text-primary"
+      />
+    </div>
   );
 }
 
@@ -130,27 +135,38 @@ export function methodText(tx: Pick<Transaction, 'method' | 'reference'>): strin
   return [tx.method ? PAYMENT_METHOD_LABEL[tx.method] : null, tx.reference || null].filter(Boolean).join(' · ');
 }
 
-/** Fila compacta de un movimiento (lista del teléfono y «Últimos movimientos»). */
-export function TxRow({ tx, base, actions }: { tx: TransactionView; base?: string; actions?: ReactNode }) {
+/** Fila compacta de un movimiento (lista del teléfono y «Últimos movimientos»). Con `onOpen`, toda la fila abre el detalle. */
+export function TxRow({ tx, base, actions, onOpen }: { tx: TransactionView; base?: string; actions?: ReactNode; onOpen?: (tx: TransactionView) => void }) {
   const method = methodText(tx);
-  return (
-    <li className="flex items-start gap-3 py-3">
+  const body = (
+    <>
       <TxIcon type={tx.type} />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-label-md text-primary">{tx.description}</p>
-        <p className="truncate text-body-sm text-on-surface-variant">
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-label-md text-primary">{tx.description}</span>
+        <span className="block truncate text-body-sm text-on-surface-variant">
           {tx.propertyName} · {tx.categoryLabel}
-        </p>
-        <p className="truncate text-label-sm font-normal text-on-surface-variant">
+        </span>
+        <span className="block truncate text-label-sm font-normal text-on-surface-variant">
           {formatDate(tx.date)}
           {method && ` · ${method}`}
-        </p>
-        {actions && <div className="mt-2 flex flex-wrap gap-2">{actions}</div>}
-      </div>
-      <div className="flex shrink-0 flex-col items-end gap-1.5">
+        </span>
+      </span>
+      <span className="flex shrink-0 flex-col items-end gap-1.5">
         <TxAmount tx={tx} base={base} />
         {tx.status !== 'posted' && <TxStatusBadge status={tx.status} />}
-      </div>
+      </span>
+    </>
+  );
+  return (
+    <li>
+      {onOpen ? (
+        <button type="button" onClick={() => onOpen(tx)} className="-mx-2 flex w-[calc(100%+1rem)] items-start gap-3 rounded-md px-2 py-3 text-left transition-colors hover:bg-surface-low">
+          {body}
+        </button>
+      ) : (
+        <div className="flex items-start gap-3 py-3">{body}</div>
+      )}
+      {actions && !onOpen && <div className="-mt-1 flex flex-wrap gap-2 pb-3 pl-13">{actions}</div>}
     </li>
   );
 }
