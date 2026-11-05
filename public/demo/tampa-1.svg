@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1600 1000">
+<defs>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#3C9DE4"/>
+<stop offset=".7" stop-color="#9ED4F4"/>
+<stop offset="1" stop-color="#D6F0FC"/>
+</linearGradient>
+<linearGradient id="wallG" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#FFFFFF"/>
+<stop offset="1" stop-color="#ECF0F5"/>
+</linearGradient>
+<linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#B2DEF7"/>
+<stop offset=".6" stop-color="#7AB2DC"/>
+<stop offset="1" stop-color="#4C7DAE"/>
+</linearGradient>
+<linearGradient id="water" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#63DDE0"/>
+<stop offset=".45" stop-color="#25BACA"/>
+<stop offset="1" stop-color="#1395AF"/>
+</linearGradient>
+<linearGradient id="stone" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#F2EBDF"/>
+<stop offset="1" stop-color="#E2D6C3"/>
+</linearGradient>
+<linearGradient id="deck" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#D8B088"/>
+<stop offset="1" stop-color="#BE9168"/>
+</linearGradient>
+<linearGradient id="trunk" x1="0" y1="0" x2="1" y2="0">
+<stop offset="0" stop-color="#C2A584"/>
+<stop offset="1" stop-color="#9C8064"/>
+</linearGradient>
+<pattern id="slat" width="12" height="10" patternUnits="userSpaceOnUse">
+<rect width="5" height="10" fill="#A97A4E" opacity=".55"/>
+</pattern>
+<pattern id="plank" width="200" height="34" patternUnits="userSpaceOnUse" y="892">
+<rect width="200" height="3" fill="#A97A4E" opacity=".45"/>
+<rect x="120" y="3" width="3" height="31" fill="#A97A4E" opacity=".3"/>
+</pattern>
+<path id="fr" d="M0 0C40-42 116-48 178 8C126-6 62-2 0 0Z"/>
+<g id="crown">
+<use xlink:href="#fr" fill="#1F8A5B" transform="rotate(-28)"/>
+<use xlink:href="#fr" fill="#36A86E" transform="rotate(8)"/>
+<use xlink:href="#fr" fill="#1F8A5B" transform="rotate(42) scale(.85)"/>
+<use xlink:href="#fr" fill="#36A86E" transform="scale(-1 1) rotate(-28)"/>
+<use xlink:href="#fr" fill="#1F8A5B" transform="scale(-1 1) rotate(8)"/>
+<use xlink:href="#fr" fill="#36A86E" transform="scale(-1 1) rotate(42) scale(.85)"/>
+<use xlink:href="#fr" fill="#36A86E" transform="rotate(-68) scale(.8)"/>
+<use xlink:href="#fr" fill="#1F8A5B" transform="scale(-1 1) rotate(-68) scale(.8)"/>
+<circle cx="-7" cy="8" r="8" fill="#8A6A4E"/>
+<circle cx="7" cy="9" r="8" fill="#A07C5A"/>
+</g>
+<g id="lounger">
+<path d="M0 0H96L110-6" fill="none" stroke="#E2E8F0" stroke-width="5" stroke-linecap="round"/>
+<rect x="0" y="-12" width="86" height="12" rx="5" fill="#FFFFFF"/>
+<path d="M86-12L114-44L124-38L98-6Z" fill="#FFFFFF"/>
+<path d="M8 0V16M80 0V16" stroke="#94A3B8" stroke-width="4"/>
+</g>
+</defs>
+
+<rect width="1600" height="660" fill="url(#sky)"/>
+<g fill="#FFFFFF">
+<path d="M220 170a40 40 0 0 1 74-20a32 32 0 0 1 56 12a26 26 0 0 1 10 46H234a26 26 0 0 1-14-38Z" opacity=".95"/>
+<path d="M1180 120a32 32 0 0 1 58-16a26 26 0 0 1 46 10a20 20 0 0 1 6 36h-100a20 20 0 0 1-10-30Z" opacity=".9"/>
+<path d="M760 150a20 20 0 0 1 36-8a16 16 0 0 1 28 8a12 12 0 0 1 2 22h-62a12 12 0 0 1-4-22Z" opacity=".7"/>
+</g>
+
+<path fill="url(#trunk)" d="M378 640C380 560 388 480 400 420H410C400 480 394 560 392 640Z"/>
+<use xlink:href="#crown" transform="translate(405 418) scale(.7)"/>
+<path fill="url(#trunk)" d="M1222 640C1220 560 1214 480 1200 410H1210C1226 480 1234 560 1236 640Z"/>
+<use xlink:href="#crown" transform="translate(1205 408) scale(.72)"/>
+<g fill="#2E8B57">
+<circle cx="300" cy="600" r="70"/><circle cx="380" cy="620" r="56"/><circle cx="210" cy="626" r="50"/>
+<circle cx="1300" cy="600" r="72"/><circle cx="1220" cy="622" r="56"/><circle cx="1390" cy="626" r="52"/>
+<circle cx="80" cy="630" r="60"/><circle cx="1530" cy="630" r="60"/>
+</g>
+<g fill="#3FA36B">
+<circle cx="340" cy="580" r="40"/><circle cx="1260" cy="582" r="42"/><circle cx="140" cy="610" r="40"/><circle cx="1470" cy="612" r="42"/>
+</g>
+
+<rect x="560" y="300" width="580" height="130" fill="url(#wallG)"/>
+<rect x="600" y="328" width="360" height="82" fill="#1E293B"/>
+<rect x="606" y="334" width="348" height="70" fill="url(#glass)"/>
+<path d="M606 390L760 334H820L666 404H606Z" fill="#FFFFFF" opacity=".25"/>
+<path d="M690 334V404M780 334V404M870 334V404" stroke="#1E293B" stroke-width="5"/>
+<rect x="984" y="322" width="132" height="96" fill="#C99D6E"/>
+<rect x="984" y="322" width="132" height="96" fill="url(#slat)"/>
+<rect x="540" y="286" width="620" height="16" fill="#FFFFFF"/>
+<rect x="560" y="302" width="580" height="6" fill="#1E293B" opacity=".1"/>
+
+<rect x="400" y="440" width="800" height="190" fill="url(#wallG)"/>
+<rect x="400" y="440" width="104" height="190" fill="#C99D6E"/>
+<rect x="400" y="440" width="104" height="190" fill="url(#slat)"/>
+<rect x="520" y="458" width="664" height="172" fill="#1E293B"/>
+<rect x="526" y="464" width="652" height="166" fill="url(#glass)"/>
+<g fill="#FFE2B0" opacity=".35"><rect x="526" y="560" width="652" height="70"/></g>
+<rect x="760" y="520" width="140" height="60" rx="12" fill="#2C3D5C" opacity=".35"/>
+<path d="M830 464V500" stroke="#2C3D5C" stroke-width="3" opacity=".5"/>
+<circle cx="830" cy="508" r="10" fill="#FFE7B8" opacity=".9"/>
+<g fill="#FFFFFF" opacity=".22">
+<path d="M526 600L700 464H760L586 630H526Z"/>
+<path d="M900 630L1060 464H1090L930 630Z"/>
+</g>
+<path d="M634 464V630M742 464V630M850 464V630M958 464V630M1066 464V630" stroke="#1E293B" stroke-width="6"/>
+<rect x="380" y="426" width="840" height="16" fill="#FFFFFF"/>
+<rect x="400" y="442" width="800" height="6" fill="#1E293B" opacity=".1"/>
+<rect x="402" y="396" width="150" height="30" fill="#BFE3F8" opacity=".55"/>
+<rect x="1148" y="396" width="70" height="30" fill="#BFE3F8" opacity=".55"/>
+<path d="M402 396H552M1148 396H1218" stroke="#1E293B" stroke-width="4"/>
+<g transform="translate(470 396)">
+<path d="M-16 0H16L12 30H-12Z" fill="#E2E8F0"/>
+<path d="M0 0C-4-24-22-34-30-34C-26-18-14-6 0 0ZM0 0C6-26 20-36 30-38C28-20 16-6 0 0Z" fill="#2E8B57"/>
+</g>
+
+<rect y="630" width="1600" height="262" fill="url(#stone)"/>
+<path d="M0 700H240M1360 700H1600M0 780H222M1378 780H1600M0 850H208M1392 850H1600M120 630V892M1480 630V892" stroke="#D9CCB6" stroke-width="3"/>
+<use xlink:href="#lounger" transform="translate(912 676) scale(1.3)"/>
+<use xlink:href="#lounger" transform="translate(1124 676) scale(1.3)"/>
+<rect x="930" y="646" width="40" height="14" rx="6" fill="#6CF8BB"/>
+<g transform="translate(1100 676)"><rect x="-3" y="-30" width="6" height="30" fill="#94A3B8"/><ellipse cy="-30" rx="18" ry="5" fill="#FFFFFF"/><rect x="-6" y="-44" width="12" height="14" rx="3" fill="#FFB95F"/></g>
+
+<path d="M286 684H1314L1360 892H240Z" fill="#F7F3EC"/>
+<path d="M300 694H1300L1340 878H260Z" fill="url(#water)"/>
+<path d="M300 694H1300L1302 704H298Z" fill="#0E7F98" opacity=".35"/>
+<g opacity=".14">
+<rect x="404" y="706" width="796" height="44" fill="#FFFFFF"/>
+<rect x="526" y="710" width="652" height="34" fill="#1E293B"/>
+</g>
+<g fill="none" stroke="#B6F6F2" stroke-width="4" stroke-linecap="round" opacity=".6">
+<path d="M330 740q20-10 40 0t40 0M520 780q22-10 44 0t44 0t44 0M860 732q20-10 40 0t40 0M1100 764q22-10 44 0t44 0"/>
+<path d="M380 830q24-12 48 0t48 0M700 846q24-12 48 0t48 0t48 0M1040 828q24-12 48 0t48 0M1150 862q20-10 40 0"/>
+</g>
+<path d="M1244 878V786M1290 786L1298 878" fill="none" stroke="#E2E8F0" stroke-width="5"/>
+<path d="M1244 786H1290M1244 812H1292M1244 838H1295M1244 864H1297" stroke="#E2E8F0" stroke-width="4"/>
+
+<rect y="892" width="1600" height="108" fill="url(#deck)"/>
+<rect y="892" width="1600" height="108" fill="url(#plank)"/>
+<rect y="892" width="1600" height="6" fill="#1E293B" opacity=".1"/>
+
+<path fill="url(#trunk)" d="M136 960C136 760 156 520 196 250H214C178 520 162 760 164 960Z"/>
+<path d="M150 960C150 760 170 520 205 256" fill="none" stroke="#7E6450" stroke-width="20" stroke-dasharray="3 15" opacity=".35"/>
+<use xlink:href="#crown" transform="translate(205 248) scale(1.25)"/>
+<path fill="url(#trunk)" d="M1462 960C1462 760 1446 540 1404 270H1422C1468 540 1488 760 1490 960Z"/>
+<path d="M1476 960C1476 760 1458 540 1413 276" fill="none" stroke="#7E6450" stroke-width="20" stroke-dasharray="3 15" opacity=".35"/>
+<use xlink:href="#crown" transform="translate(1413 268) scale(1.25)"/>
+<ellipse cx="150" cy="962" rx="60" ry="10" fill="#1E293B" opacity=".15"/>
+<ellipse cx="1476" cy="962" rx="60" ry="10" fill="#1E293B" opacity=".15"/>
+</svg>

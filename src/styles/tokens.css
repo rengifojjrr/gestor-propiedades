@@ -1,0 +1,213 @@
+/*
+ * TOKENS DE DISEÑO — la única fuente de colores, letra, sombras y esquinas de la app.
+ * Vienen de la referencia de Stitch (propertypro/DESIGN.md). Ningún componente escribe un color
+ * a mano: usan las clases semánticas que salen de aquí (bg-surface, text-primary, …).
+ * tests/unit/tokens.test.ts verifica que no haya colores fuera de este archivo.
+ *
+ * Modo oscuro: la clase .dark en <html> cambia los valores; las clases semánticas no cambian.
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+
+  /* Azul marino: navegación, textos y acciones */
+  --gp-primary: #091426;
+  --gp-on-primary: #ffffff;
+  --gp-primary-container: #1e293b;
+  --gp-on-primary-container: #f8f9ff;
+  --gp-on-primary-container-muted: #b8c2d6;
+
+  /* Fondo y superficies (tarjetas blancas sobre fondo #F8F9FF) */
+  --gp-surface: #f8f9ff;
+  --gp-surface-lowest: #ffffff;
+  --gp-surface-low: #eff4ff;
+  --gp-surface-container: #e5eeff;
+  --gp-surface-high: #dce9ff;
+  --gp-surface-highest: #d3e4fe;
+  --gp-on-surface: #0b1c30;
+  --gp-on-surface-variant: #45474c;
+
+  /* Bordes */
+  --gp-outline: #75777d;
+  --gp-outline-variant: #c5c6cd;
+
+  /* Verde: ingresos y lo resuelto */
+  --gp-secondary: #006c49;
+  --gp-on-secondary: #ffffff;
+  --gp-secondary-container: #6cf8bb;
+  --gp-on-secondary-container: #005236;
+
+  /* Ámbar: lo pendiente (el #C88000 no llega a AA como texto: solo bordes, barras e íconos) */
+  --gp-warning: #c88000;
+  --gp-warning-strong: #ffb95f;
+  --gp-warning-container: #ffddb8;
+  --gp-on-warning-container: #653e00;
+
+  /* Rojo: lo urgente */
+  --gp-error: #ba1a1a;
+  --gp-on-error: #ffffff;
+  --gp-error-container: #ffdad6;
+  --gp-on-error-container: #93000a;
+
+  /* Informativo (azul claro de Stitch) */
+  --gp-info-container: #d8e3fb;
+  --gp-on-info-container: #3c475a;
+
+  /* Sobre fotos e ilustraciones */
+  --gp-on-image: #ffffff;
+  --gp-image-scrim: rgba(9, 20, 38, 0.55);
+  --gp-scrim: rgba(9, 20, 38, 0.45);
+
+  /* Foco visible */
+  --gp-focus: #006c49;
+
+  /* Sombras */
+  --gp-shadow-card: 0 4px 20px rgba(30, 41, 59, 0.05);
+  --gp-shadow-pop: 0 10px 32px rgba(30, 41, 59, 0.12);
+  --gp-shadow-lift: 0 8px 24px rgba(30, 41, 59, 0.14);
+}
+
+.dark {
+  color-scheme: dark;
+
+  --gp-primary: #bcc7de;
+  --gp-on-primary: #091426;
+  --gp-primary-container: #1e293b;
+  --gp-on-primary-container: #f8f9ff;
+  --gp-on-primary-container-muted: #b8c2d6;
+
+  --gp-surface: #0b1220;
+  --gp-surface-lowest: #121b2c;
+  --gp-surface-low: #172236;
+  --gp-surface-container: #1c2940;
+  --gp-surface-high: #22304a;
+  --gp-surface-highest: #2a3954;
+  --gp-on-surface: #e6edf9;
+  --gp-on-surface-variant: #b6bccb;
+
+  --gp-outline: #8b93a3;
+  --gp-outline-variant: #344158;
+
+  --gp-secondary: #4edea3;
+  --gp-on-secondary: #003825;
+  --gp-secondary-container: #005236;
+  --gp-on-secondary-container: #6ffbbe;
+
+  --gp-warning: #ffb95f;
+  --gp-warning-strong: #ffb95f;
+  --gp-warning-container: #653e00;
+  --gp-on-warning-container: #ffddb8;
+
+  --gp-error: #ffb4ab;
+  --gp-on-error: #690005;
+  --gp-error-container: #93000a;
+  --gp-on-error-container: #ffdad6;
+
+  --gp-info-container: #3c475a;
+  --gp-on-info-container: #d8e3fb;
+
+  --gp-on-image: #ffffff;
+  --gp-image-scrim: rgba(0, 0, 0, 0.55);
+  --gp-scrim: rgba(0, 0, 0, 0.6);
+
+  --gp-focus: #4edea3;
+
+  --gp-shadow-card: 0 4px 20px rgba(0, 0, 0, 0.35);
+  --gp-shadow-pop: 0 10px 32px rgba(0, 0, 0, 0.5);
+  --gp-shadow-lift: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Se quitan las paletas por defecto de Tailwind: solo existen los colores de arriba. */
+@theme {
+  --color-*: initial;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --text-shadow-*: initial;
+  --radius-*: initial;
+
+  /* Letra: Manrope para todo */
+  --font-sans: 'Manrope Variable', 'Manrope', ui-sans-serif, system-ui, sans-serif;
+
+  /* Esquinas sobre la cuadrícula de 4 px: 8 px (controles) y 16 px (tarjetas e imágenes) */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  /* Escala tipográfica de Stitch */
+  --text-headline-xl: 32px;
+  --text-headline-xl--line-height: 40px;
+  --text-headline-xl--letter-spacing: -0.02em;
+  --text-headline-xl--font-weight: 700;
+  --text-headline-lg: 24px;
+  --text-headline-lg--line-height: 32px;
+  --text-headline-lg--letter-spacing: -0.01em;
+  --text-headline-lg--font-weight: 700;
+  --text-headline-md: 20px;
+  --text-headline-md--line-height: 28px;
+  --text-headline-md--font-weight: 600;
+  --text-body-lg: 18px;
+  --text-body-lg--line-height: 28px;
+  --text-body-md: 16px;
+  --text-body-md--line-height: 24px;
+  --text-body-sm: 14px;
+  --text-body-sm--line-height: 20px;
+  --text-label-md: 14px;
+  --text-label-md--line-height: 16px;
+  --text-label-md--letter-spacing: 0.01em;
+  --text-label-md--font-weight: 600;
+  --text-label-sm: 12px;
+  --text-label-sm--line-height: 14px;
+  --text-label-sm--letter-spacing: 0.04em;
+  --text-label-sm--font-weight: 600;
+}
+
+@theme inline {
+  --color-primary: var(--gp-primary);
+  --color-on-primary: var(--gp-on-primary);
+  --color-primary-container: var(--gp-primary-container);
+  --color-on-primary-container: var(--gp-on-primary-container);
+  --color-on-primary-container-muted: var(--gp-on-primary-container-muted);
+
+  --color-surface: var(--gp-surface);
+  --color-surface-lowest: var(--gp-surface-lowest);
+  --color-surface-low: var(--gp-surface-low);
+  --color-surface-container: var(--gp-surface-container);
+  --color-surface-high: var(--gp-surface-high);
+  --color-surface-highest: var(--gp-surface-highest);
+  --color-on-surface: var(--gp-on-surface);
+  --color-on-surface-variant: var(--gp-on-surface-variant);
+
+  --color-outline: var(--gp-outline);
+  --color-outline-variant: var(--gp-outline-variant);
+
+  --color-secondary: var(--gp-secondary);
+  --color-on-secondary: var(--gp-on-secondary);
+  --color-secondary-container: var(--gp-secondary-container);
+  --color-on-secondary-container: var(--gp-on-secondary-container);
+
+  --color-warning: var(--gp-warning);
+  --color-warning-strong: var(--gp-warning-strong);
+  --color-warning-container: var(--gp-warning-container);
+  --color-on-warning-container: var(--gp-on-warning-container);
+
+  --color-error: var(--gp-error);
+  --color-on-error: var(--gp-on-error);
+  --color-error-container: var(--gp-error-container);
+  --color-on-error-container: var(--gp-on-error-container);
+
+  --color-info-container: var(--gp-info-container);
+  --color-on-info-container: var(--gp-on-info-container);
+
+  --color-on-image: var(--gp-on-image);
+  --color-image-scrim: var(--gp-image-scrim);
+  --color-scrim: var(--gp-scrim);
+  --color-focus: var(--gp-focus);
+
+  --shadow-card: var(--gp-shadow-card);
+  --shadow-pop: var(--gp-shadow-pop);
+  --shadow-lift: var(--gp-shadow-lift);
+}
