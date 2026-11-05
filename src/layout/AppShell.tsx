@@ -59,15 +59,15 @@ export function AppShell() {
       <a href="#contenido" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[90] focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-on-primary">
         Ir al contenido
       </a>
-      <header className="pt-safe sticky top-0 z-40 border-b border-outline-variant bg-surface-lowest/95 backdrop-blur">
+      <header className="no-print pt-safe sticky top-0 z-40 border-b border-outline-variant bg-surface-lowest/95 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-[1440px] items-center justify-between gap-3 px-4 md:px-6">
           <Link to="/" className="min-w-0" aria-label="Inicio">
             <Brand />
           </Link>
           <div className="flex items-center gap-1 md:gap-2">
-            <Badge tone="warn" className="hidden md:inline-flex">
-              Datos de ejemplo
-            </Badge>
+            <span className="hidden md:block">
+              <Badge tone="warn">Datos de ejemplo</Badge>
+            </span>
             {person && (
               <div className="flex rounded-full bg-surface-container p-0.5" role="group" aria-label="Idioma / Language">
                 {(['es', 'en'] as const).map((l) => (
@@ -97,7 +97,7 @@ export function AppShell() {
 
       <div className="mx-auto flex max-w-[1440px]">
         {!person && (
-          <aside className="sticky top-16 hidden h-[calc(100dvh-4rem)] w-64 shrink-0 flex-col overflow-y-auto border-r border-outline-variant bg-surface-container py-5 lg:flex" aria-label="Menú">
+          <aside className="no-print sticky top-16 hidden h-[calc(100dvh-4rem)] w-64 shrink-0 flex-col overflow-y-auto border-r border-outline-variant bg-surface-container py-5 lg:flex" aria-label="Menú">
             <p className="mb-3 px-6 text-label-sm uppercase text-on-surface-variant">{ROLE_LABEL[user.role]}</p>
             <nav className="flex flex-col gap-1 px-2">
               {nav.rail.map((item) => (
@@ -162,7 +162,7 @@ export function AppShell() {
         </main>
       </div>
 
-      <nav className={cn('pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-outline-variant bg-surface-lowest shadow-pop', !person && 'lg:hidden')} aria-label="Menú principal">
+      <nav className={cn('no-print pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-outline-variant bg-surface-lowest shadow-pop', !person && 'lg:hidden')} aria-label="Menú principal">
         <div className={cn('mx-auto flex h-20 items-center justify-around px-2', person && 'max-w-3xl')}>
           {nav.bottom.map((item) => {
             const active = isActive(item, pathname);

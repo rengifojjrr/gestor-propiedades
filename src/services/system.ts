@@ -3,7 +3,7 @@
  * tareas automáticas (tick) y herramientas de la demo (restablecer, exportar e importar JSON).
  */
 import { data } from '@/data';
-import { buildSeed } from '@/data/seed';
+import { DEFAULT_DB_NAME } from '@/data/local/dexieStore';
 import { TABLE_NAMES, type Snapshot, type Tables } from '@/data/store';
 import { ROLE_LABEL } from '@/domain/labels';
 import { dueDateFor } from '@/domain/rules';
@@ -425,10 +425,34 @@ export async function demoInfo(): Promise<DemoInfo> {
   return { seeded: !!s, seedDate: s?.seedDate, today, stale: !!s && s.seedDate !== today };
 }
 
+/** Intenta cargar la semilla en un Worker (fuera del hilo principal). Devuelve false si no se pudo. */
+function seedInWorker(): Promise<boolean> {
+  if (typeof window === 'undefined' || typeof Worker === 'undefined' || import.meta.env.MODE === 'test') return Promise.resolve(false);
+  return new Promise((resolve) => {
+    try {
+      const worker = new Worker(new URL('../data/seedWorker.ts', import.meta.url), { type: 'module' });
+      const done = (ok: boolean) => {
+        worker.terminate();
+        resolve(ok);
+      };
+      worker.onmessage = (e: MessageEvent<{ ok: boolean }>) => done(e.data.ok);
+      worker.onerror = () => done(false);
+      worker.postMessage({ dbName: DEFAULT_DB_NAME, nowIso: clock.now().toISO() });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
 /** Restablece los datos de ejemplo para «hoy». */
 export async function resetDemo(): Promise<void> {
-  const tables = buildSeed(clock.now());
-  await data().replaceAll(tables, []);
+  if (await seedInWorker()) {
+    data().touch();
+  } else {
+    // La semilla se carga solo cuando hace falta (no pesa en el arranque).
+    const { buildSeed } = await import('@/data/seed');
+    await data().replaceAll(buildSeed(clock.now()), []);
+  }
   await tick();
 }
 

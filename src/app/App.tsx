@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { RouterProvider } from 'react-router';
 import { svc } from '@/services';
-import { ConfirmProvider, ErrorState, Loading, ToastProvider } from '@/ui';
+import { ConfirmProvider, ErrorState, ToastProvider } from '@/ui';
 import { router } from './router';
 import { SessionProvider } from './session';
 
@@ -35,7 +35,9 @@ export function App() {
   return (
     <ToastProvider>
       <ConfirmProvider>
-        <SessionProvider ready={ready}>{ready ? <RouterProvider router={router} /> : <Loading label="Preparando los datos de ejemplo…" className="min-h-dvh" />}</SessionProvider>
+        <SessionProvider ready={ready}>
+          <RouterProvider router={router} />
+        </SessionProvider>
       </ConfirmProvider>
     </ToastProvider>
   );

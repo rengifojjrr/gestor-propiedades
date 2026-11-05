@@ -2,7 +2,7 @@
  * Operación: limpieza (checklist con fotos obligatorias, faltantes y daños), mantenimiento
  * (órdenes, costos, aprobación por umbral), incidencias, preventivo y proveedores.
  */
-import { DEFAULT_VENDOR_FOR } from '@/data/seed/catalog';
+import { DEFAULT_VENDOR_FOR } from '@/domain/config';
 import { data } from '@/data';
 import { needsOwnerApproval, nextDueDate, rateFor } from '@/domain/rules';
 import { MAINTENANCE_CATEGORY_LABEL, PRIORITY_LABEL } from '@/domain/labels';

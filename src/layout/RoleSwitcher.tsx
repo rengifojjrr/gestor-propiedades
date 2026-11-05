@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router';
 import { HOME_BY_ROLE, useSession } from '@/app/session';
 import { ROLE_DESCRIPTION, ROLE_LABEL } from '@/domain/labels';
 import type { User } from '@/domain/types';
+import { useTour } from '@/features/tour/tour';
 import { Avatar, cn, Modal } from '@/ui';
 
 export function AccountList({ onPick, currentId }: { onPick: (u: User) => void; currentId?: string }) {
@@ -41,6 +42,9 @@ export function RoleSwitcher() {
   const { realUser, login } = useSession();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const tour = useTour();
+  // Durante el recorrido, el propio recorrido cambia de rol (el botón vuelve al minimizarlo).
+  if (tour.active && !tour.minimized) return null;
   return (
     <>
       <button

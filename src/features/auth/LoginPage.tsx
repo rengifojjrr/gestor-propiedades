@@ -15,7 +15,7 @@ import { formatDate } from '@/lib/dates';
 import { clearLangPreference } from '@/lib/i18n';
 import { svc } from '@/services';
 import { AccountList } from '@/layout/RoleSwitcher';
-import { Badge, Banner, Button, Card, CardHeader, Loading, tokenValue } from '@/ui';
+import { Badge, Banner, Button, Card, CardHeader, Loading, Skeleton, tokenValue } from '@/ui';
 
 function AppQr() {
   const [src, setSrc] = useState<string>();
@@ -41,8 +41,7 @@ export default function LoginPage() {
   const info = useLive(() => svc.system.demoInfo(), []);
   const install = useInstall();
   const [starting, setStarting] = useState(false);
-  if (!ready) return <Loading label="Preparando los datos de ejemplo…" className="min-h-dvh" />;
-  if (realUser) return <Navigate to={HOME_BY_ROLE[realUser.role]} replace />;
+  if (ready && realUser) return <Navigate to={HOME_BY_ROLE[realUser.role]} replace />;
 
   return (
     <div className="min-h-dvh bg-surface">
@@ -68,13 +67,22 @@ export default function LoginPage() {
         <div className="grid gap-6 lg:grid-cols-5">
           <Card padding="lg" className="lg:col-span-3">
             <CardHeader title="Entrar como…" subtitle="Elige una cuenta de ejemplo. Cada rol ve su propia app y solo sus datos." />
-            <AccountList
-              onPick={(u) => {
-                clearLangPreference();
-                login(u.id);
-                navigate(HOME_BY_ROLE[u.role]);
-              }}
-            />
+            {ready ? (
+              <AccountList
+                onPick={(u) => {
+                  clearLangPreference();
+                  login(u.id);
+                  navigate(HOME_BY_ROLE[u.role]);
+                }}
+              />
+            ) : (
+              <div className="space-y-2" aria-busy="true">
+                <Loading label="Preparando los datos de ejemplo…" className="py-4" />
+                {Array.from({ length: 6 }, (_, i) => (
+                  <Skeleton key={i} className="h-16" />
+                ))}
+              </div>
+            )}
           </Card>
 
           <div className="space-y-6 lg:col-span-2">
@@ -90,6 +98,7 @@ export default function LoginPage() {
                 className="mt-4"
                 fullWidth
                 loading={starting}
+                disabled={!ready}
                 data-testid="iniciar-recorrido"
                 onClick={async () => {
                   setStarting(true);

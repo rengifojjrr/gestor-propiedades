@@ -74,6 +74,11 @@
   background: var(--color-surface-container);
 }
 
+/* Con el recorrido abierto, el contenido deja espacio para su panel. */
+body.tour-active main {
+  padding-bottom: 22rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -86,6 +91,11 @@
 @media print {
   .no-print {
     display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+    max-width: none !important;
   }
 
   body {

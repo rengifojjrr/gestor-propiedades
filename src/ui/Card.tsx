@@ -41,11 +41,12 @@ export function Card({ tone = 'default', padding = 'md', accent, as: Tag = 'div'
   );
 }
 
-export function CardHeader({ title, subtitle, action, className }: { title: ReactNode; subtitle?: ReactNode; action?: ReactNode; className?: string }) {
+/** Encabezado de tarjeta. `as` = nivel del título (h2 por defecto; h3 si la tarjeta está dentro de una Section). */
+export function CardHeader({ title, subtitle, action, className, as: Heading = 'h2' }: { title: ReactNode; subtitle?: ReactNode; action?: ReactNode; className?: string; as?: 'h2' | 'h3' }) {
   return (
     <div className={cn('mb-3 flex items-start justify-between gap-3', className)}>
       <div className="min-w-0">
-        <h3 className="text-headline-md text-primary">{title}</h3>
+        <Heading className="text-headline-md text-primary">{title}</Heading>
         {subtitle && <p className="text-body-sm text-on-surface-variant">{subtitle}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}

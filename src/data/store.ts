@@ -158,4 +158,6 @@ export interface DataStore {
   dumpAll(): Promise<{ tables: Tables; files: FileRecord[] }>;
   /** Avisa cuando cambia algo (las pantallas se refrescan solas). */
   subscribe(listener: () => void): () => void;
+  /** Para cambios hechos desde otro contexto (p. ej. la semilla cargada en un Worker). */
+  touch(): void;
 }

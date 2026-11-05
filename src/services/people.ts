@@ -2,7 +2,7 @@
  * Huéspedes e inquilinos (registro sin documentos reales), bandeja única de mensajes por reserva o
  * contrato, plantillas ES/EN con variables y «Enviar a todos». Nada sale por WhatsApp ni correo.
  */
-import { TEMPLATE_VARIABLES } from '@/data/seed/catalog';
+import { TEMPLATE_VARIABLES } from '@/domain/config';
 import { data } from '@/data';
 import { dueDateFor, renderTemplate } from '@/domain/rules';
 import {

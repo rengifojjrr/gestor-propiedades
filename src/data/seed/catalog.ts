@@ -3,11 +3,11 @@
  * TODO ES INVENTADO: nombres, direcciones («de ejemplo»), teléfonos (555), correos (.test),
  * códigos y montos. Las fechas se calculan en ./index.ts a partir de «hoy».
  */
+import { DEFAULT_VENDOR_FOR, TEMPLATE_VARIABLES } from '@/domain/config';
 import type {
   AccessCode,
   Checklist,
   Lang,
-  MaintenanceCategory,
   Property,
   Role,
   Template,
@@ -540,7 +540,7 @@ export const SEED_PROPERTIES: SeedProperty[] = [
 /** Códigos INVENTADOS para la demo. */
 export const SEED_ACCESS_CODES: AccessCode[] = [
   { id: 'ac-miami-door', propertyId: 'p-miami', kind: 'door', label: 'Puerta 2405', value: '482913' },
-  { id: 'ac-miami-wifi', propertyId: 'p-miami', kind: 'wifi', label: 'Brickell-2405', value: 'BahiaAzul#2405' },
+  { id: 'ac-miami-wifi', propertyId: 'p-miami', kind: 'wifi', label: 'Brickell-2405', value: 'BahiaAzul-2405!' },
   { id: 'ac-orlando-gate', propertyId: 'p-orlando', kind: 'gate', label: 'Portón', value: '7316' },
   { id: 'ac-orlando-lockbox', propertyId: 'p-orlando', kind: 'lockbox', label: 'Caja de llaves', value: '2580' },
   { id: 'ac-orlando-alarm', propertyId: 'p-orlando', kind: 'alarm', label: 'Alarma', value: '9047' },
@@ -624,29 +624,4 @@ export const SEED_TEMPLATES: Template[] = [
   },
 ];
 
-export const TEMPLATE_VARIABLES: { key: string; label: string }[] = [
-  { key: 'guest_name', label: 'Nombre del huésped o inquilino' },
-  { key: 'property_name', label: 'Nombre de la propiedad' },
-  { key: 'city', label: 'Ciudad' },
-  { key: 'check_in', label: 'Fecha de entrada' },
-  { key: 'check_out', label: 'Fecha de salida' },
-  { key: 'check_in_time', label: 'Hora de entrada' },
-  { key: 'check_out_time', label: 'Hora de salida' },
-  { key: 'amount', label: 'Monto (renta)' },
-  { key: 'due_date', label: 'Fecha de pago' },
-  { key: 'company', label: 'Nombre de la empresa' },
-  { key: 'app_link', label: 'Link a la app' },
-];
-
-/** Proveedor por defecto para cada categoría (el técnico con cuenta cubre lo general). */
-export const DEFAULT_VENDOR_FOR: Record<MaintenanceCategory, string> = {
-  plumbing: 'v-aguilar',
-  electrical: 'v-aguilar',
-  hvac: 'v-aguilar',
-  appliances: 'v-aguilar',
-  locks: 'v-aguilar',
-  general: 'v-aguilar',
-  pool: 'v-piscinas',
-  pests: 'v-fumi',
-  garden: 'v-jardin',
-};
+export { DEFAULT_VENDOR_FOR, TEMPLATE_VARIABLES };

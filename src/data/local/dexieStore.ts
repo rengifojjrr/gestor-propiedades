@@ -39,18 +39,26 @@ class GpDexie extends Dexie {
   }
 }
 
-export function createDexieStore(name = "gestor-propiedades"): DataStore & { close(): void; db: GpDexie } {
+export const DEFAULT_DB_NAME = 'gestor-propiedades';
+
+export function createDexieStore(name = DEFAULT_DB_NAME): DataStore & { close(): void; db: GpDexie } {
   const db = new GpDexie(name);
   const listeners = new Set<() => void>();
   let pending: ReturnType<typeof setTimeout> | null = null;
+  let firstPendingAt = 0;
 
-  // Se avisa fuera de la transacción (setTimeout) para no mezclar lecturas con el contexto de Dexie.
+  // Se avisa fuera de la transacción (setTimeout) para no mezclar lecturas con el contexto de Dexie, y agrupando
+  // las escrituras seguidas (40 ms, máximo 200 ms de espera) para no recalcular todas las pantallas en cada una.
+  const fire = () => {
+    pending = null;
+    firstPendingAt = 0;
+    listeners.forEach((l) => l());
+  };
   const notify = () => {
-    if (pending) return;
-    pending = setTimeout(() => {
-      pending = null;
-      listeners.forEach((l) => l());
-    }, 0);
+    const now = Date.now();
+    if (!firstPendingAt) firstPendingAt = now;
+    if (pending) clearTimeout(pending);
+    pending = setTimeout(fire, now - firstPendingAt > 200 ? 0 : 40);
   };
 
   const table = <T extends Row>(n: string) => db.table(n) as Table<T, string>;
@@ -153,6 +161,7 @@ export function createDexieStore(name = "gestor-propiedades"): DataStore & { clo
         listeners.delete(listener);
       };
     },
+    touch: () => notify(),
     close: () => db.close(),
   };
 }
