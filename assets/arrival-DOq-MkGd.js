@@ -1,0 +1,1 @@
+import{t as r,w as n}from"./shared-DdBxlqcB.js";function o(t,a){const e=t.nextCheckIn;if(e)return e.date===t.date?`Llega otro huésped a las ${r(e.time)}`:`Próxima llegada: ${n(e.date,e.time,a).toLowerCase()}`}export{o as n};

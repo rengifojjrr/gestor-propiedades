@@ -12,10 +12,21 @@
     <link rel="icon" href="/gestor-propiedades/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/gestor-propiedades/icons/apple-touch-icon.png" />
     <title>Gestor de Propiedades</title>
-    <script type="module" crossorigin src="/gestor-propiedades/assets/index-CrSa7-J-.js"></script>
-    <link rel="stylesheet" crossorigin href="/gestor-propiedades/assets/index-zrHlGLEn.css">
-  <link rel="manifest" href="/gestor-propiedades/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/gestor-propiedades/registerSW.js"></script></head>
+    <script type="module" crossorigin src="/gestor-propiedades/assets/index-BKa9Sogo.js"></script>
+    <link rel="stylesheet" crossorigin href="/gestor-propiedades/assets/index-CvPyGiI5.css">
+  <link rel="manifest" href="/gestor-propiedades/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/gestor-propiedades/registerSW.js" defer></script></head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Pantalla de carga estática (se pinta antes del JavaScript; React la reemplaza). -->
+      <div class="min-h-dvh bg-surface px-4 py-8 md:py-12">
+        <div class="mx-auto max-w-5xl">
+          <img src="/gestor-propiedades/logo.svg" alt="" width="56" height="56" class="h-14 w-14 rounded-lg" />
+          <div class="mt-3"><h1 class="text-headline-xl text-primary">Gestor de Propiedades</h1>
+          <p class="mt-1 text-body-lg text-on-surface-variant">Uso interno: todas las propiedades, sus problemas y sus cuentas, desde un solo panel.</p>
+          </div>
+          <p class="mt-3 text-label-md text-on-surface-variant">Cargando la demo…</p>
+        </div>
+      </div>
+    </div>
   </body>
 </html>
