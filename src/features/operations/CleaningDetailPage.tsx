@@ -193,18 +193,20 @@ export default function CleaningDetailPage() {
             {linked.length ? (
               <ul className="space-y-2">
                 {linked.map((i) => (
-                  <li key={i.id}>
-                    <Link to={i.maintenanceOrderId ? `/operacion/mantenimiento/${i.maintenanceOrderId}` : '/operacion/incidencias'} className="flex items-start gap-3 rounded-md bg-surface-low p-3 hover:bg-surface-container">
-                      <Siren size={18} className="mt-0.5 shrink-0 text-error" aria-hidden />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-label-md text-primary">{i.title}</span>
-                        <span className="block text-body-sm text-on-surface-variant">
-                          {INCIDENT_STATUS_LABEL[i.status]}
-                          {i.orderCode ? ` · orden ${i.orderCode}` : ''}
-                        </span>
-                      </span>
-                      <PriorityBadge priority={i.severity} />
-                    </Link>
+                  <li key={i.id} className="flex items-start gap-3 rounded-md bg-surface-low p-3">
+                    <Siren size={18} className="mt-0.5 shrink-0 text-error" aria-hidden />
+                    <span className="min-w-0 flex-1">
+                      <Link to="/operacion/incidencias" className="block text-label-md text-primary hover:underline">
+                        {i.title}
+                      </Link>
+                      <span className="block text-body-sm text-on-surface-variant">{INCIDENT_STATUS_LABEL[i.status]}</span>
+                      {i.maintenanceOrderId && (
+                        <Link to={`/operacion/mantenimiento/${i.maintenanceOrderId}`} className="mt-1 inline-block text-label-sm text-secondary hover:underline">
+                          Ver orden {i.orderCode ?? ''}
+                        </Link>
+                      )}
+                    </span>
+                    <PriorityBadge priority={i.severity} />
                   </li>
                 ))}
               </ul>

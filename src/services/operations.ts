@@ -879,10 +879,11 @@ export interface PreventiveView extends PreventiveSchedule {
 }
 
 export async function listPreventive(actor: Actor): Promise<PreventiveView[]> {
-  const s = await authorize(actor, 'maintenance.write');
+  // Lectura: en «Ver como…» (solo mirar) también se puede ver la lista.
+  const s = await authorize(actor, 'maintenance.read');
   const db = data();
   const [items, props, vendors] = await Promise.all([db.preventive.all(), db.properties.all(), db.vendors.all()]);
-  return allowed(s, 'maintenance.write', items, (x) => ({ propertyId: x.propertyId }))
+  return allowed(s, 'maintenance.read', items, (x) => ({ propertyId: x.propertyId, assigneeId: x.assigneeUserId }))
     .map((x) => {
       const p = props.find((pp) => pp.id === x.propertyId);
       return {

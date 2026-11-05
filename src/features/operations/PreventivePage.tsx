@@ -6,11 +6,11 @@ import { CalendarClock, Pencil, Plus, Repeat, Sparkles, Truck } from 'lucide-rea
 import { useState } from 'react';
 import { useAction, useBusyAction } from '@/app/hooks';
 import { useActor } from '@/app/session';
-import { useLive } from '@/data/live';
+import { useLive, useLiveResult } from '@/data/live';
 import type { MaintenanceCategory } from '@/domain/types';
 import { formatDate } from '@/lib/dates';
 import { svc, type PreventiveView } from '@/services';
-import { Banner, Button, cn, EmptyState, Loading, Modal, Money, PageHeader, Select, TextInput, Toggle } from '@/ui';
+import { Banner, Button, cn, EmptyState, ErrorState, Loading, Modal, Money, PageHeader, Select, TextInput, Toggle } from '@/ui';
 import { CATEGORY_OPTIONS, CategoryTile, everyLabel, InfoLine, numberOrUndefined, useFieldStaff } from './shared';
 
 function dueLabel(days: number): { text: string; tone: 'bad' | 'warn' | 'neutral' } {
@@ -199,11 +199,20 @@ function PreventiveCard({ item, currency, onEdit }: { item: PreventiveView; curr
 
 export default function PreventivePage() {
   const actor = useActor();
-  const items = useLive(() => svc.operations.listPreventive(actor), [actor]);
+  const res = useLiveResult(() => svc.operations.listPreventive(actor), [actor]);
+  const items = res.data;
   const props = useLive(() => svc.properties.listProperties(actor), [actor]);
   const [editing, setEditing] = useState<PreventiveView | 'new' | null>(null);
   const [propertyFilter, setPropertyFilter] = useState('');
-  if (!items) return <Loading />;
+  if (!items)
+    return res.loading ? (
+      <Loading />
+    ) : (
+      <div className="space-y-4">
+        <PageHeader back="/operacion" title="Mantenimiento preventivo" />
+        <ErrorState error={res.error ?? 'No se pudo cargar el preventivo.'} />
+      </div>
+    );
   const properties = [...new Map(items.map((i) => [i.propertyId, i.propertyName])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
   const list = items.filter((i) => !propertyFilter || i.propertyId === propertyFilter);
   const soon = items.filter((i) => i.active && i.dueInDays <= 7).length;

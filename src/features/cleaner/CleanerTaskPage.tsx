@@ -80,7 +80,7 @@ function PhotoSection({ task, phase, step }: { task: CleaningTaskView; phase: Ph
   const before = phase === 'before';
   const title = before ? 'Fotos de antes' : 'Fotos de después';
   return (
-    <Card padding="lg" as="section" aria-label={title} data-testid={before ? 'seccion-antes' : 'seccion-despues'}>
+    <Card padding="lg" as="section" aria-label={title} data-testid={before ? 'seccion-antes' : 'seccion-despues'} className="flex flex-col">
       <div className="mb-1 flex items-center justify-between gap-2">
         <h2 className="text-headline-md text-primary">
           <span className="text-on-surface-variant">{step}.</span> {title}
@@ -95,7 +95,7 @@ function PhotoSection({ task, phase, step }: { task: CleaningTaskView; phase: Ph
       </div>
       <p className="mb-4 text-body-sm text-on-surface-variant">{before ? 'Cómo encontraste cada cuarto, antes de tocar nada.' : 'Cómo queda todo al terminar.'}</p>
       <PhotoGrid fileIds={ids} alt={before ? 'Foto de antes' : 'Foto de después'} onRemove={(fileId) => run(() => svc.operations.removeCleaningPhoto(actor, task.id, fileId))} className="mb-4" />
-      <div className="[&_button:first-of-type]:w-full">
+      <div className="mt-auto [&_button:first-of-type]:w-full">
         <PhotoInput
           onPhoto={async (blob) => {
             await run(() => svc.operations.addCleaningPhoto(actor, task.id, phase, blob));
@@ -305,7 +305,7 @@ export default function CleanerTaskPage() {
   const actor = useActor();
   const run = useAction();
   const res = useLiveResult(() => svc.operations.getCleaning(actor, id), [actor, id]);
-  const [finished, setFinished] = useState(false);
+  const [finishedId, setFinishedId] = useState<string>();
   const [finishing, setFinishing] = useState(false);
   const [reporting, setReporting] = useState(false);
 
@@ -319,7 +319,7 @@ export default function CleanerTaskPage() {
     );
 
   const t = res.data;
-  if (finished) return <FinishedScreen task={t} />;
+  if (finishedId === t.id) return <FinishedScreen task={t} />;
   if (t.status === 'done') return <DoneSummary task={t} />;
   if (t.status === 'cancelled')
     return (
@@ -336,13 +336,13 @@ export default function CleanerTaskPage() {
     const done = await run(() => svc.operations.completeCleaning(actor, t.id));
     setFinishing(false);
     if (done) {
-      setFinished(true);
+      setFinishedId(t.id);
       window.scrollTo({ top: 0 });
     }
   };
 
   return (
-    <div className="mx-auto max-w-2xl space-y-5" data-testid="tarea-limpieza">
+    <div key={t.id} className="mx-auto max-w-2xl space-y-5" data-testid="tarea-limpieza">
       <TaskHeader task={t} />
       {t.notes && (
         <Banner icon={StickyNote} tone="warn">

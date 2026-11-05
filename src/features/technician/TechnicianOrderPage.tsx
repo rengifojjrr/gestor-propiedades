@@ -303,7 +303,7 @@ export default function TechnicianOrderPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-5" data-testid="orden-tecnico">
       <OrderHeader order={o} />
-      {closed ? <ResolvedSummary order={o} /> : <WorkView order={o} />}
+      {closed ? <ResolvedSummary order={o} /> : <WorkView key={o.id} order={o} />}
     </div>
   );
 }

@@ -242,7 +242,7 @@ export default function OrderDetailPage() {
             </Card>
           )}
 
-          {canManage && open && <EditOrderCard key={`${o.status}|${o.priority}|${o.scheduledDate ?? ''}|${o.estimate ?? ''}`} order={o} />}
+          {canManage && open && <EditOrderCard key={`${o.id}|${o.status}|${o.priority}|${o.scheduledDate ?? ''}|${o.estimate ?? ''}`} order={o} />}
         </div>
 
         <div className="space-y-6">

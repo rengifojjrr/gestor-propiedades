@@ -28,6 +28,7 @@ export function UrgentOrderCard({ order, onAssign, wide }: { order: OrderView; o
             <Icon size={18} className="mt-0.5 shrink-0" aria-hidden />
             <span>{order.title}</span>
           </p>
+          {order.description && <p className="mt-1 line-clamp-2 text-body-sm text-on-surface-variant">{order.description}</p>}
         </div>
         <div className="space-y-1.5">
           <InfoLine icon={Wrench}>

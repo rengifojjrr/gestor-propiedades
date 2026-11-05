@@ -83,7 +83,8 @@ export function SessionProvider({ children, ready: dataReady }: { children: Reac
 
   const value = useMemo<SessionValue>(
     () => ({
-      ready: dataReady && accountsList !== undefined,
+      // Listo cuando hay datos Y ya llegó la lista de cuentas (si no, un enlace profundo se pierde al recargar).
+      ready: dataReady && Array.isArray(accountsList),
       user,
       realUser,
       actor,
