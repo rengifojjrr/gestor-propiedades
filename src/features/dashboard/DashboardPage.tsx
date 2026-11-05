@@ -16,7 +16,14 @@ function OwnerPanel() {
   const res = useLiveResult(() => svc.dashboard.ownerDashboard(actor), [actor]);
   if (res.error && !res.data) return <ErrorState error={res.error} />;
   if (!res.data) return <Loading label="Cargando el panel…" />;
-  return <OwnerDashboard data={res.data} userName={actor.user.name} canCreate={perms.allowed('property.create')} />;
+  return (
+    <OwnerDashboard
+      data={res.data}
+      userName={actor.user.name}
+      canCreate={perms.allowed('property.create')}
+      canApprove={actor.user.role === 'owner'}
+    />
+  );
 }
 
 function SupportPanel() {

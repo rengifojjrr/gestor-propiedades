@@ -12,7 +12,8 @@ import { addMonthsToKey, formatDateLong, monthLabel } from '@/lib/dates';
 import { formatPercent } from '@/lib/money';
 import type { OwnerDashboard as OwnerDashboardData } from '@/services';
 import { Card, cn, Eyebrow, LinkButton, Money, PageHeader, StatCard } from '@/ui';
-import { AlertsSection, MovementsSection, PortfolioMapSection, PropertyStatusSection, TodayTasksSection, when } from './widgets';
+import { when } from '@/features/properties/shared';
+import { AlertsSection, MovementsSection, PortfolioMapSection, PropertyStatusSection, TodayTasksSection } from './widgets';
 
 function firstName(name: string) {
   return name.split(/\s+/)[0] ?? name;
@@ -55,7 +56,7 @@ function modeSummary(modes: RentalMode[]): string {
     .join(' · ');
 }
 
-export function OwnerDashboard({ data, userName, canCreate }: { data: OwnerDashboardData; userName: string; canCreate: boolean }) {
+export function OwnerDashboard({ data, userName, canCreate, canApprove }: { data: OwnerDashboardData; userName: string; canCreate: boolean; canApprove: boolean }) {
   const { counts, finance, kpis, overdueRent, arrivals } = data;
   const total = counts.total || 1;
   const base = finance?.baseCurrency;
@@ -93,7 +94,13 @@ export function OwnerDashboard({ data, userName, canCreate }: { data: OwnerDashb
           )}
           {data.pendingApprovals > 0 && (
             <AttentionChip to="/operacion" icon={BadgeDollarSign} tone="warn">
-              {data.pendingApprovals === 1 ? '1 gasto por aprobar' : `${data.pendingApprovals} gastos por aprobar`}
+              {canApprove
+                ? data.pendingApprovals === 1
+                  ? '1 gasto por aprobar'
+                  : `${data.pendingApprovals} gastos por aprobar`
+                : data.pendingApprovals === 1
+                  ? '1 gasto espera al propietario'
+                  : `${data.pendingApprovals} gastos esperan al propietario`}
             </AttentionChip>
           )}
         </div>

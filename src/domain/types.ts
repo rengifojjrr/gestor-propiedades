@@ -6,6 +6,9 @@
  */
 import { z } from 'zod';
 
+// Mensajes de validación de zod en español para todo lo que no trae un mensaje propio.
+z.config(z.locales.es());
+
 // ───────────────────────── Básicos ─────────────────────────
 export const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Usa una fecha AAAA-MM-DD');
 export const isoDateTime = z.string().min(10);

@@ -4,7 +4,7 @@
  */
 import { Building2, LayoutGrid, Map as MapIcon, Plus, SearchX } from 'lucide-react';
 import { Suspense, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { useActor } from '@/app/session';
 import { useLive, useLiveResult } from '@/data/live';
 import { PROPERTY_STATUS_LABEL } from '@/domain/labels';
@@ -19,6 +19,7 @@ type SortKey = 'name' | 'occupancy' | 'income';
 type ViewMode = 'list' | 'map';
 
 const STATUSES: PropertyStatus[] = ['occupied', 'vacant', 'maintenance', 'blocked'];
+const STATUS_FILTER_LABEL: Record<PropertyStatus, string> = { occupied: 'Ocupadas', vacant: 'Libres', maintenance: 'En mantenimiento', blocked: 'Bloqueadas' };
 
 /** Minúsculas y sin acentos, para buscar «san juan» o «atlánta» igual. */
 const fold = (s: string) =>
@@ -68,7 +69,7 @@ export default function PropertiesPage() {
   const cities = new Set(properties?.map((p) => p.city)).size;
   const sortOptions = [
     { value: 'name', label: 'Orden: nombre' },
-    ...(finance ? [{ value: 'occupancy', label: 'Orden: ocupación' }, { value: 'income', label: 'Orden: ingresos del mes' }] : []),
+    ...(finance ? [{ value: 'occupancy', label: 'Orden: ocupación' }, { value: 'income', label: 'Orden: ingresos' }] : []),
   ];
 
   const setStatus = (value: string) => {
@@ -96,40 +97,49 @@ export default function PropertiesPage() {
         }
       />
 
-      <Card padding="sm" className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">
-        <SearchInput value={q} onChange={setQ} placeholder="Buscar por nombre, ciudad o barrio…" label="Buscar propiedades" className="md:flex-1" />
-        <div className="grid grid-cols-2 gap-2 md:flex md:w-auto">
-          <Select
-            aria-label="Filtrar por estado"
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            options={[{ value: '', label: 'Estado: todos' }, ...STATUSES.map((s) => ({ value: s, label: PROPERTY_STATUS_LABEL[s] }))]}
-            className="md:w-44"
-          />
-          <Select aria-label="Ordenar" value={sort} onChange={(e) => setSort(e.target.value as SortKey)} options={sortOptions} className="md:w-52" />
+      <Card padding="sm" className="mb-6 space-y-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+          <SearchInput value={q} onChange={setQ} placeholder="Buscar por nombre, ciudad o barrio" label="Buscar propiedades" className="md:flex-1" />
+          <div className="flex gap-2">
+            {sortOptions.length > 1 && (
+              <Select aria-label="Ordenar" value={sort} onChange={(e) => setSort(e.target.value as SortKey)} options={sortOptions} className="min-w-0 flex-1 md:w-48" />
+            )}
+            <Tabs<ViewMode>
+              ariaLabel="Vista"
+              value={view}
+              onChange={setView}
+              className="shrink-0"
+              tabs={[
+                {
+                  id: 'list',
+                  label: (
+                    <>
+                      <LayoutGrid size={16} aria-hidden />
+                      <span className="sr-only sm:not-sr-only">Tarjetas</span>
+                    </>
+                  ),
+                },
+                {
+                  id: 'map',
+                  label: (
+                    <>
+                      <MapIcon size={16} aria-hidden />
+                      <span className="sr-only sm:not-sr-only">Mapa</span>
+                    </>
+                  ),
+                },
+              ]}
+            />
+          </div>
         </div>
-        <Tabs<ViewMode>
-          ariaLabel="Vista"
-          value={view}
-          onChange={setView}
-          className="self-start md:self-auto"
+        <Tabs<PropertyStatus | ''>
+          ariaLabel="Filtrar por estado"
+          value={status}
+          onChange={setStatus}
+          className="bg-surface-low"
           tabs={[
-            {
-              id: 'list',
-              label: (
-                <>
-                  <LayoutGrid size={16} aria-hidden /> Tarjetas
-                </>
-              ),
-            },
-            {
-              id: 'map',
-              label: (
-                <>
-                  <MapIcon size={16} aria-hidden /> Mapa
-                </>
-              ),
-            },
+            { id: '', label: 'Todas', count: properties?.length },
+            ...STATUSES.map((s) => ({ id: s, label: STATUS_FILTER_LABEL[s], count: properties?.filter((p) => p.status === s).length })),
           ]}
         />
       </Card>
@@ -155,13 +165,16 @@ export default function PropertiesPage() {
         <EmptyState icon={SearchX} title="Ninguna propiedad coincide" body="Prueba con otra búsqueda o quita el filtro de estado." />
       ) : view === 'map' ? (
         <Card padding="none" className="overflow-hidden">
-          <Suspense fallback={<Loading label="Cargando el mapa…" className="h-[28rem]" />}>
-            <LazyMap markers={markers} className="h-[28rem] rounded-none md:h-[34rem]" ariaLabel="Mapa del portafolio" />
+          <Suspense fallback={<Loading label="Cargando el mapa…" className="h-112" />}>
+            <LazyMap markers={markers} className="h-112 rounded-none md:h-136" ariaLabel="Mapa del portafolio" />
           </Suspense>
           <ul className="flex flex-wrap gap-x-5 gap-y-2 border-t border-outline-variant/40 px-4 py-3 text-body-sm text-on-surface-variant" aria-label="Propiedades en el mapa">
             {shown.map((p) => (
               <li key={p.id}>
-                <span className="text-on-surface">{p.name}</span> · {PROPERTY_STATUS_LABEL[p.status]}
+                <Link to={`/propiedades/${p.id}`} className="text-primary underline-offset-2 hover:underline">
+                  {p.name}
+                </Link>{' '}
+                · {PROPERTY_STATUS_LABEL[p.status]}
               </li>
             ))}
           </ul>

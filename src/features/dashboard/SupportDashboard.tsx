@@ -68,8 +68,8 @@ export function SupportDashboard({ data, userName }: { data: SupportDashboardDat
         </Tile>
       </section>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-        <MovementsSection arrivals={data.arrivals} departures={data.departures} className="lg:col-span-2" title="Llegadas y salidas" />
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+        <MovementsSection arrivals={data.arrivals} departures={data.departures} title="Llegadas y salidas" />
         <InHouseSection guests={data.inHouse} />
       </div>
 

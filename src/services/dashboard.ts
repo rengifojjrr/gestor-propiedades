@@ -2,13 +2,15 @@
  * Panel único: cifras del portafolio, lo de hoy, alertas, estado de cada propiedad y mapa.
  * Compone otros servicios; cada parte respeta los permisos de quien mira.
  */
+import { data } from '@/data';
+import { convert } from '@/domain/rules';
 import type { PropertyStatus } from '@/domain/types';
 import type { HealthResult } from '@/domain/rules';
 import { todayIn, todayLocal } from '@/lib/clock';
 import { addDays, monthKeyOf } from '@/lib/dates';
 import { round2 } from '@/lib/money';
 import { listBookings, type BookingView } from './bookings';
-import { can, subjectFor, type Actor } from './core';
+import { can, getSettings, subjectFor, type Actor } from './core';
 import { monthSummary, portfolioKpis, propertyPerformance, type MonthSummary, type PortfolioKpis, type PropertyKpis } from './finance';
 import { listLeases } from './leases';
 import { listCleaning, listIncidents, listOrders, type CleaningTaskView, type OrderView } from './operations';
@@ -29,7 +31,8 @@ export interface OwnerDashboard {
   occupancy: number;
   finance?: MonthSummary;
   kpis?: PortfolioKpis;
-  overdueRent: { count: number; amount: number };
+  /** Rentas atrasadas (renta + recargo), convertidas a la moneda base. */
+  overdueRent: { count: number; amount: number; currency: string };
   alerts: NotificationView[];
   properties: DashboardProperty[];
   arrivals: BookingView[];
@@ -60,7 +63,12 @@ export async function ownerDashboard(actor: Actor): Promise<OwnerDashboard> {
   ]);
   const counts = { total: props.length, occupied: 0, vacant: 0, maintenance: 0, blocked: 0 };
   for (const p of props) counts[p.status]++;
-  const overdue = leases.flatMap((l) => l.ledger.filter((r) => r.status === 'overdue'));
+  const [settings, rates] = await Promise.all([getSettings(), data().fxRates.all()]);
+  const overdue = leases.flatMap((l) =>
+    l.ledger
+      .filter((r) => r.status === 'overdue')
+      .map((r) => ({ ...r, base: convert(r.rent + r.lateFee, l.currency, settings.baseCurrency, settings.baseCurrency, rates, r.dueDate) })),
+  );
   const arrivals = bookings.filter((b) => b.status === 'confirmed' && b.checkIn >= b.today && b.checkIn <= addDays(b.today, 2));
   const departures = bookings.filter((b) => b.checkOut >= b.today && b.checkOut <= addDays(b.today, 1));
   const todayCleanings = cleanings.filter((t) => t.date <= todayIn(t.timezone));
@@ -73,7 +81,7 @@ export async function ownerDashboard(actor: Actor): Promise<OwnerDashboard> {
     occupancy,
     finance,
     kpis,
-    overdueRent: { count: overdue.length, amount: round2(overdue.reduce((a, r) => a + r.rent + r.lateFee, 0)) },
+    overdueRent: { count: overdue.length, amount: round2(overdue.reduce((a, r) => a + r.base, 0)), currency: settings.baseCurrency },
     alerts: alerts.slice(0, 6),
     properties: props.map((p) => ({ property: p, health: health[p.id], kpis: perf.find((k) => k.propertyId === p.id) })),
     arrivals,

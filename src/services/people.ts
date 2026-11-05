@@ -459,3 +459,32 @@ export async function engagementStats(actor: Actor): Promise<EngagementStats> {
     unread: threads.reduce((s, t) => s + t.unreadTeam, 0),
   };
 }
+
+// ───────────────────────── Abrir la conversación de una reserva o contrato ─────────────────────────
+
+/**
+ * Id de la conversación de una reserva o de un contrato; si todavía no existe, la crea vacía.
+ * La usa «Enviar mensaje» del equipo (registro de huéspedes, inquilinos y ficha de la persona).
+ */
+export async function ensureThread(actor: Actor, ref: { bookingId?: string; leaseId?: string }): Promise<string> {
+  const db = data();
+  let base: Pick<Thread, 'kind' | 'propertyId' | 'personId' | 'subject' | 'bookingId' | 'leaseId'>;
+  if (ref.bookingId) {
+    const b = await db.bookings.get(ref.bookingId);
+    if (!b) throw new NotFoundError('la reserva');
+    await authorize(actor, 'message.send', { propertyId: b.propertyId, personId: b.guestId });
+    const existing = (await db.threads.find((t) => t.bookingId === b.id))[0];
+    if (existing) return existing.id;
+    base = { kind: 'booking', propertyId: b.propertyId, personId: b.guestId, bookingId: b.id, subject: `Reserva ${b.code}` };
+  } else if (ref.leaseId) {
+    const l = await db.leases.get(ref.leaseId);
+    if (!l) throw new NotFoundError('el contrato');
+    await authorize(actor, 'message.send', { propertyId: l.propertyId, personId: l.tenantId });
+    const existing = (await db.threads.find((t) => t.leaseId === l.id))[0];
+    if (existing) return existing.id;
+    base = { kind: 'lease', propertyId: l.propertyId, personId: l.tenantId, leaseId: l.id, subject: `Contrato ${l.code}` };
+  } else throw new RuleError('Falta la reserva o el contrato de la conversación.');
+  const thread: Thread = { id: newId('th'), ...base, lastMessageAt: nowIso(), lastMessagePreview: '', unreadTeam: 0, unreadPerson: 0, createdAt: nowIso() };
+  await db.threads.put(thread);
+  return thread.id;
+}

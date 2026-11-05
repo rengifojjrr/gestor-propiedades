@@ -23,10 +23,10 @@ import { Suspense, useMemo, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { CLEANING_TYPE_LABEL, PROPERTY_STATUS_LABEL } from '@/domain/labels';
 import type { NotificationKind } from '@/domain/types';
-import { formatDate, formatTime, relativeDay } from '@/lib/dates';
+import { formatDate, formatTime } from '@/lib/dates';
 import { formatPercent } from '@/lib/money';
 import type { BookingView, CleaningTaskView, DashboardProperty, NotificationView, OrderView } from '@/services';
-import { HealthChip, propertyMarker } from '@/features/properties/shared';
+import { HealthChip, InfoRow, propertyMarker, when } from '@/features/properties/shared';
 import {
   Badge,
   Card,
@@ -43,50 +43,19 @@ import {
   Section,
 } from '@/ui';
 
-// ───────────────────────── Fila de lista ─────────────────────────
-
-/** Fila navegable: ícono, título (con algo al lado) y una segunda línea con chip + detalle. */
-export function InfoRow({
-  to,
-  icon: Icon,
-  title,
-  meta,
-  badge,
-  titleEnd,
-  testId,
-}: {
-  to: string;
-  icon: LucideIcon;
-  title: ReactNode;
-  meta: ReactNode;
-  badge?: ReactNode;
-  titleEnd?: ReactNode;
-  testId?: string;
-}) {
-  return (
-    <Link to={to} data-testid={testId} className="flex min-h-14 items-center gap-3 rounded-md bg-surface-low px-3 py-2.5 transition-colors hover:bg-surface-container">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-lowest text-primary shadow-card">
-        <Icon size={20} aria-hidden />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-label-md text-primary">{title}</span>
-          {titleEnd && <span className="shrink-0">{titleEnd}</span>}
-        </span>
-        <span className="mt-1 flex min-w-0 items-center gap-2">
-          {badge && <span className="shrink-0">{badge}</span>}
-          <span className="truncate text-body-sm text-on-surface-variant">{meta}</span>
-        </span>
-      </span>
-      <ChevronRight size={18} className="shrink-0 text-on-surface-variant" aria-hidden />
-    </Link>
-  );
-}
+// ───────────────────────── Enlaces de sección ─────────────────────────
 
 /** Enlace «Ver todas →» de la cabecera de una sección. */
-export function SectionLink({ to, children, className }: { to: string; children: ReactNode; className?: string }) {
+export function SectionLink({ to, children, className, hideOnPhone }: { to: string; children: ReactNode; className?: string; hideOnPhone?: boolean }) {
   return (
-    <Link to={to} className={cn('inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-label-md whitespace-nowrap text-primary hover:underline', className)}>
+    <Link
+      to={to}
+      className={cn(
+        hideOnPhone ? 'hidden sm:inline-flex' : 'inline-flex',
+        'shrink-0 items-center gap-1 rounded-md px-2 py-1 text-label-md whitespace-nowrap hover:underline',
+        className ?? 'text-primary',
+      )}
+    >
       {children} <ArrowRight size={16} aria-hidden />
     </Link>
   );
@@ -167,7 +136,11 @@ export function PropertyStatusSection({ rows, baseCurrency, className }: { rows:
   const showMoney = !!baseCurrency && rows.some((r) => r.kpis);
   const showOccupancy = rows.some((r) => r.kpis);
   return (
-    <Section title="Estado de las propiedades" className={className} action={<SectionLink to="/propiedades" className="hidden sm:inline-flex">Ver todas</SectionLink>}>
+    <Section title="Estado de las propiedades" className={className} action={
+        <SectionLink to="/propiedades" hideOnPhone>
+          Ver todas
+        </SectionLink>
+      }>
       <Card padding="none" className="overflow-hidden">
         {/* Tableta y computadora: tabla */}
         <table className="hidden w-full table-fixed text-left md:table">
@@ -314,12 +287,6 @@ function GroupTitle({ icon: Icon, children, count }: { icon: LucideIcon; childre
   );
 }
 
-/** «Hoy 4:00 p. m.», «Mañana 11:00 a. m.» o «sáb 7 nov 4:00 p. m.». */
-export function when(date: string, today: string, time: string) {
-  const day = relativeDay(date, today);
-  return `${/^(Hoy|Mañana|Ayer)$/.test(day) ? day : formatDate(date, { weekday: true })} ${formatTime(time)}`;
-}
-
 const EnBadge = () => (
   <Badge tone="info">
     <abbr title="Habla inglés" className="no-underline">
@@ -427,7 +394,7 @@ export function TodayTasksSection({ cleanings, orders, className }: { cleanings:
                         icon={SprayCan}
                         title={t.propertyName}
                         badge={t.overdue ? <Badge tone="bad">Atrasada</Badge> : <CleaningStatusBadge status={t.status} />}
-                        meta={`${CLEANING_TYPE_LABEL[t.type]} · ${t.overdue ? `era para el ${formatDate(t.date)}` : formatTime(t.time)} · ${t.assigneeName ?? 'Sin asignar'}`}
+                        meta={`${t.overdue ? `Era para el ${formatDate(t.date)}` : formatTime(t.time)} · ${t.assigneeName ?? 'Sin asignar'} · ${CLEANING_TYPE_LABEL[t.type]}`}
                       />
                     </li>
                   ))}
@@ -459,7 +426,7 @@ export function OrderRows({ orders }: { orders: OrderView[] }) {
             icon={Wrench}
             title={o.title}
             badge={<PriorityBadge priority={o.priority} />}
-            meta={`${o.code} · ${o.propertyName} · ${o.assigneeName ?? o.vendorName ?? 'Sin asignar'}`}
+            meta={`${o.propertyName} · ${o.assigneeName ?? o.vendorName ?? 'Sin asignar'} · ${o.code}`}
           />
         </li>
       ))}

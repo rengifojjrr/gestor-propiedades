@@ -290,7 +290,10 @@ export interface PropertyKpis {
   city: string;
   rentalMode: Property['rentalMode'];
   heroSrc: string;
+  /** Moneda de la propiedad (ADR y RevPAR van en esta moneda). */
   currency: string;
+  /** Moneda de ingresos, gastos y neto (consolidados en la moneda base). */
+  baseCurrency: string;
   income: number;
   expenses: number;
   net: number;
@@ -331,7 +334,7 @@ export async function propertyOccupancy(propertyId: string, start: string, endEx
 export async function propertyPerformance(actor: Actor, month: string): Promise<PropertyKpis[]> {
   const s = await authorize(actor, 'finance.read');
   const db = data();
-  const [props, txs] = await Promise.all([db.properties.all(), scopedTransactions(actor)]);
+  const [props, txs, settings] = await Promise.all([db.properties.all(), scopedTransactions(actor), getSettings()]);
   const start = monthStart(month);
   const end = monthEndExclusive(month);
   const rows: PropertyKpis[] = [];
@@ -347,6 +350,7 @@ export async function propertyPerformance(actor: Actor, month: string): Promise<
       rentalMode: p.rentalMode,
       heroSrc: p.photos[0]?.src ?? '',
       currency: p.currency,
+      baseCurrency: settings.baseCurrency,
       ...t,
       margin,
       occupancy: occ.occupancy,
