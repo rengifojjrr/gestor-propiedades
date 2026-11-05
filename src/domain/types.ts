@@ -240,6 +240,8 @@ export const BlockSchema = z.object({
   end: isoDate,
   reason: z.enum(['owner', 'maintenance', 'other']),
   note: z.string(),
+  /** UID del evento si vino de un .ics (para no importarlo dos veces). */
+  externalUid: z.string().optional(),
 });
 export type Block = z.infer<typeof BlockSchema>;
 

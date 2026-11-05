@@ -470,6 +470,7 @@ export async function importIcs(actor: Actor, propertyId: string, text: string):
   }
   const result: IcsImportResult = { created: [], blocks: [], skipped: [] };
   const existing = await db.bookings.all();
+  const existingBlocks = await db.blocks.find((b) => b.propertyId === p.id);
   let count = existing.length;
   const toDate = (t: InstanceType<typeof ICAL.Time>) =>
     t.isDate
@@ -489,7 +490,12 @@ export async function importIcs(actor: Actor, propertyId: string, text: string):
       continue;
     }
     const uid = ev.uid || `${summary}-${start}`;
-    if (existing.some((b) => b.externalUid === uid) || result.created.some((b) => b.externalUid === uid)) {
+    if (
+      existing.some((b) => b.externalUid === uid) ||
+      existingBlocks.some((b) => b.externalUid === uid) ||
+      result.created.some((b) => b.externalUid === uid) ||
+      result.blocks.some((b) => b.externalUid === uid)
+    ) {
       result.skipped.push({ summary, reason: 'Ya estaba importada' });
       continue;
     }
@@ -505,7 +511,7 @@ export async function importIcs(actor: Actor, propertyId: string, text: string):
       continue;
     }
     if (isBlock) {
-      const block: Block = { id: newId('blk'), propertyId: p.id, start, end, reason: 'other', note: `Importado del .ics: ${summary}` };
+      const block: Block = { id: newId('blk'), propertyId: p.id, start, end, reason: 'other', note: `Importado del .ics: ${summary}`, externalUid: uid };
       await db.blocks.put(block);
       result.blocks.push(block);
       continue;

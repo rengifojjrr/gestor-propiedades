@@ -91,7 +91,7 @@ export function formatRange(start: string, end: string): string {
 export function formatDateTime(isoTimestamp: string, timezone?: string): string {
   let d = DateTime.fromISO(isoTimestamp);
   if (timezone) d = d.setZone(timezone);
-  return d.setLocale(LOCALE).toFormat('d LLL, h:mm a').replace('.', '');
+  return d.setLocale(LOCALE).toFormat('d LLL, h:mm a').replace(/\.(?=,)/, '');
 }
 
 export function formatTime(hm: string): string {
