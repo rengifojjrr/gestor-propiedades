@@ -55,3 +55,8 @@ export function slugify(text: string): string {
 export function tidyText(text: string): string {
   return text.replace(/([^.])\.\.(?!\.)/g, '$1.');
 }
+
+/** El servicio guarda los primeros 90 caracteres del último mensaje: si se cortó, termina en «…». */
+export function previewText(preview: string): string {
+  return preview.length >= 90 ? `${preview.trimEnd()}…` : preview;
+}

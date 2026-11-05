@@ -9,11 +9,6 @@ export function makeT<K extends string>(dict: Dict<K>, lang: Lang) {
   return (key: K, vars?: Record<string, string | number>) => translate(dict, lang, key, vars);
 }
 
-/** Plural sencillo: elige la clave «_one» o «_other». */
-export function plural(n: number, one: string, other: string): string {
-  return n === 1 ? one : other;
-}
-
 // ───────────────────────── Común ─────────────────────────
 
 const commonEs = {

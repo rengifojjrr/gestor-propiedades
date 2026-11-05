@@ -4,7 +4,7 @@
  */
 import { DateTime } from 'luxon';
 import type { Lang } from '@/domain/types';
-import { diffDays, formatDate, formatDateLong, formatRange, formatTime, monthLabel, parseDate, timeAgo } from '@/lib/dates';
+import { diffDays, formatDate, formatDateLong, formatRange, formatTime, monthLabel, parseDate } from '@/lib/dates';
 
 const EN = 'en-US';
 
@@ -62,18 +62,6 @@ export function fClock(isoTimestamp: string, lang: Lang): string {
 export function fStamp(isoTimestamp: string, lang: Lang): string {
   const d = DateTime.fromISO(isoTimestamp);
   return `${fDate(d.toISODate()!, lang)}, ${fClock(isoTimestamp, lang)}`;
-}
-
-/** «hace 5 min» / «5 min ago». */
-export function fAgo(isoTimestamp: string, now: DateTime, lang: Lang): string {
-  if (lang === 'es') return timeAgo(isoTimestamp, now);
-  const minutes = Math.round(now.diff(DateTime.fromISO(isoTimestamp), 'minutes').minutes);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? 'yesterday' : `${days} days ago`;
 }
 
 /** Separador de días del chat: «Hoy», «Ayer» o la fecha. */

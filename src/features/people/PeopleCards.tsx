@@ -9,7 +9,7 @@ import { formatDate, formatRange, relativeDay } from '@/lib/dates';
 import type { GuestRegistryRow, LeaseView, PersonView, ThreadView } from '@/services';
 import { Avatar, Badge, Button, cn, LinkButton } from '@/ui';
 import { useOpenThread } from './hooks';
-import { SPEAKS, STAGE_LABEL, type Stage } from './text';
+import { previewText, SPEAKS, STAGE_LABEL, type Stage } from './text';
 
 function CityChip({ city }: { city: string }) {
   if (!city) return null;
@@ -105,7 +105,7 @@ export function GuestCard({ row, canSend }: { row: GuestRegistryRow; canSend: bo
             )}
           >
             <MessageSquare size={14} className="mt-0.5 shrink-0" aria-hidden />
-            <span className="line-clamp-2">«{row.lastMessage}»</span>
+            <span className="line-clamp-2">«{previewText(row.lastMessage)}»</span>
           </p>
         )}
       </div>
@@ -164,7 +164,7 @@ export function TenantCard({ person, thread, lease, canSend }: { person: PersonV
         {thread?.lastMessagePreview && (
           <p className="mt-2 flex items-start gap-2 rounded-md bg-surface-container px-2.5 py-2 text-body-sm text-on-surface-variant italic">
             <MessageSquare size={14} className="mt-0.5 shrink-0" aria-hidden />
-            <span className="line-clamp-2">«{thread.lastMessagePreview}»</span>
+            <span className="line-clamp-2">«{previewText(thread.lastMessagePreview)}»</span>
           </p>
         )}
       </div>

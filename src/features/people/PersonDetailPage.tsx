@@ -18,7 +18,7 @@ import { Avatar, Badge, Banner, BookingStatusBadge, Button, Card, CardHeader, Em
 import { useSubject } from './hooks';
 import { MessageButton } from './PeopleCards';
 import { personInput, PersonEditModal } from './PersonEditModal';
-import { LANG_LABEL, SPEAKS } from './text';
+import { LANG_LABEL, previewText, SPEAKS } from './text';
 
 const LEASE_STATUS = { active: 'Vigente', ended: 'Terminado', terminated: 'Cancelado' } as const;
 
@@ -191,12 +191,12 @@ function ProfileCard({ person }: { person: PersonView }) {
       {(person.kind === 'guest' || person.lastStay) && (
         <dl className="mt-3 grid grid-cols-2 gap-3">
           <div className="rounded-md bg-surface-low p-3">
-            <dt className="text-label-sm text-on-surface-variant">Estadías terminadas</dt>
-            <dd className="text-headline-md text-primary tabular">{person.stays}</dd>
+            <dt className="text-label-sm text-on-surface-variant">Estadías</dt>
+            <dd className="text-body-lg font-semibold text-primary tabular">{person.stays === 1 ? '1 terminada' : `${person.stays} terminadas`}</dd>
           </div>
           <div className="rounded-md bg-surface-low p-3">
             <dt className="text-label-sm text-on-surface-variant">Última salida</dt>
-            <dd className="text-label-md text-primary">{person.lastStay ? formatDate(person.lastStay, { year: true }) : '—'}</dd>
+            <dd className="text-body-lg font-semibold text-primary">{person.lastStay ? formatDate(person.lastStay, { year: true }) : '—'}</dd>
           </div>
         </dl>
       )}
@@ -211,6 +211,31 @@ function ProfileCard({ person }: { person: PersonView }) {
       )}
     </Card>
   );
+}
+
+/** Lo de ahora: en casa, la próxima llegada o el contrato vigente (tarjeta marina). */
+function NowCard({ person: p, className }: { person: PersonView; className?: string }) {
+  const now = p.currentBooking ?? p.nextBooking;
+  const today = todayLocal();
+  if (now)
+    return (
+      <Card tone="dark" padding="lg" as="section" aria-label={p.currentBooking ? 'En casa ahora' : 'Próxima llegada'} className={className}>
+        <p className="text-label-md tracking-widest text-on-primary-container-muted uppercase">{p.currentBooking ? 'En casa ahora' : 'Próxima llegada'}</p>
+        <p className="mt-1 text-headline-lg">{now.propertyName}</p>
+        <p className="text-body-md text-on-primary-container-muted">
+          {formatRange(now.checkIn, now.checkOut)} · {p.currentBooking ? `sale ${relativeDay(now.checkOut, today).toLowerCase()}` : `llega ${relativeDay(now.checkIn, today).toLowerCase()}`}
+        </p>
+      </Card>
+    );
+  if (p.lease)
+    return (
+      <Card tone="dark" padding="lg" as="section" aria-label="Contrato vigente" className={className}>
+        <p className="text-label-md tracking-widest text-on-primary-container-muted uppercase">Contrato vigente</p>
+        <p className="mt-1 text-headline-lg">{p.lease.propertyName}</p>
+        <p className="text-body-md text-on-primary-container-muted">Hasta el {formatDate(p.lease.end, { year: true })}</p>
+      </Card>
+    );
+  return null;
 }
 
 function Conversations({ threads }: { threads?: ThreadView[] }) {
@@ -229,7 +254,7 @@ function Conversations({ threads }: { threads?: ThreadView[] }) {
               to={`/mensajes/${t.id}`}
               icon={MessageSquare}
               title={`${t.propertyName} · ${t.bookingCode ?? t.leaseCode ?? t.subject}`}
-              subtitle={t.lastMessagePreview || 'Sin mensajes todavía'}
+              subtitle={t.lastMessagePreview ? previewText(t.lastMessagePreview) : 'Sin mensajes todavía'}
               trailing={
                 <span className="flex shrink-0 flex-col items-end gap-1">
                   <span className="text-label-sm font-normal text-on-surface-variant">{timeAgo(t.lastMessageAt, clock.now())}</span>
@@ -313,6 +338,9 @@ export default function PersonDetailPage() {
         </Banner>
       )}
 
+      {/* En el teléfono lo de ahora (estadía o contrato) va arriba; en la computadora, en la columna ancha. */}
+      <NowCard person={p} className="mb-6 lg:hidden" />
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <div className="min-w-0 space-y-6 lg:col-span-5 xl:col-span-4">
           <ProfileCard person={p} />
@@ -321,22 +349,7 @@ export default function PersonDetailPage() {
         </div>
 
         <div className="min-w-0 space-y-6 lg:col-span-7 xl:col-span-8">
-          {now && (
-            <Card tone="dark" padding="lg" as="section" aria-label={p.currentBooking ? 'En casa ahora' : 'Próxima llegada'}>
-              <p className="text-label-md tracking-widest text-on-primary-container-muted uppercase">{p.currentBooking ? 'En casa ahora' : 'Próxima llegada'}</p>
-              <p className="mt-1 text-headline-lg">{now.propertyName}</p>
-              <p className="text-body-md text-on-primary-container-muted">
-                {formatRange(now.checkIn, now.checkOut)} · {p.currentBooking ? `sale ${relativeDay(now.checkOut, todayLocal()).toLowerCase()}` : `llega ${relativeDay(now.checkIn, todayLocal()).toLowerCase()}`}
-              </p>
-            </Card>
-          )}
-          {!now && p.lease && (
-            <Card tone="dark" padding="lg" as="section" aria-label="Contrato vigente">
-              <p className="text-label-md tracking-widest text-on-primary-container-muted uppercase">Contrato vigente</p>
-              <p className="mt-1 text-headline-lg">{p.lease.propertyName}</p>
-              <p className="text-body-md text-on-primary-container-muted">Hasta el {formatDate(p.lease.end, { year: true })}</p>
-            </Card>
-          )}
+          <NowCard person={p} className="hidden lg:block" />
 
           {(p.kind === 'guest' || p.bookings.length > 0) && (
             <Card padding="lg" as="section" aria-label="Estadías">

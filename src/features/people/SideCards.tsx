@@ -3,7 +3,7 @@ import { ArrowRight, Inbox, Mail, MessageCircle } from 'lucide-react';
 import { formatPercent } from '@/lib/money';
 import type { EngagementStats, ThreadView } from '@/services';
 import { Badge, Card, LinkButton } from '@/ui';
-import { formatWait } from './text';
+import { formatWait, previewText } from './text';
 
 export function InboxCard({ unread }: { unread?: ThreadView[] }) {
   const count = unread?.reduce((s, t) => s + t.unreadTeam, 0) ?? 0;
@@ -27,7 +27,7 @@ export function InboxCard({ unread }: { unread?: ThreadView[] }) {
         <ul className="mt-3 space-y-1">
           {unread.slice(0, 3).map((t) => (
             <li key={t.id} className="truncate text-body-sm text-on-surface">
-              <span className="font-semibold">{t.personName.split(' ')[0]}:</span> <span className="text-on-surface-variant">{t.lastMessagePreview}</span>
+              <span className="font-semibold">{t.personName.split(' ')[0]}:</span> <span className="text-on-surface-variant">{previewText(t.lastMessagePreview)}</span>
             </li>
           ))}
         </ul>

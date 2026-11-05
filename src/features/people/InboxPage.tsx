@@ -12,6 +12,7 @@ import { timeAgo } from '@/lib/dates';
 import { svc, type ThreadView } from '@/services';
 import { Avatar, Card, cn, EmptyState, LinkButton, Loading, PageHeader, SearchInput, Tabs } from '@/ui';
 import { useMediaQuery } from './hooks';
+import { previewText } from './text';
 import { ThreadPanel } from './ThreadPanel';
 
 function ThreadRow({ t, active, onSelect }: { t: ThreadView; active?: boolean; onSelect?: () => void }) {
@@ -30,7 +31,7 @@ function ThreadRow({ t, active, onSelect }: { t: ThreadView; active?: boolean; o
         </span>
         <span className="mt-0.5 flex items-center justify-between gap-2">
           <span className={cn('line-clamp-1 text-body-sm', unread ? 'font-semibold text-on-surface' : 'text-on-surface-variant', !t.lastMessagePreview && 'italic')}>
-            {t.lastMessagePreview || 'Sin mensajes todavía'}
+            {t.lastMessagePreview ? previewText(t.lastMessagePreview) : 'Sin mensajes todavía'}
           </span>
           {unread && (
             <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-error px-1.5 text-label-sm text-on-error" aria-label={`${t.unreadTeam} sin leer`}>
