@@ -27,7 +27,7 @@ function Brand() {
   return (
     <span className="flex min-w-0 items-center gap-2">
       <img src={logoUrl ?? `${import.meta.env.BASE_URL}logo.svg`} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
-      <span className="truncate text-headline-md font-bold text-primary">{info?.companyName ?? 'Gestor de Propiedades'}</span>
+      <span className="truncate text-body-lg font-bold text-primary md:text-headline-md">{info?.companyName ?? 'Gestor de Propiedades'}</span>
     </span>
   );
 }

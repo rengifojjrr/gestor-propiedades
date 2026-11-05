@@ -68,7 +68,7 @@ test('recorrido guiado: de la salida de la huésped al gasto en finanzas', async
 
   // El gasto está en Finanzas → movimientos
   await page.goto('./#/finanzas/movimientos');
-  await expect(page.getByText(/Fuga debajo del lavamanos/).first()).toBeVisible();
+  await expect(page.getByText(/Fuga debajo del lavamanos/).filter({ visible: true }).first()).toBeVisible();
 });
 
 test('cada rol entra a su app y no llega a lo prohibido', async ({ page }) => {

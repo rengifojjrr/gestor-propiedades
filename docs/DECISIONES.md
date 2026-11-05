@@ -147,6 +147,16 @@ Decisiones técnicas tomadas para la demo, con su porqué. Lo que falta definir 
 - Diálogos con `<dialog>` (foco atrapado y Escape), foco visible, «Ir al contenido», etiquetas en todos los campos.
 - Modo oscuro derivado de los mismos tokens (clase `.dark`), con selector Sistema/Claro/Oscuro por dispositivo.
 
+## Rendimiento
+
+- La semilla (~2.000 registros) se genera y se escribe en IndexedDB **dentro de un Worker**: la primera visita no
+  congela la pantalla (TBT de ~2 s a ~0,1 s). Si el navegador no tiene Worker, se hace en el hilo principal.
+- `index.html` trae una pantalla de carga estática con el mismo encabezado de la entrada, que React reemplaza.
+- Las pantallas se cargan perezosas (una por ruta); Leaflet, Recharts e ical.js solo cuando se usan.
+- Se probó separar las librerías en paquetes propios (`manualChunks`): bajó Lighthouse móvil de 91 a 88 por la
+  cantidad de descargas en paralelo, así que se dejó el reparto por defecto de Vite.
+- El registro del service worker va diferido. Con la PWA instalada todo sale de la caché.
+
 ## Recorrido guiado
 
 - 8 pasos (`src/features/tour`). Cada paso se puede hacer a mano en la pantalla o con «Hazlo por mí», que llama a

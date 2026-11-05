@@ -14,7 +14,18 @@
     <title>Gestor de Propiedades</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Pantalla de carga estática (se pinta antes del JavaScript; React la reemplaza). -->
+      <div class="min-h-dvh bg-surface px-4 py-8 md:py-12">
+        <div class="mx-auto max-w-5xl">
+          <img src="/logo.svg" alt="" width="56" height="56" class="h-14 w-14 rounded-lg" />
+          <div class="mt-3"><h1 class="text-headline-xl text-primary">Gestor de Propiedades</h1>
+          <p class="mt-1 text-body-lg text-on-surface-variant">Uso interno: todas las propiedades, sus problemas y sus cuentas, desde un solo panel.</p>
+          </div>
+          <p class="mt-3 text-label-md text-on-surface-variant">Cargando la demo…</p>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

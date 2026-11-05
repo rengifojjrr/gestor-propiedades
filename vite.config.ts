@@ -36,7 +36,8 @@ export default defineConfig({
     themeColorPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      // Registro del service worker diferido: no bloquea el primer pintado.
+      injectRegister: 'script-defer',
       includeAssets: ['favicon.svg', 'logo.svg', 'icons/apple-touch-icon.png'],
       manifest: {
         id: BASE,
@@ -63,6 +64,7 @@ export default defineConfig({
       },
     }),
   ],
+  worker: { format: 'es' },
   preview: { port: 4173, strictPort: true },
   test: {
     environment: 'node',
