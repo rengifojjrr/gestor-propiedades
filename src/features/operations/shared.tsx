@@ -77,16 +77,6 @@ export function ago(isoTimestamp: string): string {
   return timeAgo(isoTimestamp, clock.now());
 }
 
-/**
- * «3 nov, 11:20 p. m.» en la zona de la propiedad. (formatDateTime de @/lib/dates borra el primer
- * punto, que en español cae en «p. m.»; por eso aquí va aparte.)
- */
-export function stamp(isoTimestamp: string, timezone?: string): string {
-  let d = DateTime.fromISO(isoTimestamp);
-  if (timezone) d = d.setZone(timezone);
-  return d.setLocale('es').toFormat('d LLL, h:mm a');
-}
-
 /** Fecha (AAAA-MM-DD) de una marca de tiempo en la zona de la propiedad. */
 export function isoDateIn(isoTimestamp: string, timezone: string): string {
   return DateTime.fromISO(isoTimestamp).setZone(timezone).toISODate() ?? isoTimestamp.slice(0, 10);

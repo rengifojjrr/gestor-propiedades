@@ -11,12 +11,13 @@ import { useActor } from '@/app/session';
 import { useLive, useLiveResult } from '@/data/live';
 import { MAINTENANCE_CATEGORY_LABEL } from '@/domain/labels';
 import { todayIn } from '@/lib/clock';
+import { formatDateTime } from '@/lib/dates';
 import { formatMoney } from '@/lib/money';
 import { svc, type OrderView } from '@/services';
 import { Badge, Banner, Button, Card, cn, ErrorState, Loading, Money, OrderStatusBadge, PhotoInput, PriorityBadge, PropertyImage, TextArea, TextInput, useToast } from '@/ui';
 import { fromRows, materialsTotal, MaterialsEditor, toRows, type MaterialRow } from '@/features/operations/MaterialsEditor';
 import { resolvedMessage } from '@/features/operations/ResolveOrderModal';
-import { dayLabel, mapsDirUrl, numberOrUndefined, PhotoGrid, Requirements, stamp } from '@/features/operations/shared';
+import { dayLabel, mapsDirUrl, numberOrUndefined, PhotoGrid, Requirements } from '@/features/operations/shared';
 
 function BackLink() {
   return (
@@ -245,7 +246,7 @@ function ResolvedSummary({ order: o }: { order: OrderView }) {
   return (
     <>
       <Banner tone="good" icon={CircleCheck}>
-        Resuelta{o.resolvedAt ? ` · ${stamp(o.resolvedAt, o.timezone)}` : ''}
+        Resuelta{o.resolvedAt ? ` · ${formatDateTime(o.resolvedAt, o.timezone)}` : ''}
       </Banner>
       <Card padding="lg" as="section" aria-label="Resumen">
         <h2 className="mb-3 text-headline-md text-primary">Resumen</h2>

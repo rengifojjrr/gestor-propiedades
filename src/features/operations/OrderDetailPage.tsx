@@ -12,7 +12,7 @@ import { useLive, useLiveResult } from '@/data/live';
 import { MAINTENANCE_CATEGORY_LABEL, ORDER_STATUS_LABEL, PRIORITY_LABEL } from '@/domain/labels';
 import { PRIORITIES, type Priority } from '@/domain/types';
 import { todayIn } from '@/lib/clock';
-import { formatDate } from '@/lib/dates';
+import { formatDate, formatDateTime } from '@/lib/dates';
 import { svc, type OrderView } from '@/services';
 import type { OrderPatch } from '@/services/operations';
 import {
@@ -39,7 +39,7 @@ import { ApprovalBox, type Threshold } from './Approval';
 import { AssignOrderModal } from './AssignModals';
 import { materialsTotal } from './MaterialsEditor';
 import { ResolveOrderModal } from './ResolveOrderModal';
-import { ago, CategoryTile, dayLabel, numberOrUndefined, PhotoGrid, stamp, useOpsAccess } from './shared';
+import { ago, CategoryTile, dayLabel, numberOrUndefined, PhotoGrid, useOpsAccess } from './shared';
 
 type EditableStatus = 'open' | 'scheduled' | 'in_progress';
 
@@ -162,7 +162,7 @@ export default function OrderDetailPage() {
 
       {o.status === 'resolved' && (
         <Banner tone="good" icon={CircleCheck}>
-          Resuelta {o.resolvedAt ? stamp(o.resolvedAt, o.timezone) : ''}
+          Resuelta {o.resolvedAt ? formatDateTime(o.resolvedAt, o.timezone) : ''}
           {o.resolutionNote ? ` · «${o.resolutionNote}»` : ''}
         </Banner>
       )}
@@ -236,7 +236,7 @@ export default function OrderDetailPage() {
 
           {(o.status === 'resolved' || resolvedPhotos.length > 0) && (
             <Card padding="lg">
-              <CardHeader title="Lo resuelto" subtitle={o.resolvedAt ? stamp(o.resolvedAt, o.timezone) : 'Fotos que ya subió el técnico.'} />
+              <CardHeader title="Lo resuelto" subtitle={o.resolvedAt ? formatDateTime(o.resolvedAt, o.timezone) : 'Fotos que ya subió el técnico.'} />
               <PhotoGrid fileIds={resolvedPhotos} alt="Foto de lo resuelto" emptyText="Sin fotos." />
               {o.resolutionNote && <p className="mt-3 text-body-md text-on-surface">«{o.resolutionNote}»</p>}
             </Card>
@@ -272,8 +272,8 @@ export default function OrderDetailPage() {
                   )
                 }
               />
-              <KeyValue label="Creada" value={stamp(o.createdAt, o.timezone)} />
-              {o.resolvedAt && <KeyValue label="Resuelta" value={stamp(o.resolvedAt, o.timezone)} />}
+              <KeyValue label="Creada" value={formatDateTime(o.createdAt, o.timezone)} />
+              {o.resolvedAt && <KeyValue label="Resuelta" value={formatDateTime(o.resolvedAt, o.timezone)} />}
             </dl>
             {canManage && open && (
               <Button variant="primary" fullWidth className="mt-4" icon={Wrench} onClick={() => setAssigning(true)} data-testid="asignar-orden">

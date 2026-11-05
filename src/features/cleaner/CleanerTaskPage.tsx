@@ -11,9 +11,10 @@ import { useActor } from '@/app/session';
 import { useLiveResult } from '@/data/live';
 import { CLEANING_TYPE_LABEL } from '@/domain/labels';
 import { todayIn } from '@/lib/clock';
+import { formatDateTime } from '@/lib/dates';
 import { svc, type CleaningTaskView } from '@/services';
 import { Badge, Banner, Button, Card, cn, ErrorState, LinkButton, Loading, PhotoInput, ProgressBar, PropertyImage, TextArea, TextInput } from '@/ui';
-import { ago, firstName, PhotoGrid, Requirements, stamp, timeLabel, whenLabel } from '@/features/operations/shared';
+import { ago, firstName, PhotoGrid, Requirements, timeLabel, whenLabel } from '@/features/operations/shared';
 import { nextArrivalText } from './arrival';
 import { DamageModal } from './DamageModal';
 
@@ -283,7 +284,7 @@ function DoneSummary({ task }: { task: CleaningTaskView }) {
     <div className="mx-auto max-w-2xl space-y-5">
       <TaskHeader task={task} />
       <Banner tone="good" icon={CircleCheck}>
-        Terminaste esta limpieza{task.completedAt ? ` · ${stamp(task.completedAt, task.timezone)}` : ''}.
+        Terminaste esta limpieza{task.completedAt ? ` · ${formatDateTime(task.completedAt, task.timezone)}` : ''}.
       </Banner>
       <Card padding="lg">
         <h2 className="mb-3 text-headline-md text-primary">Fotos</h2>

@@ -11,10 +11,11 @@ import { useActor } from '@/app/session';
 import { useLive, useLiveResult } from '@/data/live';
 import { CLEANING_TYPE_LABEL } from '@/domain/labels';
 import { todayIn } from '@/lib/clock';
+import { formatDateTime } from '@/lib/dates';
 import { svc } from '@/services';
 import { Badge, Button, Card, CardHeader, CleaningStatusBadge, ErrorState, KeyValue, Loading, Money, PageHeader, PriorityBadge, ProgressBar, PropertyImage, useConfirm } from '@/ui';
 import { AssignCleaningModal } from './AssignModals';
-import { ago, firstName, INCIDENT_STATUS_LABEL, PhotoGrid, stamp, useOpsAccess, whenLabel } from './shared';
+import { ago, firstName, INCIDENT_STATUS_LABEL, PhotoGrid, useOpsAccess, whenLabel } from './shared';
 
 export default function CleaningDetailPage() {
   const { id = '' } = useParams();
@@ -117,8 +118,8 @@ export default function CleaningDetailPage() {
                     }
                   />
                 )}
-                {t.startedAt && <KeyValue label="Empezó" value={stamp(t.startedAt, t.timezone)} />}
-                {t.completedAt && <KeyValue label="Terminó" value={stamp(t.completedAt, t.timezone)} />}
+                {t.startedAt && <KeyValue label="Empezó" value={formatDateTime(t.startedAt, t.timezone)} />}
+                {t.completedAt && <KeyValue label="Terminó" value={formatDateTime(t.completedAt, t.timezone)} />}
                 {canManage && <KeyValue label="Pago de la tarea" value={<Money amount={t.fee} currency={t.currency} />} />}
               </dl>
               {canManage && open && (
