@@ -85,6 +85,8 @@ export interface PhotoInputProps {
   camera?: boolean;
   /** Muestra «Usar foto de ejemplo» (para probar en una computadora). */
   sample?: { phase: string; caption?: string };
+  /** Texto del botón de foto de ejemplo (por defecto «Usar foto de ejemplo»). */
+  sampleLabel?: string;
   size?: 'md' | 'lg';
   variant?: 'primary' | 'secondary' | 'tonal' | 'mint';
   disabled?: boolean;
@@ -92,7 +94,7 @@ export interface PhotoInputProps {
 }
 
 /** Botón de cámara (o galería) con compresión en el navegador. La cámara va primero. */
-export function PhotoInput({ onPhoto, label = 'Tomar foto', camera = true, sample, size = 'lg', variant = 'primary', disabled, testId }: PhotoInputProps) {
+export function PhotoInput({ onPhoto, label = 'Tomar foto', camera = true, sample, sampleLabel = 'Usar foto de ejemplo', size = 'lg', variant = 'primary', disabled, testId }: PhotoInputProps) {
   const ref = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const handle = async (blob: Blob) => {
@@ -132,7 +134,7 @@ export function PhotoInput({ onPhoto, label = 'Tomar foto', camera = true, sampl
           onClick={async () => handle(await sampleImage(sample.phase, sample.caption))}
         >
           <Sparkles size={16} aria-hidden />
-          Usar foto de ejemplo
+          {sampleLabel}
         </button>
       )}
     </div>

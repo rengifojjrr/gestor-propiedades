@@ -1,7 +1,7 @@
 /** Utilidades de fechas de calendario (AAAA-MM-DD) con luxon. Interfaz en español. */
 import { DateTime, Interval } from 'luxon';
 
-const LOCALE = 'es';
+const LOCALE: 'es' | 'en' = 'es';
 
 export function parseDate(iso: string): DateTime {
   return DateTime.fromISO(iso, { zone: 'utc' });
@@ -68,8 +68,8 @@ export function monthLabel(key: string, style: 'long' | 'short' = 'long'): strin
 }
 
 /** «12 nov» o «12 nov 2026» si el año no es el actual. */
-export function formatDate(iso: string, opts: { year?: boolean; weekday?: boolean } = {}): string {
-  const d = parseDate(iso).setLocale(LOCALE);
+export function formatDate(iso: string, opts: { year?: boolean; weekday?: boolean; lang?: 'es' | 'en' } = {}): string {
+  const d = parseDate(iso).setLocale(opts.lang ?? LOCALE);
   const fmt = `${opts.weekday ? 'ccc ' : ''}d LLL${opts.year ? ' yyyy' : ''}`;
   return d.toFormat(fmt).replace('.', '');
 }
@@ -94,9 +94,9 @@ export function formatDateTime(isoTimestamp: string, timezone?: string): string 
   return d.setLocale(LOCALE).toFormat('d LLL, h:mm a').replace(/\.(?=,)/, '');
 }
 
-export function formatTime(hm: string): string {
+export function formatTime(hm: string, lang: 'es' | 'en' = LOCALE): string {
   const [h, m] = hm.split(':').map(Number);
-  return DateTime.fromObject({ hour: h, minute: m }).setLocale(LOCALE).toFormat('h:mm a');
+  return DateTime.fromObject({ hour: h, minute: m }).setLocale(lang).toFormat('h:mm a');
 }
 
 /** «Hoy», «Mañana», «Ayer», «en 3 días», «hace 2 días». */

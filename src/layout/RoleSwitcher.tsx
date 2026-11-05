@@ -2,6 +2,7 @@
 import { Check, Users } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
+import { NAV } from '@/app/nav';
 import { HOME_BY_ROLE, useSession } from '@/app/session';
 import { ROLE_DESCRIPTION, ROLE_LABEL } from '@/domain/labels';
 import type { User } from '@/domain/types';
@@ -39,7 +40,7 @@ export function AccountList({ onPick, currentId }: { onPick: (u: User) => void; 
 }
 
 export function RoleSwitcher() {
-  const { realUser, login } = useSession();
+  const { realUser, user, login } = useSession();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const tour = useTour();
@@ -51,7 +52,11 @@ export function RoleSwitcher() {
         type="button"
         onClick={() => setOpen(true)}
         data-testid="cambiar-rol"
-        className="no-print fixed bottom-24 left-4 z-30 flex h-11 items-center gap-2 rounded-full bg-primary-container px-4 text-label-md text-on-primary-container shadow-pop lg:bottom-6"
+        className={cn(
+          'no-print fixed bottom-24 left-4 z-30 flex h-11 items-center gap-2 rounded-full bg-primary-container px-4 text-label-md text-on-primary-container shadow-pop',
+          // En las apps de huésped e inquilino la barra de abajo sigue en la computadora: el botón va encima.
+          user && NAV[user.role].variant !== 'person' && 'lg:bottom-6',
+        )}
       >
         <Users size={18} aria-hidden />
         Cambiar de rol

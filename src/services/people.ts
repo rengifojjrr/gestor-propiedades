@@ -333,10 +333,13 @@ export async function myThread(actor: Actor): Promise<{ thread: ThreadView; mess
   const threads = (await db.threads.find((t) => t.personId === personId)).sort((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt));
   let thread = threads[0];
   if (!thread) {
+    // Crear la conversación es una escritura: en «Ver como…» no se crea.
+    if (actor.readOnly) return null;
     const booking = (await db.bookings.find((b) => b.guestId === personId && b.status !== 'cancelled'))[0];
     const lease = (await db.leases.find((l) => l.tenantId === personId))[0];
     const propertyId = booking?.propertyId ?? lease?.propertyId;
     if (!propertyId) return null;
+    await authorize(actor, 'message.send', { propertyId, personId });
     thread = {
       id: newId('th'),
       kind: booking ? 'booking' : 'lease',
@@ -403,17 +406,17 @@ export async function renderForThread(actor: Actor, templateId: string, threadId
   if (lease) {
     const today = todayIn(p?.timezone ?? 'America/New_York');
     const thisMonth = dueDateFor(lease, today.slice(0, 7));
-    dueDate = formatDate(thisMonth);
+    dueDate = formatDate(thisMonth, { lang: language });
   }
   const appLink = typeof window !== 'undefined' ? `${window.location.origin}${import.meta.env.BASE_URL}` : '';
   return renderTemplate(tpl.body[language], {
     guest_name: person?.name.split(' ')[0],
     property_name: p?.name,
     city: p?.city,
-    check_in: booking ? formatDate(booking.checkIn) : undefined,
-    check_out: booking ? formatDate(booking.checkOut) : undefined,
-    check_in_time: p ? formatTime(p.checkInTime) : undefined,
-    check_out_time: p ? formatTime(p.checkOutTime) : undefined,
+    check_in: booking ? formatDate(booking.checkIn, { lang: language }) : undefined,
+    check_out: booking ? formatDate(booking.checkOut, { lang: language }) : undefined,
+    check_in_time: p ? formatTime(p.checkInTime, language) : undefined,
+    check_out_time: p ? formatTime(p.checkOutTime, language) : undefined,
     amount: lease ? formatMoney(lease.rent, lease.currency) : undefined,
     due_date: dueDate,
     company: settings.companyName,
