@@ -151,7 +151,9 @@ caer). **«Depositado»** suma el neto de los `depositado`. Los `fallido` y los 
 ### 4.2 Lo que la base hace cumplir
 
 - **RLS** en las 17 tablas: política permisiva `user_id = (select auth.uid())` y política **restrictiva**
-  `(select public.pay_mfa_ok())` (aal2 si el usuario tiene un factor verificado). Rol `anon`: nada.
+  `(select private.pay_mfa_ok())` (aal2 si el usuario tiene un factor verificado). Rol `anon`: nada. Los permisos
+  (`grant`) van explícitos. Las funciones internas (segundo factor, comprobaciones de los disparadores) viven en el
+  esquema `private`, que la API no expone; en `public` solo quedan las tres funciones que la app llama.
 - Tablas de **solo agregar** (sin política de `update`): versiones de tarifa, versiones y líneas de esquema, eventos.
 - **Esquema válido** (disparador diferido): las líneas no pasan de 100 %; si suman menos de 100 % tiene que haber
   «Resto»; el «Resto» no puede ser además una línea.

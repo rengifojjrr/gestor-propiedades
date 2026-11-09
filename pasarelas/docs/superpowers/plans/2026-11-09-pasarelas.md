@@ -94,7 +94,7 @@ los tipos del motor** (contrato cerrado: las tareas 3–6 no lo cambian sin avis
 `src/lib/supabase/database.types.ts` (generado), `tests/integration/{helpers.ts,rls.test.ts,cuadres.test.ts,
 funciones.test.ts,storage.test.ts}`.
 
-**Produce:** las 17 tablas del spec §4; funciones `pay_mfa_ok()`, `pay_save_transactions(p_items jsonb,
+**Produce:** las 17 tablas del spec §4; funciones `private.pay_mfa_ok()`, `pay_save_transactions(p_items jsonb,
 p_skip_duplicates boolean) → jsonb [{id, inserted, skipped}]`, `pay_save_scheme(p jsonb) → {scheme_id, version_id,
 version}`, `pay_create_gateway(p jsonb) → uuid`; vistas `pay_beneficiary_balances`, `pay_company_totals`,
 `pay_gateway_totals`, `pay_bank_account_totals`; bucket `comprobantes`. Y en `tests/integration/helpers.ts`:
