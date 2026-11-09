@@ -1,6 +1,9 @@
 @import 'tailwindcss';
 @import './tokens.css';
 
+/* `pasarelas/` es otro proyecto con su propio Tailwind: sus clases no entran en la hoja de estilos del gestor. */
+@source not '../../pasarelas';
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;

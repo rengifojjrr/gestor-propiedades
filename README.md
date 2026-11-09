@@ -39,5 +39,10 @@ npm run deploy        # publica dist/ en la rama gh-pages (GitHub Pages)
 | `tests/unit`, `tests/e2e` | Vitest (reglas, permisos por rol, tokens) y Playwright (recorrido de punta a punta) |
 | `docs/` | [DECISIONES](docs/DECISIONES.md), [PERMISOS](docs/PERMISOS.md), [MODELO](docs/MODELO.md), [SUPABASE](docs/SUPABASE.md), [PENDIENTES](docs/PENDIENTES.md), [AVANCE](docs/AVANCE.md), [GUIA-DEMO](docs/GUIA-DEMO.md) |
 
+## Otro proyecto en este repo
+`pasarelas/` es un proyecto **aparte** (libro privado de cobros, comisiones y repartos; Next + Supabase), con su
+propio `package.json`, su propia base y su propio despliegue. No comparte código con el gestor:
+ver [pasarelas/README.md](pasarelas/README.md).
+
 ## Estado
 Qué quedó, cómo se prueba y qué falta: [docs/AVANCE.md](docs/AVANCE.md) y [docs/PENDIENTES.md](docs/PENDIENTES.md).

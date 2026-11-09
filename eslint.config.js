@@ -5,7 +5,8 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig([
-  globalIgnores(['dist', 'dev-dist', 'node_modules', '_referencias', 'playwright-report', 'test-results', '.npm-cache', 'public']),
+  // `pasarelas/` es otro proyecto (Next + Supabase) con su propio ESLint: aquí no se recorre.
+  globalIgnores(['dist', 'dev-dist', 'node_modules', '_referencias', 'playwright-report', 'test-results', '.npm-cache', 'public', 'pasarelas']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
