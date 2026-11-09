@@ -302,9 +302,15 @@ test('el cambio de horario no corre el día', () => {
   expect(daysBetween('2026-03-07', '2026-03-09')).toBe(2); });
 ```
 
-  `holidays.test.ts`: `usBankHolidays(2026)` y `(2027)` iguales, fecha por fecha, a la lista del calendario bancario
-  de `AGENTS.md`; en particular **no** incluye `2026-07-03` (el 4 de julio cae sábado: los bancos abren el viernes) y
-  **sí** `2027-07-05` (cae domingo). `status.test.ts`: el orden de `displayStatus` del spec §4.1; `isOverdue` falso
+  `holidays.test.ts`: `usBankHolidays(2026)` devuelve exactamente, en orden, `2026-01-01`, `2026-01-19`,
+  `2026-02-16`, `2026-05-25`, `2026-06-19`, `2026-07-04`, `2026-09-07`, `2026-10-12`, `2026-11-11`, `2026-11-26`,
+  `2026-12-25`; y `usBankHolidays(2027)`: `2027-01-01`, `2027-01-18`, `2027-02-15`, `2027-05-31`, `2027-06-19`,
+  `2027-07-05`, `2027-09-06`, `2027-10-11`, `2027-11-11`, `2027-11-25`, `2027-12-25`. Regla del calendario
+  **bancario**: si el feriado cae en sábado se deja en su fecha y el viernes anterior **no** es feriado (por eso
+  no aparece `2026-07-03`); si cae en domingo se pasa al lunes siguiente con el nombre terminado en «(observado)»
+  (por eso `2027-07-05` y no `2027-07-04`). Nombres en español: Año Nuevo, Día de Martin Luther King Jr., Día de
+  los Presidentes, Día de los Caídos, Juneteenth, Día de la Independencia, Día del Trabajo, Día de Colón, Día de
+  los Veteranos, Acción de Gracias, Navidad. `status.test.ts`: el orden de `displayStatus` del spec §4.1; `isOverdue` falso
   con bruto `0.00`, con `fallido`, con `depositado` y sin fecha estimada. `versions.test.ts`: tarifa «vigente desde
   mañana» no se elige para un cobro de hoy; para uno de mañana, sí.
 - [ ] Implementar. Cobertura **100 %** de estos archivos.
