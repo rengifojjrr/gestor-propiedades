@@ -9,6 +9,7 @@ import {
   seedBasics,
   type Basics,
   type Db,
+  type SaveItem,
 } from "./helpers";
 
 /**
@@ -134,6 +135,47 @@ describe("los cuadres del cobro", () => {
       "cobro depositado",
     );
     expect(guardado).toEqual({ status: "depositado", deposited_on: "2026-11-16" });
+  });
+
+  describe("un cobro fallido lleva todo en cero", () => {
+    const ceros = { gross_amount: "0.00", fees_total: "0.00", net_amount: "0.00", alloc_base_amount: "0.00" };
+    const repartoEnCero = (): SaveItem["allocations"] => [
+      { beneficiary_id: b.beneficiaryIds.a, amount: "0.00", base: "neto", pct: "50", is_remainder: false },
+      { beneficiary_id: b.beneficiaryIds.b, amount: "0.00", base: "neto", pct: "30", is_remainder: false },
+      { beneficiary_id: b.beneficiaryIds.c, amount: "0.00", base: "neto", pct: "20", is_remainder: false },
+    ];
+
+    it("con todo en cero se guarda", async () => {
+      const ref = referencia();
+      const item = e1Item(b, { reference: ref, status: "fallido", ...ceros });
+      item.allocations = repartoEnCero();
+
+      await saveTransactions(client, [item]);
+
+      expect(await cobrosConReferencia(ref)).toBe(1);
+    });
+
+    it("con comisiones se rechaza", async () => {
+      const ref = referencia();
+      const item = e1Item(b, { reference: ref, status: "fallido", ...ceros, fees_total: "9.70", net_amount: "-9.70" });
+      item.allocations = repartoEnCero();
+
+      const res = await client.rpc("pay_save_transactions", { p_items: [item] });
+
+      expectRejected(res, "23514", "pay_transactions_gross_check");
+      expect(await cobrosConReferencia(ref)).toBe(0);
+    });
+
+    it("con reparto se rechaza, aunque el reparto sume su base", async () => {
+      const ref = referencia();
+      // Bruto, comisiones y neto en cero, pero conserva la base de 90,30 y su reparto 45,15 · 27,09 · 18,06.
+      const item = e1Item(b, { reference: ref, status: "fallido", ...ceros, alloc_base_amount: "90.30" });
+
+      const res = await client.rpc("pay_save_transactions", { p_items: [item] });
+
+      expectRejected(res, "23514", "pay_transactions_gross_check");
+      expect(await cobrosConReferencia(ref)).toBe(0);
+    });
   });
 
   it("la referencia repetida en la misma pasarela se rechaza", async () => {

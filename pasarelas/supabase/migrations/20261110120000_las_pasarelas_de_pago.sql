@@ -282,8 +282,11 @@ create table public.pay_transactions (
   unique (id, user_id),
   constraint pay_transactions_refund_range check (refunded_amount >= 0 and refunded_amount <= gross_original),
   constraint pay_transactions_net_check check (net_amount = gross_amount - fees_total),
+  -- Fallido: todo en cero (bruto vigente, comisiones y, por la restricción de arriba, neto; también la base del
+  -- reparto, para que un cobro fallido no le asigne nada a nadie). Si no, el bruto vigente es lo cobrado menos
+  -- lo reembolsado.
   constraint pay_transactions_gross_check check (
-    (status = 'fallido' and gross_amount = 0 and fees_total = 0)
+    (status = 'fallido' and gross_amount = 0 and fees_total = 0 and alloc_base_amount = 0)
     or (status <> 'fallido' and gross_amount = gross_original - refunded_amount)
   ),
   constraint pay_transactions_deposit_check check ((status = 'depositado') = (deposited_on is not null)),
@@ -741,6 +744,7 @@ declare
   v_expected timestamptz;
   v_old public.pay_transactions;
   v_new public.pay_transactions;
+  v_reference text;
   v_inserted boolean;
   v_skipped boolean;
   v_count integer;
@@ -769,9 +773,11 @@ begin
     if v_mode = 'insert' then
       v_new := jsonb_populate_record(null::public.pay_transactions, v_tx);
       v_id := coalesce(v_new.id, gen_random_uuid());
-      if p_skip_duplicates and v_new.reference is not null and exists (
+      -- La referencia se guarda sin espacios alrededor, y así mismo se compara para saber si ya existe.
+      v_reference := nullif(btrim(v_new.reference), '');
+      if p_skip_duplicates and v_reference is not null and exists (
         select 1 from public.pay_transactions t
-        where t.gateway_id = v_new.gateway_id and t.reference = v_new.reference
+        where t.gateway_id = v_new.gateway_id and t.reference = v_reference
       ) then
         v_skipped := true;
       else
@@ -786,7 +792,7 @@ begin
           v_new.currency, v_new.gross_original, coalesce(v_new.refunded_amount, 0), v_new.gross_amount,
           v_new.fees_total, v_new.net_amount, v_new.alloc_base, coalesce(v_new.alloc_base_amount, 0),
           v_new.breakdown, v_new.fee_version_id, v_new.scheme_id, v_new.scheme_version_id,
-          nullif(btrim(v_new.reference), ''), v_new.note, coalesce(v_new.status, 'registrado'),
+          v_reference, v_new.note, coalesce(v_new.status, 'registrado'),
           v_new.dispute_state, v_new.dispute_opened_on, v_new.dispute_closed_on, v_new.estimated_deposit_on,
           coalesce(v_new.estimated_is_manual, false), v_new.deposited_on, v_new.bank_account_id
         );

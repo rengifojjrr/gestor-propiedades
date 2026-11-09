@@ -223,6 +223,17 @@ describe("pay_save_transactions", () => {
     expect(await cobrosConReferencia(nueva)).toBe(1);
   });
 
+  it("la referencia se guarda sin espacios, y p_skip_duplicates la reconoce aunque llegue con ellos", async () => {
+    const ref = referencia();
+    await saveTransactions(client, [e1Item(b, { reference: `  ${ref} ` })]);
+    expect(await cobrosConReferencia(ref)).toBe(1);
+
+    const resultado = await saveTransactions(client, [e1Item(b, { reference: ` ${ref}  ` })], true);
+
+    expect(resultado).toEqual([{ id: expect.any(String), inserted: false, skipped: true }]);
+    expect(await cobrosConReferencia(ref)).toBe(1);
+  });
+
   it.each([
     { caso: "501 elementos", cuantos: 501 },
     { caso: "una lista vacía", cuantos: 0 },
