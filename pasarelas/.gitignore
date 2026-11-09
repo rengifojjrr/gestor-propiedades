@@ -1,0 +1,25 @@
+# dependencias
+/node_modules
+
+# pruebas
+/coverage
+/playwright-report
+/test-results
+/blob-report
+
+# next.js
+/.next/
+/out/
+/build
+next-env.d.ts
+*.tsbuildinfo
+
+# entorno: nunca se versiona (solo el ejemplo)
+.env*
+!.env.example
+
+# varios
+.DS_Store
+*.pem
+*.log
+.vercel

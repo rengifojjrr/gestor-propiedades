@@ -1,0 +1,61 @@
+{
+  "name": "pasarelas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Libro privado de cobros, comisiones, depósitos y repartos (datos de ejemplo en el repo).",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test": "vitest run --project unit",
+    "test:watch": "vitest --project unit",
+    "test:int": "vitest run --project integration",
+    "test:e2e": "playwright test",
+    "coverage": "vitest run --project unit --coverage",
+    "db:start": "bash scripts/stack.sh start",
+    "db:stop": "bash scripts/stack.sh stop",
+    "db:reset": "bash scripts/stack.sh reset",
+    "db:status": "bash scripts/stack.sh status",
+    "db:env": "bash scripts/stack.sh env",
+    "db:types": "bash scripts/stack.sh types",
+    "seed": "tsx --env-file-if-exists=.env.local scripts/seed-pasarelas-demo.ts"
+  },
+  "dependencies": {
+    "@supabase/ssr": "0.12.7",
+    "@supabase/supabase-js": "2.119.0",
+    "decimal.js": "10.6.0",
+    "lucide-react": "1.70.0",
+    "luxon": "3.7.2",
+    "next": "16.4.6",
+    "papaparse": "5.7.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "recharts": "3.10.1",
+    "server-only": "0.0.1",
+    "sonner": "2.0.8",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.63.0",
+    "@tailwindcss/turbopack": "4.3.5",
+    "@types/luxon": "3.7.6",
+    "@types/node": "^22.20.5",
+    "@types/papaparse": "5.5.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitest/coverage-v8": "4.1.12",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "16.4.6",
+    "supabase": "3.1.0",
+    "tailwindcss": "4.3.5",
+    "tsx": "4.23.15",
+    "typescript": "~5.9.3",
+    "vitest": "4.1.12"
+  }
+}
