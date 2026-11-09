@@ -1,0 +1,813 @@
+# Pasarelas — Plan de implementación
+
+> **Para quien ejecute (agentes):** SUB-HABILIDAD REQUERIDA: `superpowers:subagent-driven-development`
+> (recomendada) o `superpowers:executing-plans`, tarea por tarea. Los pasos usan casillas (`- [ ]`).
+
+**Objetivo:** una app autónoma en `pasarelas/` que registra cobros, calcula comisiones, reparte lo neto, estima
+depósitos y lo resume, con todo cuadrado al centavo y privado por usuario.
+
+**Arquitectura:** Next 16 (App Router) + Supabase. El cálculo vive en un motor de funciones puras
+(`src/lib/pasarelas/`); la base hace cumplir los cuadres y la privacidad (RLS + segundo factor); las pantallas son
+Server Components que leen por `queries/` y escriben por Server Actions delgadas sobre `ops/`.
+
+**Stack:** Next 16.4.6 · React 19.3 · TypeScript 5.9 · Tailwind 4.3 · Supabase (`supabase-js` 2.119, `@supabase/ssr`
+0.12, CLI 3.1 con Docker) · decimal.js 10.6 · Luxon 3.7 · Zod 4.6 · Recharts 3.10 · papaparse 5.7 · sonner 2 ·
+lucide-react · Vitest · Playwright 1.63 + axe.
+
+**Spec:** `pasarelas/docs/superpowers/specs/2026-11-09-pasarelas-design.md` (léelo entero antes de tu tarea).
+
+**Ejecución elegida:** por subagentes (un agente por tarea, revisión independiente y una revisión adversarial final).
+El dueño pidió construir «de corrido», sin parar a aprobar este plan.
+
+## Restricciones globales
+
+- Todo el trabajo va **dentro de `pasarelas/`**. No se toca el gestor de la raíz salvo lo que dice la tarea 1.
+- Lee `pasarelas/AGENTS.md` antes de escribir código: Next 16.4 **no** es el que conoces. La fuente de verdad son
+  `node_modules/next/dist/docs/` y los tipos instalados, no la memoria.
+- **El dinero nunca pasa por `number`**: `Money`/`Pct` son cadenas; aritmética solo con `D` de `decimal.ts`; cada
+  línea se redondea a centavos con `ROUND_HALF_UP` antes de sumar. Nunca se suman monedas distintas.
+- Montos `numeric(14,2)`, porcentajes `numeric(7,4)`, monedas `char(3)`; fechas en `America/New_York`.
+- Interfaz **en español**, **celular primero** (390 px), objetivos táctiles ≥ 44 px, contraste AA, sin violaciones
+  serias ni críticas de axe. Formato de dinero con coma decimal: `$1.234,56`.
+- **Sin datos reales** en código, pruebas, semilla ni capturas: «Tienda Demo», «Escuela Demo», «Grupo A»,
+  correos `@example.com`.
+- **Sin secretos**: la app solo usa `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. La clave
+  secreta local solo en pruebas y semilla, leída de variables de entorno.
+- Todo objeto de la base lleva prefijo `pay_`. Migraciones **solo aditivas**, con nombre en español.
+- No se guardan números de tarjeta, CVV, cuentas completas ni datos de compradores.
+- No ejecutes `next build` ni `next dev` sobre `.next/` mientras otros agentes trabajan: usa tu propio
+  `PASARELAS_DIST_DIR` y tu propio puerto (ver `AGENTS.md`). No hagas `git commit`: el orquestador confirma.
+- Verificación de cada tarea, desde `pasarelas/`: `npm run typecheck`, `npm run lint`, `npm test`, y lo que la tarea
+  indique (`npm run test:int`, `npm run test:e2e -- <archivo>`).
+
+## Foco de revisión
+
+Lo que el spec implica y es más probable que le falle a quien lo use; cada uno tiene su prueba en la tarea dueña:
+
+1. **Doble envío o reintento al registrar** (red lenta en el celular): no puede crear dos cobros. → tarea 10.
+2. **Monto pegado con formato ambiguo** (`1,234` · `1.234,5` · `$ 100` · `100,005`): se interpreta bien o se
+   rechaza con mensaje; nunca se guarda otro número. → tarea 3.
+3. **El comprobante falla después de guardar el cobro** (archivo de 11 MB, tipo no permitido, corte de red): el cobro
+   queda guardado, se avisa y se puede reintentar; no quedan filas sin archivo. → tareas 10 y 16.
+4. **Más de 1000 cobros en el período** (tope por petición de la API): los totales del filtro y el Resumen siguen
+   siendo exactos. → tarea 9.
+5. **Borrar o desactivar configuración que ya tiene cobros** (pasarela, canal, beneficiario, esquema): mensaje claro
+   y el historial intacto. → tareas 2 y 11.
+
+---
+
+## Fase 0 · Cimientos
+
+### Tarea 1: Arranque del proyecto
+
+**Archivos:** crear `pasarelas/{package.json,tsconfig.json,next.config.ts,eslint.config.mjs,vitest.config.ts,
+playwright.config.ts,.gitignore,.env.example,AGENTS.md,README.md}`, `supabase/config.toml`, `scripts/stack.sh`,
+`src/app/{layout.tsx,globals.css,page.tsx}`, `src/lib/pasarelas/types.ts`. Modificar en la raíz:
+`eslint.config.js` (ignorar `pasarelas`), `README.md` (una línea), y `src/styles/index.css` solo si hace falta.
+
+**Produce:** scripts `dev`, `build`, `start`, `lint`, `typecheck`, `test`, `test:int`, `test:e2e`, `coverage`,
+`db:start`, `db:stop`, `db:reset`, `db:types`, `seed`; alias `@/` → `src/`; `PASARELAS_DIST_DIR` para aislar la
+salida de Next por agente; `src/lib/pasarelas/types.ts` con **todos los tipos del motor** (contrato cerrado: las
+tareas 3–6 no lo cambian sin avisar).
+
+- [ ] Generar la base con `create-next-app@16.4.6` y adaptar (sin fuentes de Google en tiempo de compilación).
+- [ ] `supabase/config.toml`: `enable_signup = false`, MFA TOTP `enroll_enabled = true` y `verify_enabled = true`,
+      confirmación de correo apagada en local, `file_size_limit = "10MiB"`.
+- [ ] `scripts/stack.sh start|stop|reset|status`: arranca Docker si está caído y el stack local; idempotente.
+- [ ] `AGENTS.md`: convenciones verificadas de Next 16.4, Supabase, pruebas y reglas del dinero.
+- [ ] Verificar: `npm run lint && npm run typecheck && npm test && npm run build` en verde; `npm run db:start`
+      responde en `http://127.0.0.1:54321`.
+- [ ] Verificar el gestor: en la raíz, `npm run check && npm run build` dan lo mismo que la línea base (35 pruebas;
+      la hoja de estilos principal pesa 72 651 bytes).
+
+### Tarea 2: Base de datos
+
+**Archivos:** crear `supabase/migrations/20261110120000_las_pasarelas_de_pago.sql`,
+`src/lib/supabase/database.types.ts` (generado), `tests/integration/{helpers.ts,rls.test.ts,cuadres.test.ts,
+funciones.test.ts,storage.test.ts}`.
+
+**Produce:** las 17 tablas del spec §4; funciones `pay_mfa_ok()`, `pay_save_transactions(p_items jsonb,
+p_skip_duplicates boolean) → jsonb [{id, inserted, skipped}]`, `pay_save_scheme(p jsonb) → {scheme_id, version_id,
+version}`, `pay_create_gateway(p jsonb) → uuid`; vistas `pay_beneficiary_balances`, `pay_company_totals`,
+`pay_gateway_totals`, `pay_bank_account_totals`; bucket `comprobantes`. Y en `tests/integration/helpers.ts`:
+`adminClient()`, `createUser(): Promise<{ id, email, password, client }>`, `enrollTotp(client): Promise<{ secret,
+factorId }>` (deja la sesión en aal2), `signInAal1(email, password)`, `totp(secret, timeMs?)`, `seedBasics(client):
+Promise<Basics>` (empresa «Escuela Demo» con canal al 5 %, Stripe 2,9 % + 0,30 con «Pago rápido» 1,5 % sobre el
+bruto y 0 días, cuenta destino, Grupos A/B/C y esquema 50/30/20 sobre el neto).
+
+Mensajes de error de la base (los traduce la tarea 9): `pay_alloc_sum_mismatch`, `pay_scheme_over_100`,
+`pay_scheme_under_100`, `pay_scheme_remainder_in_lines`, `pay_scheme_version_in_use`, `pay_tx_conflict` (40001),
+`pay_tx_not_found` (P0002), `pay_bad_payload` (22023), `pay_no_session` (28000).
+
+- [ ] **Pruebas primero** (`npm run test:int`, deben fallar sin la migración):
+  - `rls.test.ts`, para **cada una** de las 17 tablas y las 4 vistas, generado desde una lista: el usuario B no ve
+    filas de A (`select` → 0); B no puede insertar con `user_id` de A; B no puede actualizar ni borrar filas de A
+    (0 afectadas); `anon` no ve ni escribe; A con factor verificado y sesión aal1 → 0 filas y escritura rechazada;
+    A en aal2 → ve y escribe.
+  - Tablas de solo agregar: `update` sobre `pay_gateway_fee_versions`, `pay_scheme_versions`, `pay_scheme_lines` y
+    `pay_transaction_events` no afecta filas; `delete` sobre `pay_transaction_events` tampoco.
+  - Claves compuestas: A no puede crear un canal en una empresa de B, ni un cobro con el canal de otra empresa suya.
+  - `cuadres.test.ts`: reparto que no suma la base → rechazado; borrar una fila de `pay_allocations` → rechazado;
+    `net_amount ≠ gross_amount − fees_total` → rechazado; `depositado` sin fecha → rechazado; esquema 50 + 30 sin
+    «Resto» → rechazado; 60 + 50 → rechazado; «Resto» que además es línea → rechazado; 50 + 30 con «Resto» → pasa;
+    `last4 = '12345'` → rechazado; alias con 7 dígitos seguidos → rechazado; `website = 'javascript:alert(1)'` →
+    rechazado; referencia repetida en la misma pasarela → rechazada.
+  - `funciones.test.ts`: `pay_save_transactions` crea cobro + 3 repartos + evento; si un elemento del lote falla, no
+    queda nada de ninguno; `update` con `expected_updated_at` viejo → `pay_tx_conflict`; `p_skip_duplicates` salta la
+    referencia repetida y devuelve `skipped: true`; 501 elementos → `pay_bad_payload`; `pay_save_scheme` crea la
+    versión 1 y luego la 2, y reemplaza una versión sin cobros con la misma fecha; con cobros →
+    `pay_scheme_version_in_use`; `pay_create_gateway` crea pasarela + tarifa «desde el inicio» + opciones.
+  - `storage.test.ts`: A sube y lee en `{A}/…`; no puede subir en `{B}/…`; B no lista ni firma archivos de A; `anon`
+    nada; con factor y aal1, nada; archivo de 11 MB y `text/plain` → rechazados por el bucket.
+  - **Foco 5:** borrar una pasarela, un canal, un beneficiario o una versión de esquema **con cobros** → error de
+    clave foránea (23503) y las filas siguen ahí.
+- [ ] Escribir la migración (spec §4; SQL comentado en español). `npm run db:reset` la aplica sin errores.
+- [ ] `npm run db:types` genera `database.types.ts`; `npm run typecheck` en verde.
+- [ ] `npm run test:int` en verde.
+
+### Tarea 3: Motor I — dinero, reparto y desglose
+
+**Archivos:** crear en `src/lib/pasarelas/`: `decimal.ts`, `money.ts`, `allocate.ts`, `schemes.ts`,
+`breakdown.ts`, `guards.ts` y sus `*.test.ts` al lado.
+
+**Consume:** `types.ts` (tarea 1). **Produce:**
+
+```ts
+// decimal.ts
+export const D: typeof Decimal;                 // Decimal.clone({ precision: 40, rounding: Decimal.ROUND_HALF_UP })
+export const ZERO: Money;                       // "0.00"
+export function dec(x: string | Decimal): Decimal;        // RangeError si no es un decimal finito
+export function r2(x: Decimal): Decimal;                  // a centavos, mitad hacia arriba
+export function toMoney(x: Decimal): Money;               // nunca "-0.00"
+export function isMoney(x: unknown): x is Money;          // /^-?\d+\.\d{2}$/
+export function normPct(x: string | Decimal): Pct;        // "2.90" → "2.9", "50.0000" → "50"
+// money.ts
+export function parseMoney(input: string): Money | null;
+export function parsePct(input: string): Pct | null;      // «2,9», «2.9 %»; fuera de 0–100 → null
+export function formatAmount(m: Money): string;           // "1.234,56" · "-3,20"
+export function formatMoney(m: Money, currency: Currency): string;   // "$1.234,56" · "-$3,20" · "€5,00" · "1.234,56 MXN"
+export function formatPct(p: Pct): string;                // "2,9 %"
+export function add(...xs: Money[]): Money;
+export function sub(a: Money, b: Money): Money;
+export function neg(a: Money): Money;
+export function cmp(a: Money, b: Money): -1 | 0 | 1;
+export function isZero(a: Money): boolean;
+export function sumByCurrency<T>(rows: readonly T[], currencyOf: (r: T) => Currency,
+                                 amountOf: (r: T) => Money): Record<Currency, Money>;
+export function pctOf(part: Money, whole: Money, decimals?: number): Pct | null;   // whole = 0 → null
+// allocate.ts
+export function allocate(base: Money, pcts: readonly Pct[]): Money[];   // Σ pcts = 100 exacto; si no, RangeError
+// schemes.ts
+export type SchemeIssue = 'sin_lineas' | 'pct_invalido' | 'suma_mayor_100' | 'suma_menor_sin_resto'
+                        | 'beneficiario_repetido' | 'resto_en_lineas';
+export function schemeTotal(lines: readonly { pct: Pct }[]): Pct;
+export function validateScheme(lines: readonly { beneficiaryId: string; pct: Pct }[],
+                               remainderBeneficiaryId: string | null): SchemeIssue[];
+export const SCHEME_ISSUE_TEXT: Record<SchemeIssue, string>;
+// breakdown.ts
+export function compute(rules: Rules, state: State, currency: Currency): Breakdown;
+export function recompute(b: Breakdown, patch: Partial<State>): Breakdown;
+export function recalc(b: Breakdown, rules: Rules): Breakdown;
+export function diff(a: Breakdown, b: Breakdown): DiffRow[];      // solo lo que cambió
+export function parseBreakdown(json: unknown): Breakdown;         // lanza si no es un desglose v1 válido
+// guards.ts
+export function looksLikeCardNumber(text: string): boolean;       // 13–19 dígitos (con espacios o guiones) y Luhn
+export function hasLongDigitRun(text: string, min?: number): boolean;   // por defecto 7
+export function isHttpUrl(text: string): boolean;
+```
+
+Reglas de `parseMoney`: admite espacios, `$`, `€` y signo; si hay coma y punto, el **último** es el decimal; un solo
+separador seguido de exactamente 3 dígitos es de miles (`1,234` → `1234.00`); seguido de 1 o 2 dígitos es decimal;
+más de 2 decimales, letras o vacío → `null`.
+
+Fórmulas: spec §5.2, al pie de la letra. `compute` lanza `RangeError` si `grossOriginal ≤ 0` o si `refunded` no
+está en `[0, grossOriginal]`.
+
+- [ ] **Pruebas primero.** `breakdown.test.ts` usa un `rulesE1()` (Stripe `2.9` + `0.30`, sin devolver comisión,
+      disputa `15.00`; «Pago rápido» `1.5` sobre `bruto`; plataforma `5`; esquema `neto` A `50`, B `30`, C `20`):
+
+```ts
+test('E1', () => {
+  const b = compute(rulesE1(), { grossOriginal: '100.00', refunded: '0.00', dispute: null, failed: false }, 'USD');
+  expect(b.lines.map((l) => [l.kind, l.amount])).toEqual([['pasarela', '3.20'], ['opcion', '1.50'], ['plataforma', '5.00']]);
+  expect([b.feesTotal, b.net]).toEqual(['9.70', '90.30']);
+  expect(b.alloc.lines.map((l) => l.amount)).toEqual(['45.15', '27.09', '18.06']);
+});
+test('E2', () => { /* 33.33, sin opciones ni plataforma, esquema 33.3333/33.3333/33.3334 */
+  expect(b.feesTotal).toBe('1.27'); expect(b.net).toBe('32.06');
+  expect(b.alloc.lines.map((l) => l.amount)).toEqual(['10.69', '10.68', '10.69']); });
+test('E3', () => { /* pago rápido sobre despues_de_comision */
+  expect(b.lines[1]).toMatchObject({ baseAmount: '96.80', amount: '1.45' }); expect(b.net).toBe('95.35'); });
+test('E4', () => { const r = recompute(e1, { refunded: '100.00' });
+  expect(r.gross).toBe('0.00');
+  expect(r.lines.map((l) => [l.kind, l.amount])).toEqual([['pasarela', '0.00'], ['reembolso', '3.20'], ['opcion', '0.00'], ['plataforma', '0.00']]);
+  expect(r.net).toBe('-3.20'); expect(r.alloc.lines.map((l) => l.amount)).toEqual(['-1.60', '-0.96', '-0.64']); });
+test('E5', () => { const r = recompute(e1, { refunded: '40.00' });
+  expect(r.lines.map((l) => l.amount)).toEqual(['2.04', '1.16', '0.90', '3.00']);
+  expect([r.feesTotal, r.net]).toEqual(['7.10', '52.90']);
+  expect(r.alloc.lines.map((l) => l.amount)).toEqual(['26.45', '15.87', '10.58']); });
+test('E6', () => { const d = recompute(e1, { dispute: 'abierta' });
+  expect([d.feesTotal, d.net]).toEqual(['24.70', '75.30']);
+  expect(d.alloc.lines.map((l) => l.amount)).toEqual(['37.65', '22.59', '15.06']);
+  expect(recompute(d, { dispute: 'ganada' }).net).toBe('90.30'); });
+```
+
+  Más pruebas con nombre: pasarela que **sí** devuelve la comisión (reembolso de 40 → pasarela `2.04`, sin línea de
+  reembolso; total → `0.00`); `feeOverride` `4.70` (línea `informado`; reembolso de 40 sin devolución → `2.82` +
+  `1.88`); esquema `bruto`; esquema con «Resto» (A `50`, B `30`, Resto C → C `20`, `isRemainder`); sin esquema
+  (`alloc.baseKind = null`, sin líneas, base `0.00`); fallido (todo `0.00`); `recalc` con tarifa `3.2` + `0.30`
+  cambia solo lo esperado y `diff` lo enumera; `recompute(b, {})` es idéntico a `b`; `parseBreakdown` rechaza
+  `v: 2` y montos como número.
+  `allocate.test.ts`: `('0.01', ['50','50'])` → `['0.01','0.00']`; `('-0.01', …)` → `['-0.01','0.00']`; empate lo
+  gana la primera; Σ ≠ 100 → `RangeError`.
+  **Propiedades** (2 000 casos con un generador determinista con semilla, sin dependencia nueva): la suma de
+  `allocate` es exactamente la base; `net = gross − feesTotal`; `feesTotal` = suma de líneas; cada monto cumple
+  `isMoney`; `recompute` es idempotente; el total retenido por una pasarela que no devuelve nunca baja al reembolsar.
+  **Foco 2** (`money.test.ts`): `'1,234'`→`'1234.00'`, `'1.234,5'`→`'1234.50'`, `'$ 100'`→`'100.00'`,
+  `'100,005'`→`'100005.00'`, `'1,234.56'`→`'1234.56'`, `'12.345'`→`'12345.00'`, `'0,5'`→`'0.50'`,
+  `'1.2.3'`/`'abc'`/`''`/`'1,2345'`→`null`; `formatMoney('1234.56','USD')`→`'$1.234,56'`,
+  `formatMoney('-3.20','USD')`→`'-$3,20'`, `formatMoney('5.00','MXN')`→`'5,00 MXN'`.
+- [ ] Implementar hasta que todo pase. `npm run coverage` → **100 %** de líneas, ramas y funciones en estos
+      archivos.
+
+### Tarea 4: Motor II — fechas, feriados, versiones y estados
+
+**Archivos:** crear en `src/lib/pasarelas/`: `dates.ts`, `holidays.ts`, `versions.ts`, `status.ts` y sus tests.
+
+**Consume:** `types.ts`. **Produce:**
+
+```ts
+// dates.ts
+export const ZONE = 'America/New_York';
+export function isISODate(x: unknown): x is ISODate;
+export function nyDate(instant: string | Date): ISODate;
+export function todayNY(now: Date): ISODate;
+export function addDays(d: ISODate, n: number): ISODate;
+export function daysBetween(from: ISODate, to: ISODate): number;
+export function isBusinessDay(d: ISODate, holidays: ReadonlySet<ISODate>): boolean;
+export function estimateDepositDate(a: { occurredOn: ISODate; days: number; dayType: DayType;
+                                         holidays: ReadonlySet<ISODate> }): ISODate;
+export function localInputToInstant(local: string): string;   // "2026-11-13T10:30" (hora de NY) → ISO en UTC
+export function instantToLocalInput(instant: string): string;
+export type PeriodPreset = 'este_mes' | 'mes_anterior' | '30d' | '90d' | '365d' | 'este_anio' | 'personalizado';
+export function periodRange(preset: PeriodPreset, today: ISODate,
+                            custom?: { from?: ISODate | null; to?: ISODate | null }): { from: ISODate; to: ISODate };
+export function monthKey(d: ISODate): string;                 // "2026-11"
+export function monthLabel(key: string): string;              // "nov 2026"
+export function formatDate(d: ISODate): string;               // "vie 13 nov 2026"
+export function formatDateTime(instant: string): string;      // "vie 13 nov 2026, 10:30" (hora de NY)
+// holidays.ts
+export function usBankHolidays(year: number): { day: ISODate; name: string }[];
+// versions.ts
+export function pickVersion<T extends { effectiveFrom: ISODate }>(versions: readonly T[], on: ISODate): T | null;
+// status.ts
+export function displayStatus(t: Pick<LeanTx, 'status' | 'disputeState' | 'refunded' | 'grossOriginal'>): DisplayStatus;
+export function isPartialRefund(t: Pick<LeanTx, 'status' | 'refunded' | 'grossOriginal'>): boolean;
+export function isPending(t: Pick<LeanTx, 'status'>): boolean;                  // registrado | en_transito
+export function isOverdue(t: Pick<LeanTx, 'status' | 'estimatedDepositOn' | 'gross'>, today: ISODate): boolean;
+export const STATUS_LABEL: Record<DisplayStatus, string>;    // «Registrado», «En tránsito», «Depositado», …
+export const LIFECYCLE_LABEL: Record<Lifecycle, string>;
+```
+
+Los nombres de días y meses en español salen de tablas propias (no de `Intl`): servidor y navegador deben dar el
+mismo texto. `pickVersion`: la de `effectiveFrom` más reciente que sea ≤ `on`; si ninguna lo es, la más antigua; lista
+vacía → `null`. `periodRange('30d', hoy)` = `[hoy − 29, hoy]`; `personalizado` sin fechas = `este_mes`; si
+`from > to`, se intercambian.
+
+- [ ] **Pruebas primero** (con `usBankHolidays(2026)` como feriados):
+
+```ts
+const H = new Set(usBankHolidays(2026).map((h) => h.day));
+test('F1', () => expect(estimateDepositDate({ occurredOn: '2026-11-13', days: 2, dayType: 'habiles', holidays: H })).toBe('2026-11-17'));
+test('F2', () => expect(estimateDepositDate({ occurredOn: '2026-11-25', days: 2, dayType: 'habiles', holidays: H })).toBe('2026-11-30'));
+test('F3', () => expect(estimateDepositDate({ occurredOn: '2026-12-24', days: 2, dayType: 'habiles', holidays: H })).toBe('2026-12-29'));
+test('pago rápido: 0 días es el mismo día aunque sea sábado', () =>
+  expect(estimateDepositDate({ occurredOn: '2026-11-14', days: 0, dayType: 'habiles', holidays: H })).toBe('2026-11-14'));
+test('corridos no saltan el fin de semana', () =>
+  expect(estimateDepositDate({ occurredOn: '2026-11-13', days: 1, dayType: 'corridos', holidays: H })).toBe('2026-11-14'));
+test('el día es el de Nueva York', () => {
+  expect(nyDate('2026-11-14T03:30:00Z')).toBe('2026-11-13');
+  expect(localInputToInstant('2026-11-13T22:30')).toBe('2026-11-14T03:30:00.000Z'); });
+test('el cambio de horario no corre el día', () => {
+  expect(addDays('2026-03-07', 1)).toBe('2026-03-08'); expect(addDays('2026-03-08', 1)).toBe('2026-03-09');
+  expect(addDays('2026-10-31', 1)).toBe('2026-11-01'); expect(addDays('2026-11-01', 1)).toBe('2026-11-02');
+  expect(daysBetween('2026-03-07', '2026-03-09')).toBe(2); });
+```
+
+  `holidays.test.ts`: `usBankHolidays(2026)` y `(2027)` iguales, fecha por fecha, a la lista del calendario bancario
+  de `AGENTS.md`; en particular **no** incluye `2026-07-03` (el 4 de julio cae sábado: los bancos abren el viernes) y
+  **sí** `2027-07-05` (cae domingo). `status.test.ts`: el orden de `displayStatus` del spec §4.1; `isOverdue` falso
+  con bruto `0.00`, con `fallido`, con `depositado` y sin fecha estimada. `versions.test.ts`: tarifa «vigente desde
+  mañana» no se elige para un cobro de hoy; para uno de mañana, sí.
+- [ ] Implementar. Cobertura **100 %** de estos archivos.
+
+### Tarea 5: Motor III — reglas y escrituras
+
+**Archivos:** crear `src/lib/pasarelas/{rules.ts,write.ts}` y sus tests. **Consume:** tareas 3 y 4. **Produce:**
+
+```ts
+// rules.ts
+export class PayRuleError extends Error { readonly code: 'empresa' | 'pasarela' | 'canal' | 'opcion' | 'esquema' | 'sin_tarifa' | 'sin_version' }
+export function defaultExtraIds(cfg: PayConfig, companyId: string, gatewayId: string): string[];
+export function resolveRules(cfg: PayConfig, sel: Selection, versionsOn?: ISODate): Rules;   // por defecto sel.occurredOn
+export function reResolve(prev: Rules, cfg: PayConfig, sel: Selection,
+  changed: { gateway: boolean; channel: boolean; extras: boolean; scheme: boolean; date: boolean }): Rules;
+export function resolvePayout(cfg: PayConfig, sel: Pick<Selection, 'companyId' | 'gatewayId'>, extras: readonly ExtraRule[]):
+  { days: number; dayType: DayType; source: 'opcion' | 'cuenta' | 'pasarela'; bankAccountId: string | null };
+// write.ts
+export class PayStateError extends Error { readonly code: string }
+export type NewTxInput = Selection & { id: string; occurredAt: string; currency: Currency; grossOriginal: Money;
+  reference: string | null; note: string | null; status?: 'registrado' | 'en_transito' | 'depositado';
+  depositedOn?: ISODate | null; bankAccountId?: string | null; estimatedDepositOn?: ISODate | null };
+export type EditTxInput = Partial<Pick<NewTxInput, 'companyId' | 'channelId' | 'gatewayId' | 'extraIds' | 'schemeId'
+  | 'occurredAt' | 'currency' | 'grossOriginal' | 'reference' | 'note' | 'bankAccountId'>>;
+export function planCreate(cfg: PayConfig, input: NewTxInput, kind?: 'creado' | 'importado'): TxWrite;
+export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): TxWrite;
+export function planRefund(tx: TxSnapshot, a: { amount: Money; on: ISODate; note?: string | null }): TxWrite;  // suma al total
+export function planRefundTotal(tx: TxSnapshot, total: Money): TxWrite;                                        // corrige el total
+export function planDispute(tx: TxSnapshot, a: { action: 'abrir' | 'ganar' | 'perder' | 'anular'; on: ISODate }): TxWrite;
+export function planFail(tx: TxSnapshot): TxWrite;
+export function planReopen(tx: TxSnapshot): TxWrite;
+export function planTransit(tx: TxSnapshot): TxWrite;
+export function planDeposit(tx: TxSnapshot, on: ISODate): TxWrite;
+export function planRevertDeposit(tx: TxSnapshot): TxWrite;
+export function planEstimated(cfg: PayConfig, tx: TxSnapshot, date: ISODate | null): TxWrite;   // null = volver a la automática
+export function planRecalc(cfg: PayConfig, tx: TxSnapshot, mode: 'hoy' | 'fecha_del_cobro', today: ISODate):
+  { write: TxWrite; changes: DiffRow[] };
+export function planTrash(tx: TxSnapshot, nowIso: string): TxWrite;
+export function planRestore(tx: TxSnapshot): TxWrite;
+```
+
+Reglas: `resolveRules` toma la tarifa y la versión de esquema con `pickVersion(…, versionsOn)`; las opciones en el
+orden `sort`; el canal debe ser de la empresa; `schemeId = null` → sin esquema. `reResolve` conserva de `prev` todo
+lo que no cambió (spec §5.2, última viñeta): `date` vuelve a elegir tarifa y versión de esquema; `gateway` cambia
+tarifa y opciones; `channel` la plataforma; `scheme` el esquema. `resolvePayout`: menor `payoutDaysOverride` entre las
+opciones → `payoutDaysOverride` de la cuenta de la pasarela de esa empresa → `payoutDays` de la pasarela; el tipo de
+día es el de la pasarela. Transiciones (lo demás lanza `PayStateError`): depositar desde `registrado`/`en_transito`
+(o cambiar la fecha si ya está); en tránsito solo desde `registrado`; revertir depósito → `en_transito`; fallar solo
+sin depósito, sin reembolso y sin disputa; reabrir `fallido` → `registrado`; reembolsar nunca un `fallido` ni más
+que el bruto original; disputa `abrir` desde nula o `ganada`, `ganar`/`perder`/`anular` solo desde `abierta`;
+`perder` pone `refunded = grossOriginal`. Todo plan sobre un cobro existente lleva `expectedUpdatedAt = tx.updatedAt`,
+`allocations` del desglose nuevo cuando cambian los números (y `null` cuando no) y un evento con
+`data = { antes, despues }`. La fecha estimada se recalcula al crear y al cambiar fecha, pasarela u opciones, salvo
+`estimatedIsManual`.
+
+- [ ] **Pruebas primero** (`cfgDemo()` = lo mismo que `seedBasics` de la tarea 2, pero en memoria):
+  `planCreate` de E1 el viernes `2026-11-13T15:30:00Z` → `fields` con `grossAmount '100.00'`, `feesTotal '9.70'`,
+  `netAmount '90.30'`, `allocBaseAmount '90.30'`, `occurredOn '2026-11-13'`, `estimatedDepositOn '2026-11-13'`
+  (pago rápido, 0 días) y, sin la opción, `'2026-11-17'`; `allocations` `45.15 / 27.09 / 18.06`; evento `creado`.
+  **«Vigente desde mañana»:** con una segunda tarifa `3.5` + `0.30` vigente desde `2026-11-14`, `planCreate` del 13
+  sigue dando `3.20`; del 14 da `3.80`; `planRecalc(…, 'hoy', '2026-11-20')` sobre el cobro del 13 pasa a `3.80` y
+  `changes` lo lista; `planRecalc(…, 'fecha_del_cobro', …)` no cambia nada (`changes` vacío).
+  `planEdit` que solo cambia el monto conserva `rules` idénticas; el que cambia de pasarela trae la tarifa nueva.
+  `planRefund` 40 + otro de 60 = total; un tercero lanza. `planDispute` perder → `refundedAmount = grossOriginal` y
+  línea `disputa`. `planDeposit` → `status 'depositado'`, `depositedOn`, `allocations: null`. Cada transición
+  inválida de la lista lanza `PayStateError`.
+- [ ] Implementar. Cobertura **100 %**.
+
+### Tarea 6: Motor IV — resumen y CSV
+
+**Archivos:** crear `src/lib/pasarelas/{stats.ts,csv.ts,index.ts}` y tests. **Consume:** tareas 3 y 4. **Produce:**
+
+```ts
+// stats.ts — todo excluye los `fallido`
+export type Totals = { count: number; gross: Money; fees: Money; net: Money; avgTicket: Money; feePct: Pct | null;
+  pendingNet: Money; pendingCount: number; depositedNet: Money; depositedCount: number };
+export type CurrencySummary = { totals: Totals;
+  byMonth: { month: string; gross: Money; fees: Money; net: Money; count: number }[];                       // asc
+  byCompany: { companyId: string; gross: Money; fees: Money; net: Money; count: number }[];                 // bruto desc
+  byGateway: { gatewayId: string; gross: Money; fees: Money; net: Money; count: number;
+               sharePct: Pct | null; effectiveCostPct: Pct | null }[];                                      // bruto desc
+  byAccount: { bankAccountId: string | null; net: Money; count: number; sharePct: Pct | null;
+               avgDays: string | null; medianDays: string | null }[] };                                     // neto desc
+export function summarize(rows: readonly LeanTx[], today: ISODate): Record<Currency, CurrencySummary>;
+export function totalsOf(rows: readonly LeanTx[]): Record<Currency, Pick<Totals, 'count' | 'gross' | 'fees' | 'net'>>;
+export function lagStats(rows: readonly LeanTx[], keyOf: (r: LeanTx) => string | null):
+  Record<string, { count: number; avgDays: string; medianDays: string }>;      // solo depositados; 1 decimal
+export type DepositGroup = { date: ISODate; bankAccountId: string | null; currency: Currency; net: Money;
+  count: number; ids: string[]; overdue: boolean };
+export function upcomingDeposits(rows: readonly LeanTx[], today: ISODate, days?: number): DepositGroup[];  // atrasados primero
+// csv.ts
+export type CsvFormat = { delimiter: ',' | ';'; decimal: '.' | ','; bom: boolean };
+export const CSV_ES: CsvFormat;    // ; y coma decimal, con BOM
+export const CSV_STD: CsvFormat;   // , y punto, sin BOM
+export function toCsv(header: readonly string[], rows: readonly (readonly (string | null)[])[], fmt: CsvFormat,
+                      moneyColumns?: readonly number[]): string;
+// index.ts — reexporta todo el motor
+```
+
+`avgTicket = gross ÷ count`; `feePct` y `effectiveCostPct = fees ÷ gross × 100` con 2 decimales; `sharePct` sobre el
+bruto (pasarelas) o el neto (cuentas) de esa moneda. `upcomingDeposits`: pendientes con fecha estimada `< today`
+(`overdue`) o dentro de `[today, today + days − 1]` (14 por defecto), agrupados por fecha, cuenta y moneda. `toCsv`:
+comillas dobles cuando hace falta; a toda celda de **texto** que empiece por `=`, `+`, `-`, `@`, tabulador o retorno
+se le antepone `'`; las columnas de dinero no se tocan salvo el separador decimal.
+
+- [ ] **Pruebas primero:** 6 filas a mano en USD y 2 en EUR → totales por moneda separados y nunca sumados; un
+      `fallido` no cuenta en nada; `feePct` de bruto 0 → `null`; `byMonth` en orden; mediana de `[1, 2, 4]` = `2.0` y
+      de `[1, 2]` = `1.5`; `upcomingDeposits` pone primero el atrasado y excluye depositados, fallidos y bruto `0.00`;
+      `toCsv` con `'=1+1'`, `'-cmd'`, comillas, saltos de línea y montos negativos (`'-3.20'` → `-3,20` en `CSV_ES`,
+      sin apóstrofo).
+- [ ] Implementar. Cobertura **100 %** de `src/lib/pasarelas/**`.
+
+### Tarea 7: Kit de interfaz y marco
+
+**Archivos:** crear `src/app/globals.css` (tokens), `src/components/ui/*` con `index.ts`,
+`src/components/shell/{AppShell.tsx,nav.ts,NavLink.tsx,RegisterFab.tsx}`, `src/app/(dashboard)/layout.tsx`,
+`src/app/{manifest.ts,not-found.tsx,global-error.tsx}`, `public/icons/*`, `src/app/(dashboard)/kit/page.tsx`
+(galería de componentes, solo en desarrollo), `e2e/kit.spec.ts`.
+
+**Produce** (desde `@/components/ui`): `Button`, `ButtonLink`, `IconButton`, `SubmitButton`; `Field`, `Input`,
+`Textarea`, `Select`, `Checkbox`, `Switch`, `MoneyInput`, `PctInput`; `Card`, `CardHeader`, `CardTitle`, `CardBody`;
+`Badge` (`tone`: `neutral|info|success|warning|danger`); `Alert`; `Dialog`, `ConfirmDialog`; `EmptyState`;
+`Skeleton`; `Table`, `THead`, `TBody`, `Tr`, `Th`, `Td`; `PageHeader`, `BackLink`, `TabsNav`; `Stat`; `Money`,
+`Percent`, `DateText`, `DateTimeText`; `UrlSelect`, `UrlSearch`, `UrlPeriod`, `Pagination` (filtros que viven en la
+URL); `Toaster` y `notify.success|error`; `cn`. Cada componente con sus props tipadas y documentadas en la galería.
+Desde `@/components/shell`: `AppShell` (barra inferior en celular: Resumen · Cobros · ＋ · Repartos · Más; barra
+lateral desde 768 px) y `NAV` (rutas del spec §8).
+
+- [ ] Elegir la dirección visual con la habilidad `frontend-design:frontend-design` (propia de este proyecto, sobria,
+      cifras tabulares) y fijar los tokens en `@theme`: colores con contraste AA en claro y oscuro, tipografía
+      servida desde el propio sitio, radios, sombras, foco visible.
+- [ ] `Money` usa `formatMoney`; los negativos van con signo y con un tono distinto, nunca solo color.
+- [ ] `Dialog` sobre `<dialog>` nativo (`showModal`, Escape, foco atrapado, título enlazado).
+- [ ] Todos los controles con etiqueta, `aria-invalid` y `aria-describedby` cuando hay error; objetivos ≥ 44 px.
+- [ ] `e2e/kit.spec.ts`: la galería a 390×844 y 1280×800, en claro y oscuro, **sin violaciones serias ni críticas de
+      axe** y sin desbordamiento horizontal.
+
+### Tarea 8: Sesión y segundo factor
+
+**Archivos:** crear `src/lib/supabase/{client.ts,server.ts,proxy.ts}`, `src/proxy.ts`, `src/lib/auth/session.ts`,
+`src/app/(auth)/{layout.tsx,login/page.tsx,login/LoginForm.tsx,login/actions.ts,login/verificar/page.tsx,
+login/verificar/VerifyForm.tsx}`, `src/app/(dashboard)/ajustes/{page.tsx,SecurityCard.tsx,actions.ts}`,
+`src/components/shell/MfaBanner.tsx`, `next.config.ts` (cabeceras), `e2e/{helpers.ts,sesion.spec.ts}`.
+
+**Consume:** tarea 7 y `tests/integration/helpers.ts` (tarea 2). **Produce:**
+
+```ts
+// lib/supabase/client.ts            → export function createClient(): SupabaseClient<Database>        (navegador)
+// lib/supabase/server.ts            → export async function createClient(): Promise<SupabaseClient<Database>>
+// lib/auth/session.ts  (server-only)
+export type Session = { userId: string; email: string; aal: 'aal1' | 'aal2'; hasFactor: boolean };
+export const getSession: () => Promise<Session | null>;      // una vez por petición (cache de React)
+export async function requireSession(): Promise<Session>;    // sin sesión → /login; con factor y aal1 → /login/verificar
+// e2e/helpers.ts
+export async function newUser(): Promise<TestUser>;                     // usuario nuevo con datos de seedBasics
+export async function login(page: Page, u: TestUser): Promise<void>;
+export async function expectNoSeriousAxe(page: Page): Promise<void>;
+```
+
+- [ ] `proxy.ts` refresca la sesión en cada petición y protege todo salvo `/login`, estáticos y el manifiesto.
+      El parámetro `siguiente` solo acepta rutas internas (`/algo`, nunca `//host` ni `http:`).
+- [ ] Entrar con correo y contraseña; mensaje genérico si falla; sin página de registro.
+- [ ] `/login/verificar`: pide el código si hay factor verificado y la sesión es aal1.
+- [ ] `Ajustes → Seguridad`: activar TOTP (QR + clave + verificar), listar y quitar factores, cambiar contraseña,
+      cerrar sesión. Aviso permanente en el marco si no hay factor.
+- [ ] Cabeceras de seguridad y CSP (spec §6); `robots: noindex`.
+- [ ] `e2e/sesion.spec.ts` (390×844): sin sesión, `/pasarelas` manda a `/login`; credenciales malas → mensaje;
+      entrar → `/pasarelas`; activar el segundo factor, cerrar sesión, entrar de nuevo → pide el código → entra;
+      `?siguiente=//evil.example` no saca del sitio; axe limpio en `/login`, `/login/verificar` y `/ajustes`.
+
+### Tarea 9: Capa de datos común y cobros en el servidor
+
+**Archivos:** crear en `src/server/pasarelas/`: `result.ts`, `action.ts`, `zod.ts`, `dto.ts`, `tx-save.ts`,
+`queries/{config.ts,transactions.ts}`, `ops/{transactions.ts,receipts.ts}`, `actions/{transactions.ts,receipts.ts}`;
+`src/components/pasarelas/receipts/{ReceiptPicker.tsx,upload.ts,downscale.ts}`;
+`tests/integration/{config.test.ts,cobros.test.ts,totales.test.ts}`.
+
+**Consume:** tareas 2, 5, 6, 7 y 8. **Produce:**
+
+```ts
+// result.ts
+export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; error: string; fieldErrors?: Record<string, string[]> };
+// zod.ts — esquemas compartidos por todas las acciones
+export const zId: z.ZodType<string>;                   // uuid
+export const zMoney: z.ZodType<Money>;                 // texto del usuario → parseMoney; inválido → «Monto no válido»
+export const zPositiveMoney: z.ZodType<Money>;         // > 0
+export const zPct: z.ZodType<Pct>;                     // texto → parsePct
+export const zDate: z.ZodType<ISODate>;
+export const zCurrency: z.ZodType<Currency>;           // 3 letras, a mayúsculas
+export const zHttpUrl: z.ZodType<string | null>;       // vacío → null; solo http(s)
+export function zText(max: number): z.ZodType<string>;            // recorta; rechaza looksLikeCardNumber
+export function zOptionalText(max: number): z.ZodType<string | null>;
+export function zAlias(max: number): z.ZodType<string>;           // además rechaza 7 o más dígitos seguidos
+// components/pasarelas/receipts (cliente)
+export async function downscaleImage(file: File, maxSide?: number): Promise<File>;   // 1600; los PDF no se tocan
+export function checkReceiptFile(file: File): string | null;      // mensaje si no es jpg, png, webp o pdf, o pasa de 10 MB
+export async function uploadToFolder(file: File, folderId: string):
+  Promise<{ path: string; mime: string; sizeBytes: number; originalName: string }>;  // a {userId}/{folderId}/{uuid}.{ext}
+export async function uploadReceipt(file: File, transactionId: string): Promise<ActionResult<{ id: string }>>;
+export function ReceiptPicker(props: { onPick: (file: File | null) => void; error?: string | null }): JSX.Element;   // cámara o galería
+// action.ts (server-only)
+export async function runAction<S extends z.ZodType, T>(schema: S, input: unknown,
+  fn: (ctx: { supabase: SupabaseClient<Database>; session: Session }, data: z.output<S>) => Promise<T>,
+  opts?: { revalidate?: string[] }): Promise<ActionResult<T>>;
+export function dbErrorMessage(e: unknown): string;       // códigos y mensajes pay_* → español
+// dto.ts — fila de la base → tipos del motor; los numeric pasan a Money con toMoney(dec(String(n)))
+export function toLeanTx(row): LeanTx;  export function toTxSnapshot(row): TxSnapshot;  /* y uno por tabla */
+// queries/config.ts
+export async function loadPayConfig(supabase: SupabaseClient<Database>): Promise<PayConfig>;
+export const getPayConfig: () => Promise<PayConfig>;      // por petición; incluye inactivos
+export async function ensureHolidays(supabase): Promise<void>;   // siembra 2026 y 2027 si no hay ninguno
+// tx-save.ts
+export async function saveTx(supabase, writes: TxWrite[], opts?: { skipDuplicates?: boolean }):
+  Promise<{ id: string; inserted: boolean; skipped: boolean }[]>;   // en lotes de 500
+// queries/transactions.ts
+export type TxFilters = { from?: ISODate; to?: ISODate; companyId?: string; channelId?: string; gatewayId?: string;
+  bankAccountId?: string; currency?: Currency; status?: DisplayStatus | 'por_caer' | 'atrasado';
+  receipt?: 'con' | 'sin'; estimatedOn?: ISODate; q?: string; trashed?: boolean };
+export type TxSort = 'fecha_desc' | 'fecha_asc' | 'monto_desc' | 'monto_asc' | 'estimada_asc';
+export function parseTxFilters(sp: Record<string, string | string[] | undefined>, today: ISODate): { filters: TxFilters; sort: TxSort; page: number };
+export async function listTx(supabase, f: TxFilters, sort: TxSort, page: number, today: ISODate, pageSize?: number): Promise<{ rows: TxListItem[]; total: number }>;
+export async function leanTx(supabase, f: TxFilters, today: ISODate): Promise<LeanTx[]>;   // TODAS las del filtro, por páginas de 1000
+export async function getTx(supabase, id: string): Promise<TxDetail | null>;               // con reparto, comprobantes y eventos
+export async function getSnapshots(supabase, ids: string[]): Promise<TxSnapshot[]>;
+export async function lastTx(supabase): Promise<TxSnapshot | null>;
+// ops/transactions.ts — lógica con el cliente inyectado (se prueba sin Next)
+export async function createTx(supabase, input: NewTxInput): Promise<{ id: string; created: boolean }>;
+export async function editTx(supabase, id: string, input: EditTxInput): Promise<void>;
+export async function refundTx / setRefundTotalTx / disputeTx / failTx / reopenTx / transitTx / depositTx
+       / revertDepositTx / setEstimatedTx / trashTx / restoreTx / purgeTx(...)
+export async function previewRecalcTx(supabase, ids: string[], mode, today): Promise<{ items: { id: string; label: string; changes: DiffRow[] }[]; unchanged: number }>;
+export async function applyRecalcTx(supabase, ids: string[], mode, today): Promise<number>;
+// ops/receipts.ts
+export async function registerReceipt(supabase, userId: string, a: { transactionId: string; path: string; mime: string; sizeBytes: number; originalName: string | null }): Promise<string>;
+export async function removeReceipt(supabase, id: string): Promise<void>;        // archivo y fila
+export async function receiptSignedUrl(supabase, id: string): Promise<string>;   // 60 s
+// actions/*.ts ('use server'): una acción por operación, con runAction + Zod, que revalida /pasarelas
+```
+
+Reglas: un único constructor `applyTxFilters(query, filters, today)` lo usan `listTx` **y** `leanTx`. La búsqueda `q`
+se limpia a letras, dígitos, espacio y `-_.@#/:` (máx. 80) y busca en referencia, nota, nombres de empresa, canal y
+pasarela (resueltos a ids con la configuración) y, si es un monto, en el bruto original. `status` se traduce a
+condiciones sobre `status`, `dispute_state` y `refunded_amount` en el orden de `displayStatus`. `createTx` es
+**idempotente** por `id`: si ya existe ese `id`, devuelve `{ created: false }` sin tocar nada. `purgeTx` borra primero
+los archivos de `{userId}/{txId}/` y luego la fila; si falla Storage, no borra la fila. `registerReceipt` comprueba
+que el archivo existe en Storage y que la ruta empieza por `{userId}/{transactionId}/`.
+
+- [ ] **Pruebas primero** (`npm run test:int`, con `createUser` + `seedBasics`):
+  - `cobros.test.ts`: `createTx` de E1 deja en la base `fees_total 9.70`, `net_amount 90.30`, repartos
+    `45.15/27.09/18.06` y un evento `creado`. **Foco 1:** llamar `createTx` dos veces con el mismo `id` → una sola
+    fila y `created: false` la segunda. `refundTx` de 40 → `52.90` y repartos `26.45/15.87/10.58`; con liquidaciones
+    previas de `45.15/27.09/18.06` y reembolso total, `pay_beneficiary_balances` da `-46.75/-28.05/-18.70`.
+    `depositTx` en lote de 3 → los 3 `depositado`; `pay_gateway_totals.avg_days` cambia. Conflicto optimista → error
+    con mensaje en español. `trashTx` saca el cobro de listas, totales y saldos; `restoreTx` lo devuelve; `purgeTx`
+    borra también sus archivos (la carpeta queda vacía).
+  - `totales.test.ts` — **Foco 4:** con 1 250 cobros de 1,00 creados por lotes, `leanTx` devuelve 1 250 y
+    `totalsOf` da bruto `1250.00`; `listTx` página 1 devuelve 50 y `total = 1250`. Para 20 filtros generados,
+    `totalsOf(leanTx(f))` coincide con sumar a mano las filas que `listTx` recorre página a página.
+  - `config.test.ts`: `loadPayConfig` devuelve la forma exacta de `PayConfig` y los montos como cadenas con 2
+    decimales; `ensureHolidays` siembra una sola vez.
+- [ ] Implementar. `npm run test:int` en verde.
+
+---
+
+## Fase 1 · Pantallas
+
+Común a todas: Server Components que llaman a `requireSession()` y a `queries/`; filtros en `searchParams`;
+`loading.tsx` y `error.tsx` por ruta; vacíos con `EmptyState`; avisos con `notify`; formularios con etiquetas y
+errores por campo; todo usable a 390 px. Cada tarea deja su `e2e/<nombre>.spec.ts` (a 390×844, con `newUser()`,
+terminando en `expectNoSeriousAxe`) y lo corre contra **su propio** servidor (`PASARELAS_DIST_DIR` y puerto propios).
+Las acciones nuevas van en `src/server/pasarelas/{ops,actions}/<dominio>.ts`, con pruebas de integración de sus
+`ops`.
+
+### Tarea 10: Registrar cobro
+
+**Archivos:** `src/app/(dashboard)/pasarelas/registrar/{page.tsx,loading.tsx}`,
+`src/components/pasarelas/registrar/{RegisterForm.tsx,LivePreview.tsx,ExtrasToggles.tsx}`,
+`src/components/pasarelas/{BreakdownCard.tsx,AllocationList.tsx}`, `e2e/registrar.spec.ts`.
+
+**Consume:** `getPayConfig`, `lastTx`, `createTransaction`, `ReceiptPicker`, `checkReceiptFile`, `uploadReceipt`,
+motor completo. **Produce:** `BreakdownCard({ breakdown })` y `AllocationList({ breakdown })` (los reusa el detalle).
+
+- [ ] Formulario de un paso en el orden del spec §8; al elegir pasarela se encienden sus opciones por defecto
+      (`defaultExtraIds`); moneda por defecto la de la empresa; fecha y hora «ahora» en Nueva York, con la nota
+      «hora de Nueva York»; «Más opciones» plegado.
+- [ ] Vista previa en vivo con el mismo motor: `resolveRules` → `compute` → `resolvePayout` →
+      `estimateDepositDate`. Si falta configuración (`PayRuleError`), lo dice y enlaza a dónde arreglarlo.
+- [ ] El `id` del cobro se genera **una vez** al montar el formulario (`crypto.randomUUID()`) y cambia solo después
+      de un guardado correcto; el botón se desactiva mientras guarda.
+- [ ] Comprobante: cámara o galería, imagen o PDF; se valida tipo y 10 MB **antes** de subir; se achica en el
+      navegador; se sube directo a Storage y se registra. Si la subida falla, el cobro queda guardado y aparece
+      «Reintentar comprobante».
+- [ ] «Repetir el último» carga la selección del último cobro. Tras guardar: aviso con «Ver cobro» y formulario listo
+      para el siguiente con la misma selección.
+- [ ] `e2e/registrar.spec.ts`: **«Listo cuando» n.º 1** — Escuela Demo, Stripe con pago rápido, 100: la vista previa
+      muestra `3,20`, `1,50`, `5,00`, comisiones `9,70`, neto `90,30`, `45,15` / `27,09` / `18,06` y la fecha
+      estimada; se adjunta un PNG generado en memoria; al guardar, el detalle muestra lo mismo y el comprobante.
+      **Foco 1:** doble toque en «Guardar» → un solo cobro en la lista. **Foco 3:** un archivo de 11 MB y un `.txt`
+      se rechazan con mensaje antes de subir, y el cobro se puede guardar sin comprobante.
+
+### Tarea 11: Pasarelas
+
+**Archivos:** `src/app/(dashboard)/pasarelas/pasarelas/{page.tsx,nueva/page.tsx,[id]/page.tsx}` y sus
+`loading.tsx`; `src/components/pasarelas/gateways/*`; `src/server/pasarelas/{ops,actions}/gateways.ts`;
+`tests/integration/pasarelas.test.ts`; `e2e/pasarelas.spec.ts`.
+
+**Produce (acciones):** `createGateway`, `updateGateway`, `setGatewayActive`, `deleteGateway`, `addFeeVersion`
+(`{ gatewayId, pct, fixed, effectiveFrom, note? }`), `deleteFeeVersion`, `saveExtra`, `deleteExtra`.
+
+- [ ] Lista con tarifa vigente, días al depósito y tiempo real (promedio y mediana de `pay_gateway_totals`).
+      «+ Agregar pasarela»: nombre, % y fijo, días (hábiles o corridos), ¿devuelve la comisión?, costo por disputa.
+- [ ] Detalle: opciones con interruptor de «encendida por defecto», %, fijo, base y días; historial de tarifas con
+      «vigente desde» (por defecto mañana) y la vigente marcada.
+- [ ] **Foco 5:** borrar una pasarela o una tarifa con cobros → «Tiene cobros: desactívala en su lugar».
+- [ ] `e2e/pasarelas.spec.ts`: crear «PayPal Demo» 3,49 % + 0,49 con opción «Transferencia inmediata» 1,75 %;
+      **«Listo cuando» n.º 3** — agregar a Stripe una tarifa 3,5 % «vigente desde mañana» y comprobar que un cobro
+      ya registrado sigue mostrando 3,20 y que uno nuevo con fecha de mañana muestra 3,80.
+
+### Tarea 12: Empresas
+
+**Archivos:** `src/app/(dashboard)/pasarelas/empresas/{page.tsx,nueva/page.tsx,[id]/page.tsx}`;
+`src/components/pasarelas/companies/*`; `src/server/pasarelas/{ops,actions,queries}/companies.ts`;
+`tests/integration/empresas.test.ts`; `e2e/empresas.spec.ts`.
+
+**Produce (acciones):** `saveCompany`, `setCompanyActive`, `deleteCompany`, `saveChannel`, `deleteChannel`,
+`saveCompanyGateway` (`{ companyId, gatewayId, dashboardUrl, checkoutUrl, bankAccountId, payoutDaysOverride,
+defaultExtraIds }`), `deleteCompanyGateway`.
+
+- [ ] Ficha: web, por cada pasarela su «Abrir panel» y «Abrir link de pago» (enlaces `http(s)` con
+      `rel="noopener noreferrer"`), canales con su costo, esquema por defecto, cuentas destino. Logo opcional
+      (imagen a `{userId}/{companyId}/…` con `uploadToFolder`, vista con URL firmada); sin logo, las iniciales.
+- [ ] Resumen propio: «Esta empresa ha facturado X» en el período y en total (`pay_company_totals`), por mes y por
+      pasarela (`summarize` sobre `leanTx({ companyId })`), y enlace a sus cobros.
+- [ ] Zod rechaza links que no sean `http(s)` y cualquier texto que parezca tarjeta (`looksLikeCardNumber`).
+- [ ] `e2e/empresas.spec.ts`: crear «Tienda Demo» con un canal al 3 % + 0,25 y su cuenta de Stripe con links; los
+      botones tienen el `href` correcto; `javascript:alert(1)` se rechaza con mensaje.
+
+### Tarea 13: Cuentas destino y feriados
+
+**Archivos:** `src/app/(dashboard)/pasarelas/{cuentas,feriados}/page.tsx`;
+`src/components/pasarelas/{accounts,holidays}/*`; `src/server/pasarelas/{ops,actions}/{accounts,holidays}.ts`;
+`e2e/cuentas-feriados.spec.ts`.
+
+**Produce (acciones):** `saveBankAccount`, `setBankAccountActive`, `deleteBankAccount`, `addHoliday`,
+`deleteHoliday`, `loadUsHolidays` (`{ year }`).
+
+- [ ] Cuentas: alias, banco o billetera, últimos 4, moneda; lo depositado, lo que está por caer y cuánto tarda
+      (`pay_bank_account_totals`). El campo de últimos 4 no admite más de 4 dígitos; el alias rechaza 7 o más
+      dígitos seguidos con el mensaje «No guardes números de cuenta completos».
+- [ ] Feriados por año; «Cargar feriados bancarios de EE. UU. de <año>» (idempotente).
+- [ ] `e2e`: crear una cuenta; pegar `1234567890` en el alias da error; cargar 2028 agrega sus feriados una sola vez.
+
+### Tarea 14: Repartos
+
+**Archivos:** `src/app/(dashboard)/pasarelas/repartos/{page.tsx,esquemas/[id]/page.tsx,esquemas/nuevo/page.tsx,
+beneficiarios/[id]/page.tsx}`; `src/components/pasarelas/splits/*`;
+`src/server/pasarelas/{ops,actions,queries}/{splits,settlements}.ts`; `tests/integration/repartos.test.ts`;
+`e2e/repartos.spec.ts`.
+
+**Produce (acciones):** `saveBeneficiary`, `setBeneficiaryActive`, `deleteBeneficiary`, `saveScheme`
+(`{ schemeId?, name, base, remainderBeneficiaryId, effectiveFrom, lines }` → `pay_save_scheme`), `setSchemeActive`,
+`saveSettlement`, `deleteSettlement` (borra también su comprobante). **Consume:** `ReceiptPicker` y
+`uploadToFolder(file, settlementId)`: el comprobante de una liquidación va a `{userId}/{settlementId}/…`.
+
+- [ ] Libro: por beneficiario y moneda, asignado, liquidado y saldo (`pay_beneficiary_balances`); el saldo negativo
+      se ve con signo y la palabra «a favor de la empresa».
+- [ ] Ficha del beneficiario: movimientos (cada reparto con su cobro, cada liquidación) y «Registrar liquidación»
+      (fecha, monto, moneda, medio, comprobante, nota; «pago» o «devolución»).
+- [ ] Editor de esquema: líneas con beneficiario y %, **suma en vivo**, aviso si no da 100 %, selector de «Resto»,
+      base, «vigente desde»; no deja guardar un esquema inválido y dice por qué (`SCHEME_ISSUE_TEXT`). Versiones
+      anteriores visibles.
+- [ ] `e2e/repartos.spec.ts`: armar el esquema 50/30/20; con 50/30 sin «Resto» el botón no guarda y explica; con
+      «Resto» sí; registrar una liquidación de 45,15 al Grupo A con comprobante y ver el saldo bajar.
+
+### Tarea 15: Cobros — lista
+
+**Archivos:** `src/app/(dashboard)/pasarelas/cobros/{page.tsx,loading.tsx,exportar/route.ts}`;
+`src/components/pasarelas/tx/{TxFilters.tsx,TxTable.tsx,TxCards.tsx,TxBulkBar.tsx,TxTotals.tsx,StatusBadge.tsx,
+DepositDialog.tsx,RecalcDialog.tsx}`; `e2e/cobros.spec.ts`.
+
+**Consume:** `parseTxFilters`, `listTx`, `leanTx`, `totalsOf`, acciones de la tarea 9. **Produce:** `StatusBadge`,
+`DepositDialog`, `RecalcDialog` (los reusa el detalle y el Resumen).
+
+- [ ] Búsqueda, filtros (período, empresa, canal, pasarela, cuenta, moneda, estado, con o sin comprobante), orden y
+      paginación de 50, todo en la URL. Totales del filtro por moneda (nunca mezclados).
+- [ ] Tabla desde 768 px; tarjetas en celular. Selección múltiple con barra de acciones: marcar en tránsito, marcar
+      depositado (con fecha), recalcular (elige «tarifa vigente hoy» o «la de la fecha del cobro», y enseña el
+      **antes y el después** antes de confirmar), a la papelera.
+- [ ] Exportar CSV del filtro completo (no solo la página), en formato español o estándar, sin datos de compradores.
+- [ ] `e2e/cobros.spec.ts`: **«Listo cuando» n.º 5** — con 3 cobros de Stripe, seleccionarlos, «Marcar depositado»
+      con fecha y ver los tres depositados y el tiempo promedio de la pasarela actualizado; el filtro «Sin
+      comprobante» los encuentra; el CSV descargado trae sus referencias y sus montos con coma.
+
+### Tarea 16: Cobro — detalle, acciones y papelera
+
+**Archivos:** `src/app/(dashboard)/pasarelas/cobros/[id]/{page.tsx,editar/page.tsx}`,
+`src/app/(dashboard)/pasarelas/papelera/page.tsx`;
+`src/components/pasarelas/tx/{TxDetail.tsx,TxActions.tsx,RefundDialog.tsx,DisputeDialog.tsx,EditForm.tsx,
+EventsTimeline.tsx,ReceiptsCard.tsx}`; `e2e/cobro-detalle.spec.ts`.
+
+- [ ] Detalle: `BreakdownCard`, `AllocationList`, fechas (cobro, estimada, real), cuenta destino, comprobantes
+      (ver con URL firmada, agregar, quitar) e historial.
+- [ ] Acciones según el estado: editar, cambiar la fecha estimada o volver a la automática, en tránsito, depositado,
+      revertir depósito, reembolso (monto, fecha, nota; muestra el antes y el después), disputa (abrir, ganada,
+      perdida, anular), marcar fallido o reabrir, recalcular, a la papelera. Las no permitidas no se muestran.
+- [ ] Papelera: restaurar, borrar del todo (confirmación que dice que también se borran los comprobantes) y vaciar.
+- [ ] `e2e/cobro-detalle.spec.ts`: **«Listo cuando» n.º 6** — reembolso parcial de 40 sobre el cobro E1: bruto
+      `60,00`, costo del reembolso `1,16`, neto `52,90`, reparto `26,45` / `15,87` / `10,58`, y el historial lo
+      registra; abrir disputa suma `15,00` y ganarla lo revierte; mandar a la papelera lo saca de la lista y
+      restaurarlo lo devuelve; borrarlo del todo elimina también el comprobante. **Foco 3:** quitar un comprobante
+      borra archivo y fila.
+
+### Tarea 17: Resumen
+
+**Archivos:** `src/app/(dashboard)/pasarelas/{page.tsx,loading.tsx,error.tsx}`;
+`src/components/pasarelas/summary/{SummaryFilters.tsx,StatCards.tsx,MonthChart.tsx,CompanyRanking.tsx,
+GatewayShare.tsx,GatewayCost.tsx,AccountsChart.tsx,UpcomingDeposits.tsx,SplitsTable.tsx,Notices.tsx,ChartFrame.tsx}`;
+`src/server/pasarelas/queries/summary.ts`; `e2e/resumen.spec.ts`.
+
+**Consume:** `leanTx`, `summarize`, `upcomingDeposits`, `pay_beneficiary_balances`, `DepositDialog`.
+
+- [ ] Filtros: período (este mes, el anterior, 30, 90 y 365 días, el año y uno a elegir), empresa, pasarela, canal y
+      moneda. Si hay más de una moneda, selector de moneda; nunca un total mezclado.
+- [ ] Tarjetas, gráficos, próximos depósitos (14 días por fecha y cuenta; atrasados arriba en ámbar; «Marcar
+      depositado» por grupo = «todo lo de esta fecha y esta cuenta»), repartos por beneficiario (asignado y
+      liquidado en el período, saldo de toda la historia) y avisos (sin comprobante, atrasados, empresas sin esquema,
+      disputas abiertas, año sin feriados) como en el spec §8.
+- [ ] Gráficos con Recharts en componentes de cliente cargados perezosamente; colores desde los tokens; cada gráfico
+      con título, resumen en texto y tabla alternativa accesible; sin desbordar a 390 px.
+- [ ] `e2e/resumen.spec.ts`: **«Listo cuando» n.º 4** — con cobros de dos empresas y dos pasarelas: cuánto facturó
+      cada empresa, comisiones por pasarela, qué cae en los próximos 14 días y en qué cuenta, y cuánto se le debe a
+      cada grupo; marcar depositado un grupo desde aquí lo mueve de «por caer» a «depositado».
+
+### Tarea 18: Ajustes — exportar todo
+
+**Archivos:** `src/app/(dashboard)/ajustes/{ExportCard.tsx,exportar/route.ts}`; `e2e/ajustes.spec.ts`.
+
+- [ ] «Exportar todo» descarga un JSON con todas las filas `pay_*` del usuario (sin archivos), con fecha en el
+      nombre. Texto que explica que es la copia propia del dueño.
+- [ ] `e2e`: la descarga trae las 17 tablas y los cobros creados en la prueba.
+
+### Tarea 19: Importar CSV (fase B)
+
+**Archivos:** `src/lib/pasarelas/import/{detect.ts,presets.ts,mapping.ts,index.ts}` y tests;
+`src/app/(dashboard)/pasarelas/importar/page.tsx`; `src/components/pasarelas/import/*`;
+`src/server/pasarelas/{ops,actions}/import.ts`; `tests/fixtures/*.csv` (datos inventados);
+`tests/integration/importar.test.ts`; `e2e/importar.spec.ts`.
+
+**Produce:**
+
+```ts
+export type ImportFormat = 'stripe_pagos' | 'stripe_saldo' | 'paypal_actividad' | 'otro';
+export type ColumnMapping = { reference: string; date: string; time?: string | null; timezone?: string | null;
+  gross: string; currency?: string | null; fee?: string | null; status?: string | null; type?: string | null;
+  note?: string | null; fixedZone: string; decimal: '.' | ','; dateFormat: string };
+export function detectFormat(headers: readonly string[]): ImportFormat;
+export function presetFor(format: ImportFormat): ColumnMapping | null;
+export type ImportRow = { line: number; reference: string; occurredAt: string; grossOriginal: Money;
+  currency: Currency; reportedFee: Money | null; note: string | null };
+export function mapRows(rows: readonly Record<string, string>[], m: ColumnMapping):
+  { ok: ImportRow[]; skipped: { line: number; reason: string }[]; errors: { line: number; reason: string }[] };
+```
+
+- [ ] Detecta el formato por encabezados; deja ajustar el mapeo; lo guarda en `pay_gateways.import_mapping`.
+- [ ] Nunca mapea correos ni nombres de compradores. Reembolsos, retiros y comisiones sueltas se cuentan como
+      «omitidos» con su motivo.
+- [ ] «Así lo entendí»: N nuevos, N repetidos (por referencia) que no se tocan, N con error (línea y motivo). Opción
+      «usar la comisión del archivo» (`feeOverride`).
+- [ ] Crea con `planCreate(…, 'importado')` y `saveTx(…, { skipDuplicates: true })`.
+- [ ] Pruebas: los tres formatos con sus fixtures; fechas en UTC y con zona; montos `1,234.56` y `1.234,56`;
+      comisión con signo negativo; **importar dos veces el mismo archivo no duplica nada** (integración y e2e).
+
+---
+
+## Fase 2 · Cierre
+
+### Tarea 20: Semilla demo
+
+**Archivos:** `scripts/seed-pasarelas-demo.ts`, `scripts/demo-data.ts`.
+
+- [ ] 3 empresas (Tienda Demo, Escuela Demo, Estudio Demo), Stripe / PayPal / Zelle con tarifas y opciones, 3 cuentas
+      destino, Grupos A/B/C y un cuarto beneficiario, 2 esquemas, ~60 cobros en los 3 meses anteriores a hoy
+      (generador con semilla fija), con depósitos, un reembolso parcial, una disputa, un fallido y liquidaciones.
+- [ ] Usa `planCreate` y `saveTx`: lo sembrado pasa las mismas restricciones que lo real. Crea el usuario demo si hay
+      clave secreta local; si no, entra con `SEED_EMAIL` / `SEED_PASSWORD`. `--reset` borra antes los datos de ese
+      usuario; sin `--reset` se niega si ya hay datos.
+- [ ] `npm run seed` deja el Resumen lleno; correrlo dos veces con `--reset` da los mismos totales.
+
+### Tarea 21: Punta a punta, axe y capturas
+
+**Archivos:** `e2e/listo-cuando.spec.ts`, `e2e/accesibilidad.spec.ts`, `scripts/capturas.ts`,
+`docs/capturas/*.webp`.
+
+- [ ] `listo-cuando.spec.ts` recorre de corrido, a 390×844 y contra `next build && next start`, los siete «Listo
+      cuando» del encargo, incluido «el comprobante lo veo solo yo» (otro usuario no puede abrirlo ni con la ruta).
+- [ ] `accesibilidad.spec.ts`: cada ruta del spec §8, con datos de la semilla, en claro y oscuro y en los dos
+      tamaños: sin violaciones serias ni críticas, sin desbordamiento horizontal.
+- [ ] Capturas de cada pantalla en el celular con datos demo, para el resumen del dueño.
+- [ ] `npm run lint && npm run typecheck && npm test && npm run test:int && npm run build && npm run test:e2e`
+      en verde; cobertura del motor 100 %.
+
+### Tarea 22: Documentación, revisión y entrega
+
+**Archivos:** `docs/PASARELAS.md`, `README.md`, raíz `README.md`.
+
+- [ ] `docs/PASARELAS.md`: cada pieza; fórmulas con E1–E6 y F1–F3; cómo se congelan los desgloses; decisiones
+      tomadas y «para confirmar»; fase C (claves restringidas de solo lectura, webhooks, dónde guardar secretos, leer
+      comprobantes con IA, vista del socio); lo que queda.
+- [ ] `README.md`: cómo correrlo en local y el paso a paso para producción: copia previa (`pg_dump`), aplicar la
+      migración **con `psql`**, apagar el registro, crear el usuario dueño, proyecto de Vercel con directorio raíz
+      `pasarelas/` y sus dos variables. Advertencia del plan gratis de Supabase (pausa a los 7 días, sin copias).
+- [ ] Revisión adversarial de toda la rama (dinero, seguridad y RLS, accesibilidad, celular) y arreglos.
+- [ ] Verificación final de `pasarelas/` y del gestor de la raíz; `npm audit` sin vulnerabilidades altas.
+- [ ] Resumen corto para el dueño: qué hay y cómo se usa, capturas, y qué falta para producción.
