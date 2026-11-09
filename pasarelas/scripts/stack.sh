@@ -108,7 +108,7 @@ case "${1:-}" in
   types)
     iniciar
     mkdir -p src/lib/supabase
-    $SUPABASE gen types typescript --local --schema public >src/lib/supabase/database.types.ts.tmp
+    $SUPABASE gen types typescript --schema public >src/lib/supabase/database.types.ts.tmp
     mv src/lib/supabase/database.types.ts.tmp src/lib/supabase/database.types.ts
     echo "Tipos regenerados en src/lib/supabase/database.types.ts"
     ;;
