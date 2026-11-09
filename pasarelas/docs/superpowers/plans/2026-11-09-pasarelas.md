@@ -35,10 +35,17 @@ El dueño pidió construir «de corrido», sin parar a aprobar este plan.
   secreta local solo en pruebas y semilla, leída de variables de entorno.
 - Todo objeto de la base lleva prefijo `pay_`. Migraciones **solo aditivas**, con nombre en español.
 - No se guardan números de tarjeta, CVV, cuentas completas ni datos de compradores.
-- No ejecutes `next build` ni `next dev` sobre `.next/` mientras otros agentes trabajan: usa tu propio
-  `PASARELAS_DIST_DIR` y tu propio puerto (ver `AGENTS.md`). No hagas `git commit`: el orquestador confirma.
+- Cada tarea se ejecuta **en su propio worktree** de git y confirma ahí su trabajo, con commits pequeños y mensajes
+  en español (sin nombrar modelos de IA). El stack local de Supabase es **compartido**: no hagas `db:reset` (salvo la
+  tarea 2), crea tus propios usuarios de prueba y usa tu propio puerto (`3100 + número de tarea`).
 - Verificación de cada tarea, desde `pasarelas/`: `npm run typecheck`, `npm run lint`, `npm test`, y lo que la tarea
   indique (`npm run test:int`, `npm run test:e2e -- <archivo>`).
+- **Pantallas (tareas 10 a 19):** Server Components que llaman a `requireSession()` y leen por `queries/`; filtros
+  en `searchParams`; `loading.tsx` y `error.tsx` por ruta; vacíos con `EmptyState`; avisos con `notify`; formularios
+  con etiquetas y errores por campo; todo usable a 390 px. Cada tarea deja su `e2e/<nombre>.spec.ts` (a 390×844, con
+  `newUser()`, terminando en `expectNoSeriousAxe`) y lo corre contra su propio servidor. Las acciones nuevas van en
+  `src/server/pasarelas/{ops,actions}/<dominio>.ts`, con pruebas de integración de sus `ops`. No se editan archivos
+  de otras tareas (ni `nav.ts`, ni `e2e/helpers.ts`, ni `package.json`): si falta algo ahí, se reporta.
 
 ## Foco de revisión
 
@@ -58,7 +65,7 @@ Lo que el spec implica y es más probable que le falle a quien lo use; cada uno 
 
 ## Fase 0 · Cimientos
 
-### Tarea 1: Arranque del proyecto
+### Task 1: Arranque del proyecto
 
 **Archivos:** crear `pasarelas/{package.json,tsconfig.json,next.config.ts,eslint.config.mjs,vitest.config.ts,
 playwright.config.ts,.gitignore,.env.example,AGENTS.md,README.md}`, `supabase/config.toml`, `scripts/stack.sh`,
@@ -66,21 +73,22 @@ playwright.config.ts,.gitignore,.env.example,AGENTS.md,README.md}`, `supabase/co
 `eslint.config.js` (ignorar `pasarelas`), `README.md` (una línea), y `src/styles/index.css` solo si hace falta.
 
 **Produce:** scripts `dev`, `build`, `start`, `lint`, `typecheck`, `test`, `test:int`, `test:e2e`, `coverage`,
-`db:start`, `db:stop`, `db:reset`, `db:types`, `seed`; alias `@/` → `src/`; `PASARELAS_DIST_DIR` para aislar la
-salida de Next por agente; `src/lib/pasarelas/types.ts` con **todos los tipos del motor** (contrato cerrado: las
-tareas 3–6 no lo cambian sin avisar).
+`db:start`, `db:stop`, `db:reset`, `db:types`, `db:env`, `seed`; alias `@/` → `src/`; todas las dependencias del
+proyecto ya instaladas (las tareas siguientes no tocan `package.json`); `src/lib/pasarelas/types.ts` con **todos
+los tipos del motor** (contrato cerrado: las tareas 3–6 no lo cambian sin avisar).
 
 - [ ] Generar la base con `create-next-app@16.4.6` y adaptar (sin fuentes de Google en tiempo de compilación).
 - [ ] `supabase/config.toml`: `enable_signup = false`, MFA TOTP `enroll_enabled = true` y `verify_enabled = true`,
       confirmación de correo apagada en local, `file_size_limit = "10MiB"`.
-- [ ] `scripts/stack.sh start|stop|reset|status`: arranca Docker si está caído y el stack local; idempotente.
+- [ ] `scripts/stack.sh start|stop|reset|status|env`: arranca Docker si está caído y el stack local; idempotente.
+      `env` escribe `.env.local` (no versionado) con la URL y las claves del stack local en marcha.
 - [ ] `AGENTS.md`: convenciones verificadas de Next 16.4, Supabase, pruebas y reglas del dinero.
 - [ ] Verificar: `npm run lint && npm run typecheck && npm test && npm run build` en verde; `npm run db:start`
       responde en `http://127.0.0.1:54321`.
 - [ ] Verificar el gestor: en la raíz, `npm run check && npm run build` dan lo mismo que la línea base (35 pruebas;
       la hoja de estilos principal pesa 72 651 bytes).
 
-### Tarea 2: Base de datos
+### Task 2: Base de datos
 
 **Archivos:** crear `supabase/migrations/20261110120000_las_pasarelas_de_pago.sql`,
 `src/lib/supabase/database.types.ts` (generado), `tests/integration/{helpers.ts,rls.test.ts,cuadres.test.ts,
@@ -125,7 +133,7 @@ Mensajes de error de la base (los traduce la tarea 9): `pay_alloc_sum_mismatch`,
 - [ ] `npm run db:types` genera `database.types.ts`; `npm run typecheck` en verde.
 - [ ] `npm run test:int` en verde.
 
-### Tarea 3: Motor I — dinero, reparto y desglose
+### Task 3: Motor I — dinero, reparto y desglose
 
 **Archivos:** crear en `src/lib/pasarelas/`: `decimal.ts`, `money.ts`, `allocate.ts`, `schemes.ts`,
 `breakdown.ts`, `guards.ts` y sus `*.test.ts` al lado.
@@ -230,7 +238,7 @@ test('E6', () => { const d = recompute(e1, { dispute: 'abierta' });
 - [ ] Implementar hasta que todo pase. `npm run coverage` → **100 %** de líneas, ramas y funciones en estos
       archivos.
 
-### Tarea 4: Motor II — fechas, feriados, versiones y estados
+### Task 4: Motor II — fechas, feriados, versiones y estados
 
 **Archivos:** crear en `src/lib/pasarelas/`: `dates.ts`, `holidays.ts`, `versions.ts`, `status.ts` y sus tests.
 
@@ -301,7 +309,7 @@ test('el cambio de horario no corre el día', () => {
   mañana» no se elige para un cobro de hoy; para uno de mañana, sí.
 - [ ] Implementar. Cobertura **100 %** de estos archivos.
 
-### Tarea 5: Motor III — reglas y escrituras
+### Task 5: Motor III — reglas y escrituras
 
 **Archivos:** crear `src/lib/pasarelas/{rules.ts,write.ts}` y sus tests. **Consume:** tareas 3 y 4. **Produce:**
 
@@ -365,7 +373,7 @@ que el bruto original; disputa `abrir` desde nula o `ganada`, `ganar`/`perder`/`
   inválida de la lista lanza `PayStateError`.
 - [ ] Implementar. Cobertura **100 %**.
 
-### Tarea 6: Motor IV — resumen y CSV
+### Task 6: Motor IV — resumen y CSV
 
 **Archivos:** crear `src/lib/pasarelas/{stats.ts,csv.ts,index.ts}` y tests. **Consume:** tareas 3 y 4. **Produce:**
 
@@ -409,7 +417,7 @@ se le antepone `'`; las columnas de dinero no se tocan salvo el separador decima
       sin apóstrofo).
 - [ ] Implementar. Cobertura **100 %** de `src/lib/pasarelas/**`.
 
-### Tarea 7: Kit de interfaz y marco
+### Task 7: Kit de interfaz y marco
 
 **Archivos:** crear `src/app/globals.css` (tokens), `src/components/ui/*` con `index.ts`,
 `src/components/shell/{AppShell.tsx,nav.ts,NavLink.tsx,RegisterFab.tsx}`, `src/app/(dashboard)/layout.tsx`,
@@ -434,7 +442,7 @@ lateral desde 768 px) y `NAV` (rutas del spec §8).
 - [ ] `e2e/kit.spec.ts`: la galería a 390×844 y 1280×800, en claro y oscuro, **sin violaciones serias ni críticas de
       axe** y sin desbordamiento horizontal.
 
-### Tarea 8: Sesión y segundo factor
+### Task 8: Sesión y segundo factor
 
 **Archivos:** crear `src/lib/supabase/{client.ts,server.ts,proxy.ts}`, `src/proxy.ts`, `src/lib/auth/session.ts`,
 `src/app/(auth)/{layout.tsx,login/page.tsx,login/LoginForm.tsx,login/actions.ts,login/verificar/page.tsx,
@@ -467,7 +475,7 @@ export async function expectNoSeriousAxe(page: Page): Promise<void>;
       entrar → `/pasarelas`; activar el segundo factor, cerrar sesión, entrar de nuevo → pide el código → entra;
       `?siguiente=//evil.example` no saca del sitio; axe limpio en `/login`, `/login/verificar` y `/ajustes`.
 
-### Tarea 9: Capa de datos común y cobros en el servidor
+### Task 9: Capa de datos común y cobros en el servidor
 
 **Archivos:** crear en `src/server/pasarelas/`: `result.ts`, `action.ts`, `zod.ts`, `dto.ts`, `tx-save.ts`,
 `queries/{config.ts,transactions.ts}`, `ops/{transactions.ts,receipts.ts}`, `actions/{transactions.ts,receipts.ts}`;
@@ -525,15 +533,36 @@ export async function lastTx(supabase): Promise<TxSnapshot | null>;
 // ops/transactions.ts — lógica con el cliente inyectado (se prueba sin Next)
 export async function createTx(supabase, input: NewTxInput): Promise<{ id: string; created: boolean }>;
 export async function editTx(supabase, id: string, input: EditTxInput): Promise<void>;
-export async function refundTx / setRefundTotalTx / disputeTx / failTx / reopenTx / transitTx / depositTx
-       / revertDepositTx / setEstimatedTx / trashTx / restoreTx / purgeTx(...)
-export async function previewRecalcTx(supabase, ids: string[], mode, today): Promise<{ items: { id: string; label: string; changes: DiffRow[] }[]; unchanged: number }>;
-export async function applyRecalcTx(supabase, ids: string[], mode, today): Promise<number>;
+export async function refundTx(supabase, id: string, a: { amount: Money; on: ISODate; note?: string | null }): Promise<void>;
+export async function setRefundTotalTx(supabase, id: string, total: Money): Promise<void>;
+export async function disputeTx(supabase, id: string, a: { action: 'abrir' | 'ganar' | 'perder' | 'anular'; on: ISODate }): Promise<void>;
+export async function failTx(supabase, id: string): Promise<void>;
+export async function reopenTx(supabase, id: string): Promise<void>;
+export async function transitTx(supabase, ids: string[]): Promise<number>;
+export async function depositTx(supabase, ids: string[], on: ISODate): Promise<number>;
+export async function revertDepositTx(supabase, id: string): Promise<void>;
+export async function setEstimatedTx(supabase, id: string, date: ISODate | null): Promise<void>;
+export async function trashTx(supabase, ids: string[]): Promise<number>;
+export async function restoreTx(supabase, ids: string[]): Promise<number>;
+export async function purgeTx(supabase, userId: string, ids: string[]): Promise<number>;
+export async function previewRecalcTx(supabase, ids: string[], mode: 'hoy' | 'fecha_del_cobro', today: ISODate):
+  Promise<{ items: { id: string; label: string; changes: DiffRow[] }[]; unchanged: number }>;
+export async function applyRecalcTx(supabase, ids: string[], mode: 'hoy' | 'fecha_del_cobro', today: ISODate): Promise<number>;
 // ops/receipts.ts
 export async function registerReceipt(supabase, userId: string, a: { transactionId: string; path: string; mime: string; sizeBytes: number; originalName: string | null }): Promise<string>;
 export async function removeReceipt(supabase, id: string): Promise<void>;        // archivo y fila
 export async function receiptSignedUrl(supabase, id: string): Promise<string>;   // 60 s
-// actions/*.ts ('use server'): una acción por operación, con runAction + Zod, que revalida /pasarelas
+// actions/transactions.ts ('use server') — cada una recibe `input: unknown`, valida con Zod y usa runAction
+//   createTransaction → ActionResult<{ id: string }>      editTransaction({ id, ...cambios })
+//   refundTransaction({ id, amount, on, note? })          setRefundTotal({ id, total })
+//   disputeTransaction({ id, action, on })                failTransaction({ id })   reopenTransaction({ id })
+//   markInTransit({ ids })  markDeposited({ ids, on })    → ActionResult<{ count: number }>
+//   revertDeposit({ id })   setEstimatedDate({ id, date | null })
+//   previewRecalc({ ids, mode })  applyRecalc({ ids, mode })
+//   trashTransactions({ ids })  restoreTransactions({ ids })  purgeTransactions({ ids })  → ActionResult<{ count: number }>
+// actions/receipts.ts ('use server')
+//   registerReceiptAction({ transactionId, path, mime, sizeBytes, originalName }) → ActionResult<{ id: string }>
+//   removeReceiptAction({ id })      receiptUrlAction({ id }) → ActionResult<{ url: string }>
 ```
 
 Reglas: un único constructor `applyTxFilters(query, filters, today)` lo usan `listTx` **y** `leanTx`. La búsqueda `q`
@@ -563,14 +592,9 @@ que el archivo existe en Storage y que la ruta empieza por `{userId}/{transactio
 
 ## Fase 1 · Pantallas
 
-Común a todas: Server Components que llaman a `requireSession()` y a `queries/`; filtros en `searchParams`;
-`loading.tsx` y `error.tsx` por ruta; vacíos con `EmptyState`; avisos con `notify`; formularios con etiquetas y
-errores por campo; todo usable a 390 px. Cada tarea deja su `e2e/<nombre>.spec.ts` (a 390×844, con `newUser()`,
-terminando en `expectNoSeriousAxe`) y lo corre contra **su propio** servidor (`PASARELAS_DIST_DIR` y puerto propios).
-Las acciones nuevas van en `src/server/pasarelas/{ops,actions}/<dominio>.ts`, con pruebas de integración de sus
-`ops`.
+Lo común a todas las pantallas está en «Restricciones globales».
 
-### Tarea 10: Registrar cobro
+### Task 10: Registrar cobro
 
 **Archivos:** `src/app/(dashboard)/pasarelas/registrar/{page.tsx,loading.tsx}`,
 `src/components/pasarelas/registrar/{RegisterForm.tsx,LivePreview.tsx,ExtrasToggles.tsx}`,
@@ -597,7 +621,7 @@ motor completo. **Produce:** `BreakdownCard({ breakdown })` y `AllocationList({ 
       **Foco 1:** doble toque en «Guardar» → un solo cobro en la lista. **Foco 3:** un archivo de 11 MB y un `.txt`
       se rechazan con mensaje antes de subir, y el cobro se puede guardar sin comprobante.
 
-### Tarea 11: Pasarelas
+### Task 11: Pasarelas
 
 **Archivos:** `src/app/(dashboard)/pasarelas/pasarelas/{page.tsx,nueva/page.tsx,[id]/page.tsx}` y sus
 `loading.tsx`; `src/components/pasarelas/gateways/*`; `src/server/pasarelas/{ops,actions}/gateways.ts`;
@@ -615,7 +639,7 @@ motor completo. **Produce:** `BreakdownCard({ breakdown })` y `AllocationList({ 
       **«Listo cuando» n.º 3** — agregar a Stripe una tarifa 3,5 % «vigente desde mañana» y comprobar que un cobro
       ya registrado sigue mostrando 3,20 y que uno nuevo con fecha de mañana muestra 3,80.
 
-### Tarea 12: Empresas
+### Task 12: Empresas
 
 **Archivos:** `src/app/(dashboard)/pasarelas/empresas/{page.tsx,nueva/page.tsx,[id]/page.tsx}`;
 `src/components/pasarelas/companies/*`; `src/server/pasarelas/{ops,actions,queries}/companies.ts`;
@@ -634,7 +658,7 @@ defaultExtraIds }`), `deleteCompanyGateway`.
 - [ ] `e2e/empresas.spec.ts`: crear «Tienda Demo» con un canal al 3 % + 0,25 y su cuenta de Stripe con links; los
       botones tienen el `href` correcto; `javascript:alert(1)` se rechaza con mensaje.
 
-### Tarea 13: Cuentas destino y feriados
+### Task 13: Cuentas destino y feriados
 
 **Archivos:** `src/app/(dashboard)/pasarelas/{cuentas,feriados}/page.tsx`;
 `src/components/pasarelas/{accounts,holidays}/*`; `src/server/pasarelas/{ops,actions}/{accounts,holidays}.ts`;
@@ -649,7 +673,7 @@ defaultExtraIds }`), `deleteCompanyGateway`.
 - [ ] Feriados por año; «Cargar feriados bancarios de EE. UU. de <año>» (idempotente).
 - [ ] `e2e`: crear una cuenta; pegar `1234567890` en el alias da error; cargar 2028 agrega sus feriados una sola vez.
 
-### Tarea 14: Repartos
+### Task 14: Repartos
 
 **Archivos:** `src/app/(dashboard)/pasarelas/repartos/{page.tsx,esquemas/[id]/page.tsx,esquemas/nuevo/page.tsx,
 beneficiarios/[id]/page.tsx}`; `src/components/pasarelas/splits/*`;
@@ -671,7 +695,7 @@ beneficiarios/[id]/page.tsx}`; `src/components/pasarelas/splits/*`;
 - [ ] `e2e/repartos.spec.ts`: armar el esquema 50/30/20; con 50/30 sin «Resto» el botón no guarda y explica; con
       «Resto» sí; registrar una liquidación de 45,15 al Grupo A con comprobante y ver el saldo bajar.
 
-### Tarea 15: Cobros — lista
+### Task 15: Cobros — lista
 
 **Archivos:** `src/app/(dashboard)/pasarelas/cobros/{page.tsx,loading.tsx,exportar/route.ts}`;
 `src/components/pasarelas/tx/{TxFilters.tsx,TxTable.tsx,TxCards.tsx,TxBulkBar.tsx,TxTotals.tsx,StatusBadge.tsx,
@@ -690,7 +714,7 @@ DepositDialog.tsx,RecalcDialog.tsx}`; `e2e/cobros.spec.ts`.
       con fecha y ver los tres depositados y el tiempo promedio de la pasarela actualizado; el filtro «Sin
       comprobante» los encuentra; el CSV descargado trae sus referencias y sus montos con coma.
 
-### Tarea 16: Cobro — detalle, acciones y papelera
+### Task 16: Cobro — detalle, acciones y papelera
 
 **Archivos:** `src/app/(dashboard)/pasarelas/cobros/[id]/{page.tsx,editar/page.tsx}`,
 `src/app/(dashboard)/pasarelas/papelera/page.tsx`;
@@ -709,7 +733,7 @@ EventsTimeline.tsx,ReceiptsCard.tsx}`; `e2e/cobro-detalle.spec.ts`.
       restaurarlo lo devuelve; borrarlo del todo elimina también el comprobante. **Foco 3:** quitar un comprobante
       borra archivo y fila.
 
-### Tarea 17: Resumen
+### Task 17: Resumen
 
 **Archivos:** `src/app/(dashboard)/pasarelas/{page.tsx,loading.tsx,error.tsx}`;
 `src/components/pasarelas/summary/{SummaryFilters.tsx,StatCards.tsx,MonthChart.tsx,CompanyRanking.tsx,
@@ -730,7 +754,7 @@ GatewayShare.tsx,GatewayCost.tsx,AccountsChart.tsx,UpcomingDeposits.tsx,SplitsTa
       cada empresa, comisiones por pasarela, qué cae en los próximos 14 días y en qué cuenta, y cuánto se le debe a
       cada grupo; marcar depositado un grupo desde aquí lo mueve de «por caer» a «depositado».
 
-### Tarea 18: Ajustes — exportar todo
+### Task 18: Ajustes — exportar todo
 
 **Archivos:** `src/app/(dashboard)/ajustes/{ExportCard.tsx,exportar/route.ts}`; `e2e/ajustes.spec.ts`.
 
@@ -738,7 +762,7 @@ GatewayShare.tsx,GatewayCost.tsx,AccountsChart.tsx,UpcomingDeposits.tsx,SplitsTa
       nombre. Texto que explica que es la copia propia del dueño.
 - [ ] `e2e`: la descarga trae las 17 tablas y los cobros creados en la prueba.
 
-### Tarea 19: Importar CSV (fase B)
+### Task 19: Importar CSV (fase B)
 
 **Archivos:** `src/lib/pasarelas/import/{detect.ts,presets.ts,mapping.ts,index.ts}` y tests;
 `src/app/(dashboard)/pasarelas/importar/page.tsx`; `src/components/pasarelas/import/*`;
@@ -773,7 +797,7 @@ export function mapRows(rows: readonly Record<string, string>[], m: ColumnMappin
 
 ## Fase 2 · Cierre
 
-### Tarea 20: Semilla demo
+### Task 20: Semilla demo
 
 **Archivos:** `scripts/seed-pasarelas-demo.ts`, `scripts/demo-data.ts`.
 
@@ -785,7 +809,7 @@ export function mapRows(rows: readonly Record<string, string>[], m: ColumnMappin
       usuario; sin `--reset` se niega si ya hay datos.
 - [ ] `npm run seed` deja el Resumen lleno; correrlo dos veces con `--reset` da los mismos totales.
 
-### Tarea 21: Punta a punta, axe y capturas
+### Task 21: Punta a punta, axe y capturas
 
 **Archivos:** `e2e/listo-cuando.spec.ts`, `e2e/accesibilidad.spec.ts`, `scripts/capturas.ts`,
 `docs/capturas/*.webp`.
@@ -798,7 +822,7 @@ export function mapRows(rows: readonly Record<string, string>[], m: ColumnMappin
 - [ ] `npm run lint && npm run typecheck && npm test && npm run test:int && npm run build && npm run test:e2e`
       en verde; cobertura del motor 100 %.
 
-### Tarea 22: Documentación, revisión y entrega
+### Task 22: Documentación, revisión y entrega
 
 **Archivos:** `docs/PASARELAS.md`, `README.md`, raíz `README.md`.
 
