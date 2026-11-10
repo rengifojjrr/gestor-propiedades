@@ -1,3 +1,163 @@
 @import "tailwindcss";
 
-/* Los tokens de diseño (colores, tipografía, radios) los define la tarea 7 en este archivo. */
+/*
+ * Pasarelas · tokens de diseño
+ *
+ * La idea: un libro contable. Papel frío, tinta azul oscura, verde billete para lo que se puede tocar y
+ * tinta roja para los negativos; los totales llevan la doble raya de la contabilidad (`doble-raya`).
+ *
+ * - Los colores de Tailwind por defecto están APAGADOS a propósito (`--color-*: initial`): solo existen los
+ *   de abajo, que tienen contraste AA en claro y en oscuro (lo comprueba `src/components/ui/tokens.test.ts`).
+ *   Una clase como `bg-white` o `text-gray-500` no hace nada: usa `bg-surface`, `text-ink-soft`, etc.
+ * - El modo oscuro sigue al sistema (`prefers-color-scheme`): se redefinen las mismas variables más abajo.
+ *   Todo token de color nuevo tiene que definirse en los dos bloques.
+ */
+@theme {
+  --color-*: initial;
+
+  /* Fondos */
+  --color-paper: #eef2ef; /* la página */
+  --color-surface: #ffffff; /* tarjetas, campos, barras */
+  --color-sunken: #e2e9e5; /* cabeceras de tabla, zonas hundidas */
+
+  /* Tinta */
+  --color-ink: #14213a; /* texto */
+  --color-ink-soft: #4a566b; /* texto secundario */
+
+  /* Rayas */
+  --color-rule: #c5cfc9; /* separadores (decorativos) */
+  --color-rule-strong: #74828c; /* borde de controles: 3 : 1 sobre el fondo */
+
+  /* Marca: lo que se puede tocar, y lo que salió bien */
+  --color-brand: #0e6249;
+  --color-brand-strong: #0a4d39; /* al pasar por encima o presionar */
+  --color-on-brand: #ffffff;
+  --color-brand-soft: #d9eee4;
+
+  /* Estados */
+  --color-danger: #b42318; /* negativos, errores, acciones destructivas */
+  --color-on-danger: #ffffff;
+  --color-danger-soft: #fbe4e1;
+  --color-warning: #8a4b00; /* atrasados, avisos */
+  --color-warning-soft: #fcebc8;
+  --color-info: #1d4e9e;
+  --color-info-soft: #dfe9fa;
+
+  --color-focus: #1d4e9e; /* anillo de foco */
+
+  /* Radios: los controles apenas redondeados; las etiquetas, casi rectas (sellos) */
+  --radius-stamp: 0.1875rem;
+  --radius-control: 0.375rem;
+  --radius-card: 0.625rem;
+
+  /* Sombras: solo para lo que flota sobre la página */
+  --shadow-raised: 0 1px 2px rgb(20 33 58 / 0.08), 0 4px 12px rgb(20 33 58 / 0.1);
+  --shadow-overlay: 0 12px 40px rgb(8 14 20 / 0.28);
+}
+
+@theme inline {
+  /* Archivo (variable, con eje de ancho) servida desde el propio sitio: ver src/app/layout.tsx */
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-paper: #0e1718;
+    --color-surface: #182426;
+    --color-sunken: #091011;
+    --color-ink: #e8eeea;
+    --color-ink-soft: #a9b6b0;
+    --color-rule: #2c3a3b;
+    --color-rule-strong: #6f807f;
+    --color-brand: #5fd3a6;
+    --color-brand-strong: #86e0bd;
+    --color-on-brand: #06261b;
+    --color-brand-soft: #143a2e;
+    --color-danger: #ff9c8f;
+    --color-on-danger: #3b0d08;
+    --color-danger-soft: #4a1a15;
+    --color-warning: #f5c36b;
+    --color-warning-soft: #3f2e0b;
+    --color-info: #9dc1ff;
+    --color-info-soft: #16294a;
+    --color-focus: #9dc1ff;
+    --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 12px rgb(0 0 0 / 0.35);
+    --shadow-overlay: 0 12px 40px rgb(0 0 0 / 0.6);
+  }
+}
+
+/* Cifras: tabulares (las columnas de montos se alinean) y algo estrechas (un monto largo cabe en 390 px). */
+@utility cifra {
+  font-variant-numeric: tabular-nums lining-nums;
+  font-stretch: 88%;
+}
+
+/* Títulos: la misma familia, más ancha y con más peso. */
+@utility titulo {
+  font-stretch: 112%;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+/* La doble raya contable: marca un total. */
+@utility doble-raya {
+  border-bottom: 3px double currentColor;
+  padding-bottom: 0.125rem;
+}
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+
+  body {
+    min-height: 100dvh;
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  ::placeholder {
+    color: var(--color-ink-soft);
+    opacity: 1;
+  }
+
+  ::selection {
+    background-color: var(--color-brand);
+    color: var(--color-on-brand);
+  }
+
+  /* <dialog> nativo: lo de atrás se oscurece y deja de desplazarse mientras está abierto. */
+  dialog::backdrop {
+    background-color: rgb(8 14 20 / 0.6);
+  }
+
+  html:has(dialog[open]) {
+    overflow: hidden;
+  }
+
+  /* El campo de búsqueda trae su propio botón para borrar. */
+  input[type="search"]::-webkit-search-cancel-button {
+    appearance: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
