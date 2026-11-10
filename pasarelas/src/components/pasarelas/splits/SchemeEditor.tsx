@@ -98,10 +98,14 @@ export function SchemeEditor({
       <Field label="Nombre del esquema" error={errors?.name?.[0]}>
         <Input value={name} onChange={(event) => setName(event.currentTarget.value)} maxLength={80} required />
       </Field>
-      <Field label="Se reparte" error={errors?.base?.[0]}>
+      <Field
+        label="Se reparte"
+        hint="El neto es lo que queda después de las comisiones; el bruto, lo cobrado."
+        error={errors?.base?.[0]}
+      >
         <Select value={base} onChange={(event) => setBase(event.currentTarget.value as AllocBase)}>
-          <option value="neto">{BASE_LABEL.neto} (lo que queda después de comisiones)</option>
-          <option value="bruto">{BASE_LABEL.bruto} (lo cobrado)</option>
+          <option value="neto">{BASE_LABEL.neto}</option>
+          <option value="bruto">{BASE_LABEL.bruto}</option>
         </Select>
       </Field>
 
@@ -110,8 +114,9 @@ export function SchemeEditor({
         {lines.map((line, index) => (
           <fieldset key={line.key} className="flex min-w-0 flex-col gap-2 rounded-card border border-rule p-3">
             <legend className="px-1 text-sm font-semibold">Línea {index + 1}</legend>
-            <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_auto] items-end gap-2">
-              <Field label="Beneficiario">
+            {/* En el celular el beneficiario va solo en su renglón: su nombre entero se lee. */}
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 sm:grid-cols-[minmax(0,1fr)_6.5rem_auto]">
+              <Field label="Beneficiario" className="col-span-2 sm:col-span-1">
                 <Select
                   value={line.beneficiaryId}
                   onChange={(event) => updateLine(line.key, { beneficiaryId: event.currentTarget.value })}

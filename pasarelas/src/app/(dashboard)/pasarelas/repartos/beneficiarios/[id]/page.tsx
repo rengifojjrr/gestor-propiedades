@@ -52,9 +52,11 @@ export default async function BeneficiarioPage({
   if (beneficiary === null) notFound();
 
   const companyName = (id: string) => cfg.companies.find((c) => c.id === id)?.name ?? "Empresa borrada";
-  // La moneda que se propone al liquidar: la de un saldo pendiente; si no hay, la del primer movimiento.
+  // La moneda que se propone al liquidar: la de un saldo pendiente (USD primero, si lo tiene); si no hay
+  // ninguno, la del primer movimiento, o USD.
+  const pending = balances.filter((row) => !isZero(row.balance));
   const defaultCurrency =
-    balances.find((row) => !isZero(row.balance))?.currency ?? balances[0]?.currency ?? "USD";
+    (pending.find((row) => row.currency === "USD") ?? pending[0] ?? balances[0])?.currency ?? "USD";
   const details = [KIND_LABEL[beneficiary.kind], beneficiary.accountAlias].filter(Boolean).join(" · ");
 
   return (

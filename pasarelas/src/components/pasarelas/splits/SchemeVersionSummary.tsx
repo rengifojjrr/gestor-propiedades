@@ -1,4 +1,6 @@
 import { DateText, Percent } from "@/components/ui";
+import { dec, normPct } from "@/lib/pasarelas/decimal";
+import { schemeTotal } from "@/lib/pasarelas/schemes";
 import type { SchemeVersionCfg } from "@/lib/pasarelas/types";
 import { BASE_LABEL, SINCE_START } from "./labels";
 
@@ -33,7 +35,10 @@ export function SchemeVersionSummary({
         ))}
       </ul>
       {version.remainderBeneficiaryId ? (
-        <p className="text-sm">Resto: {nameOf(version.remainderBeneficiaryId)}</p>
+        <p className="text-sm">
+          Resto: {nameOf(version.remainderBeneficiaryId)} (
+          <Percent value={normPct(dec("100").minus(dec(schemeTotal(version.lines))))} />)
+        </p>
       ) : null}
       <p className="text-sm text-ink-soft">
         {BASE_LABEL[version.base]} · <SinceText from={version.effectiveFrom} />
