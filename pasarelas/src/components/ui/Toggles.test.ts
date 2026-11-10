@@ -70,6 +70,14 @@ describe.each(CONTROLS)("%s", (_name, Control) => {
     expect(ids.slice(1).map((id) => textOf(markup, id))).toEqual(["No se puede deshacer.", "Marca la casilla para continuar."]);
   });
 
+  it("un aria-labelledby propio se conserva, combinado con la etiqueta del control", () => {
+    const markup = html(createElement(Control, { label: "Activa", "aria-labelledby": "fila-tienda-demo" }));
+    const ids = (inputAttr(markup, "aria-labelledby") ?? "").split(" ");
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe("fila-tienda-demo");
+    expect(textOf(markup, ids[1] ?? "")).toBe("Activa");
+  });
+
   it("un error vacío o nulo no marca nada", () => {
     for (const error of [null, undefined, ""]) {
       const markup = html(createElement(Control, { label: "Acepto", error }));

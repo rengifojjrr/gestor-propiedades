@@ -22,6 +22,9 @@ function BarLink({ href, label, icon: Icon }: NavItem) {
   );
 }
 
+/** En la barra inferior el «＋» va en el medio: delante de él, la primera mitad de las secciones principales. */
+const BAR_ITEMS_BEFORE_FAB = Math.ceil(NAV.main.length / 2);
+
 function SideLinks({ items }: { items: readonly NavItem[] }) {
   return (
     <ul className="flex flex-col gap-0.5">
@@ -42,7 +45,6 @@ function SideLinks({ items }: { items: readonly NavItem[] }) {
  * Desde 768 px: barra lateral con todas las secciones. El contenido de cada pantalla va en `<main>`.
  */
 export function AppShell({ children }: { children: ReactNode }) {
-  const [summary, charges, splits] = NAV.main;
   return (
     <div className="min-h-dvh md:pl-60">
       <a
@@ -78,13 +80,20 @@ export function AppShell({ children }: { children: ReactNode }) {
         aria-label="Principal"
         className="fixed inset-x-0 bottom-0 z-10 border-t border-rule bg-surface pb-[env(safe-area-inset-bottom)] shadow-raised md:hidden"
       >
-        <ul className="-mt-px grid grid-cols-5 items-end">
-          <li>{summary ? <BarLink {...summary} /> : null}</li>
-          <li>{charges ? <BarLink {...charges} /> : null}</li>
+        <ul className="-mt-px grid auto-cols-fr grid-flow-col items-end">
+          {NAV.main.slice(0, BAR_ITEMS_BEFORE_FAB).map((item) => (
+            <li key={item.href}>
+              <BarLink {...item} />
+            </li>
+          ))}
           <li className="flex justify-center">
             <RegisterFab />
           </li>
-          <li>{splits ? <BarLink {...splits} /> : null}</li>
+          {NAV.main.slice(BAR_ITEMS_BEFORE_FAB).map((item) => (
+            <li key={item.href}>
+              <BarLink {...item} />
+            </li>
+          ))}
           <li>
             <MoreMenu className={BAR_ITEM} />
           </li>

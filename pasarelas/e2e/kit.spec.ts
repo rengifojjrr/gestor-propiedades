@@ -345,3 +345,191 @@ test.describe("componentes", () => {
     await expect(filters.getByRole("searchbox", { name: "Buscar" })).toHaveValue("");
   });
 });
+
+test.describe("pulido del kit", () => {
+  /** Un punto del fondo oscuro: el diálogo centrado deja 16 px libres a cada lado. */
+  const BACKDROP = { x: 8, y: 8 };
+
+  const CLOSE_WAYS: [string, (page: Page) => Promise<void>][] = [
+    ["«Cancelar»", (page) => page.getByRole("alertdialog").getByRole("button", { name: "Cancelar" }).click()],
+    ["Escape", (page) => page.keyboard.press("Escape")],
+    ["su botón de cerrar", (page) => page.getByRole("alertdialog").getByRole("button", { name: "Cerrar" }).click()],
+    ["un clic en el fondo", (page) => page.mouse.click(BACKDROP.x, BACKDROP.y)],
+  ];
+
+  for (const [way, close] of CLOSE_WAYS) {
+    test(`confirmación: cerrarla con ${way} llama a onClose una sola vez y nunca a onConfirm`, async ({ page }) => {
+      await openKit(page);
+      const opener = page.getByRole("button", { name: "Enviar a la papelera" });
+      const confirm = page.getByRole("alertdialog", { name: "¿Enviar este cobro a la papelera?" });
+      const calls = page.getByTestId("llamadas-confirmacion");
+      await expect(calls).toHaveText("Llamadas: onClose 0 · onConfirm 0");
+
+      await opener.click();
+      await expect(confirm).toBeVisible();
+      await close(page);
+      await expect(confirm).toBeHidden();
+      await expect(calls).toHaveText("Llamadas: onClose 1 · onConfirm 0");
+
+      // Otra vuelta: si la primera hubiera dejado una llamada de más en camino, aquí ya se vería.
+      await opener.click();
+      await expect(confirm).toBeVisible();
+      await close(page);
+      await expect(confirm).toBeHidden();
+      await expect(calls).toHaveText("Llamadas: onClose 2 · onConfirm 0");
+    });
+  }
+
+  test("confirmación: confirmar llama a onConfirm una sola vez y no dispara onClose", async ({ page }) => {
+    await openKit(page);
+    const opener = page.getByRole("button", { name: "Enviar a la papelera" });
+    const confirm = page.getByRole("alertdialog", { name: "¿Enviar este cobro a la papelera?" });
+    const calls = page.getByTestId("llamadas-confirmacion");
+
+    await opener.click();
+    await confirm.getByRole("button", { name: "Enviar a la papelera" }).click();
+    await expect(confirm).toBeHidden();
+    await expect(calls).toHaveText("Llamadas: onClose 0 · onConfirm 1");
+
+    // El cierre que hace el código después de confirmar no cuenta como un cierre de la persona, ni tarde.
+    await opener.click();
+    await confirm.getByRole("button", { name: "Enviar a la papelera" }).click();
+    await expect(confirm).toBeHidden();
+    await expect(calls).toHaveText("Llamadas: onClose 0 · onConfirm 2");
+  });
+
+  test("diálogo: el clic en el fondo solo lo cierra si empezó y terminó en el fondo", async ({ page }) => {
+    await openKit(page);
+    const calls = page.getByTestId("llamadas-dialogo");
+    await page.getByRole("button", { name: "Abrir diálogo" }).click();
+    const dialog = page.getByRole("dialog", { name: "Marcar como depositado" });
+    const comment = dialog.getByRole("textbox", { name: "Comentario" });
+    await comment.fill("Cayó completo el lunes");
+    const field = await comment.boundingBox();
+    if (!field) throw new Error("El campo «Comentario» no está en pantalla");
+    const inField = { x: field.x + field.width - 12, y: field.y + field.height / 2 };
+
+    // Seleccionar el texto arrastrando y soltar ya fuera del diálogo.
+    await page.mouse.move(inField.x, inField.y);
+    await page.mouse.down();
+    await page.mouse.move(BACKDROP.x, BACKDROP.y, { steps: 8 });
+    await page.mouse.up();
+    await expect(dialog).toBeVisible();
+    await expect(comment).toHaveValue("Cayó completo el lunes");
+
+    // Al revés tampoco: empezar en el fondo y soltar dentro.
+    await page.mouse.move(BACKDROP.x, BACKDROP.y);
+    await page.mouse.down();
+    await page.mouse.move(inField.x, inField.y, { steps: 8 });
+    await page.mouse.up();
+    await expect(dialog).toBeVisible();
+    await expect(calls).toHaveText("Llamadas: onClose 0");
+
+    // Un clic limpio en el fondo sí lo cierra, y avisa una sola vez.
+    await page.mouse.click(BACKDROP.x, BACKDROP.y);
+    await expect(dialog).toBeHidden();
+    await expect(calls).toHaveText("Llamadas: onClose 1");
+  });
+
+  test("diálogo: usar su barra de desplazamiento no lo cierra", async ({ page }) => {
+    test.skip(isPhone(page), "En el celular la barra va superpuesta y no se puede tocar");
+    // Tan bajo que el diálogo no cabe y tiene que desplazarse por dentro.
+    await page.setViewportSize({ width: 1280, height: 300 });
+    await openKit(page);
+    await page.getByRole("button", { name: "Abrir diálogo" }).click();
+    const dialog = page.getByRole("dialog", { name: "Marcar como depositado" });
+    await expect(dialog).toBeVisible();
+    const bar = await dialog.evaluate((el: HTMLElement) => {
+      const box = el.getBoundingClientRect();
+      const width = el.offsetWidth - el.clientWidth - 2; // sin los dos bordes de 1 px
+      return { width, overflows: el.scrollHeight > el.clientHeight, x: box.right - 1 - width / 2, top: box.top, height: box.height };
+    });
+    expect(bar.overflows).toBe(true);
+    expect(bar.width).toBeGreaterThan(4);
+
+    // Un clic en el riel de la barra, cerca del final: desplaza el contenido y el diálogo sigue ahí.
+    await page.mouse.click(bar.x, bar.top + bar.height - 30);
+    await expect.poll(() => dialog.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    await expect(dialog).toBeVisible();
+    await expect(page.getByTestId("llamadas-dialogo")).toHaveText("Llamadas: onClose 0");
+  });
+
+  const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  /** Una utilidad `shadow-*` compone varias sombras: la del token es la última de la lista. */
+  const endsWith = (shadow: string) => new RegExp(`${escapeRegExp(shadow)}$`);
+
+  const SHADOWS = [
+    {
+      scheme: "light",
+      mode: "claro",
+      raised: "rgba(20, 33, 58, 0.08) 0px 1px 2px 0px, rgba(20, 33, 58, 0.1) 0px 4px 12px 0px",
+      overlay: "rgba(8, 14, 20, 0.28) 0px 12px 40px 0px",
+    },
+    {
+      scheme: "dark",
+      mode: "oscuro",
+      raised: "rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0.35) 0px 4px 12px 0px",
+      overlay: "rgba(0, 0, 0, 0.6) 0px 12px 40px 0px",
+    },
+  ] as const;
+
+  for (const { scheme, mode, raised, overlay } of SHADOWS) {
+    test.describe(`sombras en modo ${mode}`, () => {
+      test.use({ colorScheme: scheme });
+
+      test("lo que flota sobre la página lleva la sombra de su modo", async ({ page }) => {
+        await openKit(page);
+
+        // shadow-raised como clase: el enlace para saltar al contenido, que aparece al recibir el foco.
+        await page.keyboard.press("Tab");
+        const skip = page.getByRole("link", { name: "Saltar al contenido" });
+        await expect(skip).toBeFocused();
+        await expect(skip).toHaveCSS("box-shadow", endsWith(raised));
+
+        // La misma sombra, leída como variable: los avisos pasajeros.
+        await page.getByRole("button", { name: "Aviso de éxito" }).click();
+        await expect(page.locator("[data-sonner-toast]")).toHaveCSS("box-shadow", raised);
+
+        // shadow-overlay: el diálogo.
+        await page.getByRole("button", { name: "Abrir diálogo" }).click();
+        const dialog = page.getByRole("dialog", { name: "Marcar como depositado" });
+        await expect(dialog).toBeVisible();
+        await expect(dialog).toHaveCSS("box-shadow", endsWith(overlay));
+      });
+    });
+  }
+
+  test("campo: si el control trae su propio id, la etiqueta apunta a él", async ({ page }) => {
+    await openKit(page);
+    const date = page.getByRole("region", { name: "Campos" }).getByLabel("Fecha del cobro");
+    await expect(date).toHaveAttribute("id", "kit-fecha-del-cobro");
+    await expect(date).toHaveValue("2026-11-13");
+  });
+
+  test("avisos fijos: solo interrumpe al lector de pantalla el que lo pide con announce", async ({ page }) => {
+    await openKit(page);
+    const region = page.getByRole("region", { name: "Etiquetas y avisos" });
+    const announced = region.getByRole("alert");
+    await expect(announced).toHaveCount(1);
+    await expect(announced).toContainText("No se pudo registrar la liquidación");
+    // Los de aviso y de error que ya estaban en la página no interrumpen.
+    for (const title of ["2 depósitos atrasados", "El esquema no suma 100 %"]) {
+      await expect(region.getByRole("status").filter({ hasText: title })).toHaveCount(1);
+    }
+  });
+
+  test("barra inferior: las secciones principales rodean al «＋», todas del mismo ancho", async ({ page }) => {
+    test.skip(!isPhone(page), "En escritorio no hay barra inferior");
+    await openKit(page);
+    const items = page.getByRole("navigation", { name: "Principal" }).getByRole("listitem");
+    const names = await items.evaluateAll((els) =>
+      els.map((el) => {
+        const control = el.querySelector("a, button");
+        return control?.getAttribute("aria-label") ?? control?.textContent?.trim() ?? "";
+      }),
+    );
+    expect(names).toEqual(["Resumen", "Cobros", "Registrar cobro", "Repartos", "Más"]);
+    const widths = await items.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().width));
+    expect(widths).toEqual([78, 78, 78, 78, 78]);
+  });
+});

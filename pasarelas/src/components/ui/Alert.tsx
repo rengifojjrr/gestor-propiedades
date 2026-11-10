@@ -17,18 +17,24 @@ export type AlertProps = {
   title?: ReactNode;
   /** El detalle y qué hacer. */
   children?: ReactNode;
+  /**
+   * El aviso aparece como respuesta a algo que la persona acaba de hacer (el error general de un formulario):
+   * lleva `role="alert"` y el lector de pantalla lo lee de inmediato, interrumpiendo.
+   */
+  announce?: boolean;
   className?: string;
 };
 
 /**
- * Aviso dentro de la página (no se va solo; para avisos pasajeros está `notify`). Los de `warning` y
- * `danger` interrumpen al lector de pantalla (`role="alert"`); los demás se anuncian sin interrumpir.
+ * Aviso dentro de la página (no se va solo; para avisos pasajeros está `notify`). Un aviso fijo, sea del tono
+ * que sea, no interrumpe al lector de pantalla por un texto que ya estaba en la página (`role="status"`);
+ * el que tiene que leerse en cuanto aparece lo pide con `announce`.
  */
-export function Alert({ tone = "info", title, children, className }: AlertProps) {
+export function Alert({ tone = "info", title, children, announce = false, className }: AlertProps) {
   const { box, icon, Icon } = TONES[tone];
   return (
     <div
-      role={tone === "danger" || tone === "warning" ? "alert" : "status"}
+      role={announce ? "alert" : "status"}
       className={cn("flex gap-3 rounded-control border-l-4 p-3 text-ink", box, className)}
     >
       <Icon aria-hidden className={cn("mt-0.5 size-5 shrink-0", icon)} />

@@ -1,14 +1,17 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useEffect, useId, useRef, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { Button, IconButton, type ButtonVariant } from "./Button";
 import { cn } from "./cn";
 
 export type DialogProps = {
   /** Si está abierto. El estado lo lleva quien lo usa. */
   open: boolean;
-  /** Se llama al cerrarlo con Escape, con su botón o tocando fuera: ahí hay que poner `open` en falso. */
+  /**
+   * Se llama una vez por cada cierre que inicia la persona (Escape, su botón o un clic en el fondo): ahí hay que
+   * poner `open` en falso. No se llama cuando lo cierra quien lo usa, poniendo `open` en falso por su cuenta.
+   */
   onClose: () => void;
   /** El título: es además el nombre accesible del diálogo. */
   title: string;
@@ -22,6 +25,16 @@ export type DialogProps = {
   /** `alertdialog` cuando interrumpe para pedir una confirmación. */
   role?: "dialog" | "alertdialog";
 };
+
+/**
+ * ¿El puntero está sobre el fondo oscuro? El fondo (`::backdrop`) entrega sus eventos al propio `<dialog>`, igual
+ * que su borde y su barra de desplazamiento; lo que distingue al fondo es que queda fuera de la caja del diálogo.
+ */
+function isOnBackdrop(event: MouseEvent<HTMLDialogElement>): boolean {
+  if (event.target !== event.currentTarget) return false;
+  const box = event.currentTarget.getBoundingClientRect();
+  return event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom;
+}
 
 /**
  * Diálogo modal sobre el `<dialog>` nativo: `showModal()` deja inerte lo de atrás y atrapa el foco, Escape
@@ -38,6 +51,7 @@ export function Dialog({
   role = "dialog",
 }: DialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
+  const pressedOnBackdrop = useRef(false);
   const titleId = useId();
   const descriptionId = useId();
 
@@ -48,9 +62,22 @@ export function Dialog({
     if (!open && dialog.open) dialog.close();
   }, [open]);
 
-  // El <dialog> no tiene relleno: un clic cuyo destino es el propio <dialog> cayó en el fondo oscuro.
-  const closeOnBackdrop = (event: MouseEvent<HTMLDialogElement>) => {
-    if (event.target === event.currentTarget) onClose();
+  // El evento `close` llega con todo cierre. Solo es noticia el que hizo el navegador por su cuenta (Escape),
+  // con `open` todavía en verdadero; si `open` ya es falso, lo cerró el efecto de arriba porque quien lo usa
+  // lo pidió (al confirmar, o tras un cierre del que ya se avisó): avisar otra vez sería contarlo dos veces.
+  const reportClosedByBrowser = () => {
+    if (open) onClose();
+  };
+
+  // Un clic solo cierra si se apretó y se soltó en el fondo: soltar fuera una selección de texto que empezó
+  // dentro también produce un `click` sobre el <dialog>, y no es un clic en el fondo.
+  const rememberPress = (event: PointerEvent<HTMLDialogElement>) => {
+    pressedOnBackdrop.current = isOnBackdrop(event);
+  };
+  const closeOnBackdropClick = (event: MouseEvent<HTMLDialogElement>) => {
+    const pressed = pressedOnBackdrop.current;
+    pressedOnBackdrop.current = false;
+    if (pressed && isOnBackdrop(event)) onClose();
   };
 
   return (
@@ -59,8 +86,9 @@ export function Dialog({
       role={role}
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
-      onClose={onClose}
-      onClick={closeOnBackdrop}
+      onClose={reportClosedByBrowser}
+      onPointerDown={rememberPress}
+      onClick={closeOnBackdropClick}
       className={cn(
         "max-h-[calc(100dvh-2rem)] overflow-y-auto border border-rule bg-surface p-0 text-ink shadow-overlay",
         placement === "center"
@@ -94,9 +122,9 @@ export function Dialog({
 
 export type ConfirmDialogProps = {
   open: boolean;
-  /** Cancelar, Escape o tocar fuera. */
+  /** «Cancelar», Escape, el botón de cerrar o un clic en el fondo: una vez por cierre. */
   onClose: () => void;
-  /** Al confirmar. Quien lo usa cierra el diálogo cuando termina. */
+  /** Al confirmar. Quien lo usa cierra el diálogo cuando termina, y ese cierre no llama a `onClose`. */
   onConfirm: () => void;
   /** La pregunta, con el verbo de la acción: «¿Enviar este cobro a la papelera?». */
   title: string;

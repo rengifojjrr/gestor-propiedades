@@ -292,6 +292,7 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
               ["hint?: ReactNode", "ayuda corta bajo el control"],
               ["error?: string", "mensaje de error; marca el control con aria-invalid"],
               ["optional?: boolean", "agrega «(opcional)»"],
+              ["children", "el control, uno solo: si trae su propio id la etiqueta apunta a ese, y su aria-describedby se suma a la ayuda y al error"],
             ]}
           >
             <Field label="Referencia" error="Ya existe un cobro con esta referencia.">
@@ -314,7 +315,7 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
           </Spec>
           <Spec name="Input type=&quot;date&quot;">
             <Field label="Fecha del cobro">
-              <Input type="date" name="occurredOn" defaultValue="2026-11-13" />
+              <Input id="kit-fecha-del-cobro" type="date" name="occurredOn" defaultValue="2026-11-13" />
             </Field>
           </Spec>
           <Spec name="MoneyInput" props={[["currency?: string", "el código que se muestra junto al campo"]]}>
@@ -333,6 +334,7 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
               ["label: ReactNode", "el nombre del interruptor"],
               ["hint?: ReactNode", "aclaración bajo la etiqueta"],
               ["error?: string", "mensaje de error bajo la fila; marca el interruptor con aria-invalid"],
+              ["aria-labelledby? · aria-describedby?", "se suman a la etiqueta, la ayuda y el error (igual en Checkbox)"],
             ]}
           >
             <Switch name="fast" label="Pago rápido" hint="1,5 % sobre el bruto; el dinero cae el mismo día." defaultChecked />
@@ -398,6 +400,7 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
             ["tone?: \"info\" | \"success\" | \"warning\" | \"danger\"", "por defecto, info"],
             ["title?: ReactNode", "qué pasa, en una línea"],
             ["children?", "el detalle y qué hacer"],
+            ["announce?: boolean", "el aviso aparece tras algo que la persona hizo: lleva role=\"alert\" y el lector de pantalla lo lee de inmediato. Sin ella, un aviso fijo no interrumpe"],
           ]}
         >
           <div className="flex max-w-2xl flex-col gap-3">
@@ -405,6 +408,9 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
             <Alert tone="success" title="Reparto cuadrado">Las tres partes suman exactamente el neto.</Alert>
             <Alert tone="warning" title="2 depósitos atrasados">Su fecha estimada ya pasó y siguen sin caer.</Alert>
             <Alert tone="danger" title="El esquema no suma 100 %">Agrega un «Resto» o ajusta los porcentajes.</Alert>
+            <Alert tone="danger" announce title="No se pudo registrar la liquidación">
+              Vuelve a intentarlo en un momento. Este aviso lleva announce.
+            </Alert>
           </div>
         </Spec>
         <Spec name="notify" props={[["notify.success(mensaje)", "aviso pasajero de que algo se hizo"], ["notify.error(mensaje)", "aviso pasajero de que algo falló"]]}>
@@ -417,7 +423,7 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
           name="Dialog"
           props={[
             ["open: boolean", "si está abierto; el estado lo lleva quien lo usa"],
-            ["onClose: () => void", "al cerrar con Escape, con su botón o tocando fuera"],
+            ["onClose: () => void", "una vez por cada cierre que inicia la persona: Escape, su botón o un clic en el fondo. No se llama cuando lo cierra quien lo usa (open pasa a falso)"],
             ["title: string", "el título; también es su nombre accesible"],
             ["description?: ReactNode", "una frase bajo el título"],
             ["footer?: ReactNode", "los botones"],
@@ -431,7 +437,8 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
         <Spec
           name="ConfirmDialog"
           props={[
-            ["onConfirm: () => void", "al confirmar; quien lo usa cierra el diálogo"],
+            ["onClose: () => void", "al cancelar: «Cancelar», Escape, su botón o un clic en el fondo"],
+            ["onConfirm: () => void", "al confirmar, una sola vez; quien lo usa cierra el diálogo, y eso no llama a onClose"],
             ["confirmLabel: string", "el mismo verbo del título"],
             ["cancelLabel?: string", "por defecto, «Cancelar»"],
             ["variant?: \"primary\" | \"danger\"", "danger para lo que borra"],

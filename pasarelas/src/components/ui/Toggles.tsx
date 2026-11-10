@@ -16,18 +16,20 @@ const ROW =
 
 /**
  * Lo que el control dice de sí mismo a un lector de pantalla: su etiqueta, su ayuda y su error (lo que ya trajera
- * en `aria-describedby` se suma en vez de pisarlos) y `aria-invalid` cuando hay error.
+ * en `aria-labelledby` y en `aria-describedby` va primero y se suma, en vez de pisarse) y `aria-invalid` cuando
+ * hay error.
  */
 function toggleAria(
   id: string,
-  { hint, error, describedBy, invalid }: Pick<ToggleProps, "hint" | "error"> & {
+  { hint, error, labelledBy, describedBy, invalid }: Pick<ToggleProps, "hint" | "error"> & {
+    labelledBy: ToggleProps["aria-labelledby"];
     describedBy: ToggleProps["aria-describedby"];
     invalid: ToggleProps["aria-invalid"];
   },
 ) {
   const ids = [describedBy, hint ? `${id}-ayuda` : null, error ? `${id}-error` : null].filter(Boolean).join(" ");
   return {
-    "aria-labelledby": `${id}-etiqueta`,
+    "aria-labelledby": [labelledBy, `${id}-etiqueta`].filter(Boolean).join(" "),
     "aria-describedby": ids || undefined,
     "aria-invalid": invalid ?? (error ? true : undefined),
   };
@@ -57,6 +59,7 @@ export function Checkbox({
   hint,
   error,
   className,
+  "aria-labelledby": labelledBy,
   "aria-describedby": describedBy,
   "aria-invalid": invalid,
   ...props
@@ -69,7 +72,7 @@ export function Checkbox({
           type="checkbox"
           className="size-5 shrink-0 accent-brand"
           {...props}
-          {...toggleAria(id, { hint, error, describedBy, invalid })}
+          {...toggleAria(id, { hint, error, labelledBy, describedBy, invalid })}
         />
         <ToggleText id={id} label={label} hint={hint} />
       </label>
@@ -90,6 +93,7 @@ export function Switch({
   hint,
   error,
   className,
+  "aria-labelledby": labelledBy,
   "aria-describedby": describedBy,
   "aria-invalid": invalid,
   ...props
@@ -105,7 +109,7 @@ export function Switch({
             role="switch"
             className="peer absolute inset-0 size-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
             {...props}
-            {...toggleAria(id, { hint, error, describedBy, invalid })}
+            {...toggleAria(id, { hint, error, labelledBy, describedBy, invalid })}
           />
           <span
             aria-hidden
