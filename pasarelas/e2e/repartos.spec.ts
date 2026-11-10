@@ -13,8 +13,8 @@ import { serverData } from "./server-data";
 /**
  * Repartos: el libro por beneficiario y moneda (un saldo negativo dice «a favor de la empresa»), armar un esquema
  * 50/30/20 (con 50/30 y sin «Resto» no se guarda, y se dice por qué), corregir la última versión de un esquema que
- * ningún cobro usa (con cobros solo se le cambia el nombre) y registrar una liquidación de 45,15 al Grupo A con su
- * comprobante. Un corte de red al guardar un beneficiario o al desactivarlo se dice ahí mismo, con
+ * ningún cobro usa (con cobros solo se le cambia el nombre), crear un beneficiario sin salir del editor, y registrar
+ * una liquidación de 45,15 al Grupo A con su comprobante. Un corte de red al guardar un beneficiario o al desactivarlo se dice ahí mismo, con
  * «Ver cómo quedó», sin perder lo escrito; borrar uno sin historia lleva a Repartos. Una liquidación guarda el tipo que se ve, y un corte de la respuesta no la duplica
  * ni borra su comprobante. Al final, los comprobantes de un cobro (las mismas piezas de subida): se nombran por su
  * tipo y su fecha, nunca por el nombre del archivo. Un usuario nuevo por proyecto (celular y escritorio), con el
@@ -363,6 +363,65 @@ test("un esquema con cobros no se corrige: «Editar» dice cuántos y deja cambi
   await expect(page).toHaveURL((url) => url.pathname === `/pasarelas/repartos/esquemas/${schemeId}`);
   await expect(page.getByRole("heading", { level: 1, name: renamed })).toBeVisible();
   expect(await schemeVersionsOf(schemeId)).toEqual(before);
+});
+
+test("en «Nuevo esquema», «Nuevo beneficiario» lo crea sin salir de la pantalla y lo deja en una línea nueva, con el foco en su porcentaje", async ({
+  page,
+}, testInfo) => {
+  const beneficiary = `Socio Nuevo ${testInfo.project.name}`;
+  const name = `Con socio nuevo ${testInfo.project.name}`;
+  const line = (n: number) => page.getByRole("group", { name: `Línea ${n}` });
+  await page.goto("/pasarelas/repartos/esquemas/nuevo");
+  await page.getByLabel("Nombre del esquema").fill(name);
+  await line(1).getByLabel("Beneficiario").selectOption({ label: "Grupo A" });
+  await line(1).getByLabel("Porcentaje").fill("70");
+
+  await page.getByRole("button", { name: "Nuevo beneficiario" }).click();
+  const dialog = page.getByRole("dialog", { name: "Nuevo beneficiario" });
+  // El diálogo (un <dialog> en su sitio, sin portal) trae su propio <form>: va fuera del del editor, nunca dentro.
+  await expect(page.locator("form dialog")).toHaveCount(0);
+  await dialog.getByLabel("Nombre").fill(beneficiary);
+  await expectCleanScreen(page);
+  await dialog.getByRole("button", { name: "Guardar beneficiario" }).click();
+  await expect(dialog).toBeHidden();
+
+  // Sigue en «Nuevo esquema», con lo escrito, y una línea nueva con él y el foco en su porcentaje vacío.
+  await expect(page).toHaveURL((url) => url.pathname === "/pasarelas/repartos/esquemas/nuevo");
+  await expect(page.getByLabel("Nombre del esquema")).toHaveValue(name);
+  await expect(line(1).getByLabel("Porcentaje")).toHaveValue("70");
+  await expect(line(2).getByLabel("Beneficiario").locator("option:checked")).toHaveText(beneficiary);
+  await expect(line(2).getByLabel("Porcentaje")).toHaveValue("");
+  await expect(line(2).getByLabel("Porcentaje")).toBeFocused();
+  // También se puede elegir en las otras listas del editor.
+  await expect(line(1).getByLabel("Beneficiario").locator("option", { hasText: beneficiary })).toHaveCount(1);
+  await expect(page.getByLabel("Resto").locator("option", { hasText: beneficiary })).toHaveCount(1);
+
+  await page.keyboard.type("30");
+  await expect(page.getByTestId("suma-esquema")).toHaveText("Suman 100 %");
+  await expectCleanScreen(page);
+  await page.getByRole("button", { name: "Guardar esquema" }).click();
+
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Vigente hoy" })).toContainText(beneficiary);
+  const { data: created } = await admin
+    .from("pay_beneficiaries")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("name", beneficiary)
+    .single()
+    .throwOnError();
+  const schemeId = /\/esquemas\/([0-9a-f-]{36})$/.exec(new URL(page.url()).pathname)?.[1] ?? "";
+  const [version] = await schemeVersionsOf(schemeId);
+  const { data: lines } = await admin
+    .from("pay_scheme_lines")
+    .select("beneficiary_id, pct::text")
+    .eq("scheme_version_id", version?.id ?? "")
+    .order("sort")
+    .throwOnError();
+  expect(lines).toEqual([
+    { beneficiary_id: user.basics.beneficiaryIds.a, pct: "70.0000" },
+    { beneficiary_id: created.id, pct: "30.0000" },
+  ]);
 });
 
 test("si Desactivar falla desde la cabecera se dice ahí mismo, y el diálogo de borrar no hereda ese error", async ({

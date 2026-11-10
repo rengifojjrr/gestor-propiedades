@@ -1,8 +1,8 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useActionState, useId, useState } from "react";
+import { useActionState, useEffect, useId, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -23,6 +23,7 @@ import type { AllocBase, ISODate, Pct } from "@/lib/pasarelas/types";
 import { correctScheme, renameScheme, saveScheme } from "@/server/pasarelas/actions/splits";
 import { ActionError } from "../ActionError";
 import { callAction, failureOf, type ActionFailure } from "../callAction";
+import { BeneficiaryFormDialog } from "./BeneficiaryFormDialog";
 import { BASE_LABEL, SINCE_START } from "./labels";
 
 /** Lo que el editor parte sabiendo: el esquema vacío, o la última versión de uno que ya existe. */
@@ -58,6 +59,9 @@ const schemeHref = (schemeId: string) => `/pasarelas/repartos/esquemas/${schemeI
  * Sin `schemeId` crea el esquema. Con `schemeId` le agrega una versión nueva (las anteriores no se tocan), que no
  * puede regir desde la misma fecha que una de sus `versions`: la base la reemplazaría, y eso es corregir. Con
  * `correcting`, corrige la versión de `initial`: su «vigente desde» no se cambia (se lee) y se manda la misma.
+ *
+ * «Nuevo beneficiario» lo agrega sin salir de aquí: su diálogo va fuera del `<form>` (un formulario no puede ir
+ * dentro de otro) y, al guardarse, el beneficiario queda en una línea nueva con el foco en su porcentaje.
  */
 export function SchemeEditor({
   schemeId,
@@ -91,20 +95,39 @@ export function SchemeEditor({
   const [date, setDate] = useState(initial.effectiveFrom === SINCE_START ? defaultDate : initial.effectiveFrom);
   const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<FieldErrors>(undefined);
+  /** Los beneficiarios creados desde aquí, hasta que lleguen con la página (ya refrescada) en `beneficiaries`. */
+  const [created, setCreated] = useState<Choice[]>([]);
+  const [creating, setCreating] = useState(false);
+  /** La línea cuyo porcentaje recibe el foco: la del beneficiario recién creado. */
+  const [focusLine, setFocusLine] = useState<string | null>(null);
+  const focusTarget = useRef<HTMLInputElement>(null);
 
-  const nameOf = (id: string) => beneficiaries.find((b) => b.id === id)?.name ?? "";
+  // Después del efecto del diálogo, que al cerrarse devuelve el foco al botón que lo abrió.
+  useEffect(() => {
+    if (focusLine !== null) focusTarget.current?.focus();
+  }, [focusLine]);
+
+  const choices = [...beneficiaries, ...created.filter((b) => !beneficiaries.some((known) => known.id === b.id))];
+  const nameOf = (id: string) => choices.find((b) => b.id === id)?.name ?? "";
   // Lo que se valida: cada porcentaje ya leído; uno que no se puede leer va vacío y no pasa.
   const parsed = lines.map((line) => ({ beneficiaryId: line.beneficiaryId, pct: parsePct(line.pct) ?? "" }));
   const issues = validateScheme(parsed, remainder || null);
   const total = schemeTotal(parsed.filter((line) => line.pct !== ""));
   const missing = normPct(dec("100").minus(dec(total)));
-  const next = beneficiaries.find((b) => !lines.some((line) => line.beneficiaryId === b.id) && b.id !== remainder);
+  const next = choices.find((b) => !lines.some((line) => line.beneficiaryId === b.id) && b.id !== remainder);
   const effectiveFrom = correcting ? initial.effectiveFrom : sinceStart ? SINCE_START : date;
   const clash = correcting ? undefined : versions.find((version) => version.effectiveFrom === effectiveFrom);
   const blockedBy = [issues.length > 0 ? issuesId : null, clash ? clashId : null].filter(Boolean).join(" ");
 
   const updateLine = (key: string, patch: Partial<LineDraft>) =>
     setLines((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+
+  function addCreated(beneficiary: Choice) {
+    const key = crypto.randomUUID();
+    setCreated((rows) => [...rows, beneficiary]);
+    setLines((rows) => [...rows, { key, beneficiaryId: beneficiary.id, pct: "" }]);
+    setFocusLine(key);
+  }
 
   async function submit() {
     const scheme = {
@@ -142,157 +165,169 @@ export function SchemeEditor({
   }
 
   return (
-    <form action={submit} className="flex flex-col gap-5" noValidate>
-      <Field label="Nombre del esquema" error={errors?.name?.[0]}>
-        <Input value={name} onChange={(event) => setName(event.currentTarget.value)} maxLength={80} required />
-      </Field>
-      <Field
-        label="Se reparte"
-        hint="El neto es lo que queda después de las comisiones; el bruto, lo cobrado."
-        error={errors?.base?.[0]}
-      >
-        <Select value={base} onChange={(event) => setBase(event.currentTarget.value as AllocBase)}>
-          <option value="neto">{BASE_LABEL.neto}</option>
-          <option value="bruto">{BASE_LABEL.bruto}</option>
-        </Select>
-      </Field>
-
-      <div className="flex flex-col gap-3">
-        <h3 className="titulo text-base">Beneficiarios</h3>
-        {lines.map((line, index) => (
-          <fieldset key={line.key} className="flex min-w-0 flex-col gap-2 rounded-card border border-rule p-3">
-            <legend className="px-1 text-sm font-semibold">Línea {index + 1}</legend>
-            {/* En el celular el beneficiario va solo en su renglón: su nombre entero se lee. */}
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 sm:grid-cols-[minmax(0,1fr)_6.5rem_auto]">
-              <Field label="Beneficiario" className="col-span-2 sm:col-span-1">
-                <Select
-                  value={line.beneficiaryId}
-                  onChange={(event) => updateLine(line.key, { beneficiaryId: event.currentTarget.value })}
-                >
-                  {beneficiaries.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Porcentaje">
-                <PctInput value={line.pct} onChange={(event) => updateLine(line.key, { pct: event.currentTarget.value })} />
-              </Field>
-              <IconButton
-                label={`Quitar la línea ${index + 1}`}
-                onClick={() => setLines((rows) => rows.filter((row) => row.key !== line.key))}
-              >
-                <Trash2 aria-hidden className="size-5" />
-              </IconButton>
-            </div>
-          </fieldset>
-        ))}
-        <Button
-          className="self-start"
-          disabled={next === undefined}
-          onClick={() => {
-            if (next) setLines((rows) => [...rows, { key: crypto.randomUUID(), beneficiaryId: next.id, pct: "" }]);
-          }}
+    <>
+      <form action={submit} className="flex flex-col gap-5" noValidate>
+        <Field label="Nombre del esquema" error={errors?.name?.[0]}>
+          <Input value={name} onChange={(event) => setName(event.currentTarget.value)} maxLength={80} required />
+        </Field>
+        <Field
+          label="Se reparte"
+          hint="El neto es lo que queda después de las comisiones; el bruto, lo cobrado."
+          error={errors?.base?.[0]}
         >
-          <Plus aria-hidden className="size-5" />
-          Agregar línea
-        </Button>
-        <p data-testid="suma-esquema" aria-live="polite" className="text-lg font-semibold">
-          Suman <Percent value={total} />
-        </p>
-      </div>
+          <Select value={base} onChange={(event) => setBase(event.currentTarget.value as AllocBase)}>
+            <option value="neto">{BASE_LABEL.neto}</option>
+            <option value="bruto">{BASE_LABEL.bruto}</option>
+          </Select>
+        </Field>
 
-      <Field label="Resto" hint="Quien recibe lo que falte para llegar a 100 %." error={errors?.remainderBeneficiaryId?.[0]}>
-        <Select value={remainder} onChange={(event) => setRemainder(event.currentTarget.value)}>
-          <option value="">Nadie</option>
-          {beneficiaries.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </Select>
-      </Field>
-
-      {issues.length > 0 ? (
-        <div id={issuesId}>
-          <Alert tone="warning" title="Todavía no se puede guardar">
-            <ul className="flex flex-col gap-1">
-              {issues.map((issue) => (
-                <li key={issue}>{SCHEME_ISSUE_TEXT[issue]}</li>
-              ))}
-            </ul>
-          </Alert>
-        </div>
-      ) : remainder && dec(missing).gt(0) ? (
-        <Alert tone="info">
-          El resto, <Percent value={missing} />, va a {nameOf(remainder)}.
-        </Alert>
-      ) : null}
-
-      {correcting ? (
-        <p>
-          {initial.effectiveFrom === SINCE_START ? (
-            "Rige desde el inicio"
-          ) : (
-            <>
-              Rige desde el <DateText value={initial.effectiveFrom} />
-            </>
-          )}
-          <span className="text-ink-soft">: al corregirla, la fecha no cambia.</span>
-        </p>
-      ) : (
         <div className="flex flex-col gap-3">
-          <Field
-            label="Vigente desde"
-            hint={
-              schemeId === null
-                ? "«Desde el inicio» vale para todos los cobros, también los de fechas pasadas."
-                : "Por defecto, mañana. Los cobros ya registrados conservan el reparto con el que se registraron."
-            }
-          >
-            <Select
-              value={sinceStart ? "inicio" : "fecha"}
-              onChange={(event) => setSinceStart(event.currentTarget.value === "inicio")}
+          <h3 className="titulo text-base">Beneficiarios</h3>
+          {lines.map((line, index) => (
+            <fieldset key={line.key} className="flex min-w-0 flex-col gap-2 rounded-card border border-rule p-3">
+              <legend className="px-1 text-sm font-semibold">Línea {index + 1}</legend>
+              {/* En el celular el beneficiario va solo en su renglón: su nombre entero se lee. */}
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2 sm:grid-cols-[minmax(0,1fr)_6.5rem_auto]">
+                <Field label="Beneficiario" className="col-span-2 sm:col-span-1">
+                  <Select
+                    value={line.beneficiaryId}
+                    onChange={(event) => updateLine(line.key, { beneficiaryId: event.currentTarget.value })}
+                  >
+                    {choices.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Porcentaje">
+                  <PctInput
+                    ref={line.key === focusLine ? focusTarget : undefined}
+                    value={line.pct}
+                    onChange={(event) => updateLine(line.key, { pct: event.currentTarget.value })}
+                  />
+                </Field>
+                <IconButton
+                  label={`Quitar la línea ${index + 1}`}
+                  onClick={() => setLines((rows) => rows.filter((row) => row.key !== line.key))}
+                >
+                  <Trash2 aria-hidden className="size-5" />
+                </IconButton>
+              </div>
+            </fieldset>
+          ))}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              disabled={next === undefined}
+              onClick={() => {
+                if (next) setLines((rows) => [...rows, { key: crypto.randomUUID(), beneficiaryId: next.id, pct: "" }]);
+              }}
             >
-              <option value="inicio">Desde el inicio</option>
-              <option value="fecha">Desde una fecha</option>
-            </Select>
-          </Field>
-          {sinceStart ? null : (
-            <Field label="Fecha" error={errors?.effectiveFrom?.[0]}>
-              <Input type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} required />
-            </Field>
-          )}
-          {clash ? (
-            <div id={clashId}>
-              <Alert tone="warning">
-                Ya hay una versión desde {sinceStart ? "el inicio" : "esa fecha"}, la {clash.version}: una versión
-                nueva necesita otra fecha.
-              </Alert>
-            </div>
-          ) : null}
+              <Plus aria-hidden className="size-5" />
+              Agregar línea
+            </Button>
+            <Button onClick={() => setCreating(true)}>
+              <UserPlus aria-hidden className="size-5" />
+              Nuevo beneficiario
+            </Button>
+          </div>
+          <p data-testid="suma-esquema" aria-live="polite" className="text-lg font-semibold">
+            Suman <Percent value={total} />
+          </p>
         </div>
-      )}
 
-      {errors?.lines?.[0] ? (
-        <Alert tone="danger" announce>
-          Revisa los beneficiarios: {errors.lines[0]}
-        </Alert>
-      ) : null}
-      {error ? (
-        <Alert tone="danger" announce>
-          {error}
-        </Alert>
-      ) : null}
-      <SubmitButton
-        className="self-start"
-        disabled={blockedBy !== ""}
-        aria-describedby={blockedBy === "" ? undefined : blockedBy}
-      >
-        {correcting ? "Guardar cambios" : schemeId === null ? "Guardar esquema" : "Guardar versión nueva"}
-      </SubmitButton>
-    </form>
+        <Field label="Resto" hint="Quien recibe lo que falte para llegar a 100 %." error={errors?.remainderBeneficiaryId?.[0]}>
+          <Select value={remainder} onChange={(event) => setRemainder(event.currentTarget.value)}>
+            <option value="">Nadie</option>
+            {choices.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        {issues.length > 0 ? (
+          <div id={issuesId}>
+            <Alert tone="warning" title="Todavía no se puede guardar">
+              <ul className="flex flex-col gap-1">
+                {issues.map((issue) => (
+                  <li key={issue}>{SCHEME_ISSUE_TEXT[issue]}</li>
+                ))}
+              </ul>
+            </Alert>
+          </div>
+        ) : remainder && dec(missing).gt(0) ? (
+          <Alert tone="info">
+            El resto, <Percent value={missing} />, va a {nameOf(remainder)}.
+          </Alert>
+        ) : null}
+
+        {correcting ? (
+          <p>
+            {initial.effectiveFrom === SINCE_START ? (
+              "Rige desde el inicio"
+            ) : (
+              <>
+                Rige desde el <DateText value={initial.effectiveFrom} />
+              </>
+            )}
+            <span className="text-ink-soft">: al corregirla, la fecha no cambia.</span>
+          </p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <Field
+              label="Vigente desde"
+              hint={
+                schemeId === null
+                  ? "«Desde el inicio» vale para todos los cobros, también los de fechas pasadas."
+                  : "Por defecto, mañana. Los cobros ya registrados conservan el reparto con el que se registraron."
+              }
+            >
+              <Select
+                value={sinceStart ? "inicio" : "fecha"}
+                onChange={(event) => setSinceStart(event.currentTarget.value === "inicio")}
+              >
+                <option value="inicio">Desde el inicio</option>
+                <option value="fecha">Desde una fecha</option>
+              </Select>
+            </Field>
+            {sinceStart ? null : (
+              <Field label="Fecha" error={errors?.effectiveFrom?.[0]}>
+                <Input type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} required />
+              </Field>
+            )}
+            {clash ? (
+              <div id={clashId}>
+                <Alert tone="warning">
+                  Ya hay una versión desde {sinceStart ? "el inicio" : "esa fecha"}, la {clash.version}: una versión
+                  nueva necesita otra fecha.
+                </Alert>
+              </div>
+            ) : null}
+          </div>
+        )}
+
+        {errors?.lines?.[0] ? (
+          <Alert tone="danger" announce>
+            Revisa los beneficiarios: {errors.lines[0]}
+          </Alert>
+        ) : null}
+        {error ? (
+          <Alert tone="danger" announce>
+            {error}
+          </Alert>
+        ) : null}
+        <SubmitButton
+          className="self-start"
+          disabled={blockedBy !== ""}
+          aria-describedby={blockedBy === "" ? undefined : blockedBy}
+        >
+          {correcting ? "Guardar cambios" : schemeId === null ? "Guardar esquema" : "Guardar versión nueva"}
+        </SubmitButton>
+      </form>
+      <BeneficiaryFormDialog open={creating} onClose={() => setCreating(false)} onSaved={addCreated} />
+    </>
   );
 }
 

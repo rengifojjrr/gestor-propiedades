@@ -38,10 +38,12 @@ function BeneficiaryForm({
   id,
   initial,
   onClose,
+  onSaved,
 }: {
   id: string | null;
   initial: BeneficiaryFormValues;
   onClose: () => void;
+  onSaved?: (beneficiary: { id: string; name: string }) => void;
 }) {
   const [state, formAction] = useActionState(
     async (_previous: FormState, data: FormData): Promise<FormState> => {
@@ -55,6 +57,8 @@ function BeneficiaryForm({
       const result = await callAction(() => saveBeneficiary({ id, ...values }));
       if (result.ok) {
         notify.success("Beneficiario guardado.");
+        // El servidor guarda el nombre recortado.
+        onSaved?.({ id: result.data.id, name: values.name.trim() });
         onClose();
         return { values, error: null, fieldErrors: {} };
       }
@@ -101,17 +105,23 @@ function BeneficiaryForm({
   );
 }
 
-/** El diálogo para crear un beneficiario (sin `id`) o editar uno. */
+/**
+ * El diálogo para crear un beneficiario (sin `id`) o editar uno. Va fuera de cualquier otro `<form>`: lleva el suyo,
+ * y un formulario no puede ir dentro de otro.
+ */
 export function BeneficiaryFormDialog({
   open,
   onClose,
   id = null,
   initial = EMPTY_BENEFICIARY,
+  onSaved,
 }: {
   open: boolean;
   onClose: () => void;
   id?: string | null;
   initial?: BeneficiaryFormValues;
+  /** Al guardarse, antes de cerrarse: su id y su nombre, para usarlo enseguida (como hace el editor de esquemas). */
+  onSaved?: (beneficiary: { id: string; name: string }) => void;
 }) {
   return (
     <Dialog
@@ -120,7 +130,7 @@ export function BeneficiaryFormDialog({
       title={id === null ? "Nuevo beneficiario" : "Editar beneficiario"}
       description="Quien recibe una parte de los cobros: una persona, una empresa o una cartera."
     >
-      {open ? <BeneficiaryForm id={id} initial={initial} onClose={onClose} /> : null}
+      {open ? <BeneficiaryForm id={id} initial={initial} onClose={onClose} onSaved={onSaved} /> : null}
     </Dialog>
   );
 }
