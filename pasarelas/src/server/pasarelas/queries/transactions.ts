@@ -175,9 +175,18 @@ const NOT_DISPUTED = "dispute_state.is.null,dispute_state.neq.abierta";
 const PENDING = ["registrado", "en_transito"] as const;
 
 /**
+ * `isPending` del motor, en columnas: se ve como registrado o en tránsito. Es decir, está en uno de esos dos pasos
+ * del ciclo del dinero, la disputa no está abierta y no se reembolsó del todo (le queda bruto vigente).
+ */
+function pendingOnly<Q extends TxFilterBuilder<Q>>(query: Q): Q {
+  return query.in("status", PENDING).or(NOT_DISPUTED).gt("gross_amount", ZERO);
+}
+
+/**
  * El estado visible, traducido a columnas en el mismo orden que `displayStatus` del motor. «Por caer» y «atrasado»
- * no son estados visibles: son `isPending` e `isOverdue` del motor, que miran el ciclo del dinero sin importar el
- * reembolso ni la disputa. Así el filtro «por caer» trae justo los cobros que suma la tarjeta «Por caer».
+ * no son estados visibles, pero salen de ellos: por caer es lo que se ve como registrado o en tránsito (`isPending`
+ * del motor) y atrasado es eso mismo con la fecha estimada anterior a `today` (`isOverdue`). Así el filtro «por
+ * caer» trae justo los cobros que suma la tarjeta «Por caer».
  */
 function applyStatus<Q extends TxFilterBuilder<Q>>(query: Q, status: TxFilters["status"], today: ISODate): Q {
   switch (status) {
@@ -195,10 +204,10 @@ function applyStatus<Q extends TxFilterBuilder<Q>>(query: Q, status: TxFilters["
     case "registrado":
       return query.eq("status", status).or(NOT_DISPUTED).gt("gross_amount", ZERO);
     case "por_caer":
-      return query.in("status", PENDING);
+      return pendingOnly(query);
     case "atrasado":
-      // Además de por caer: le queda algo por cobrar (bruto vigente mayor que cero) y la fecha estimada ya pasó.
-      return query.in("status", PENDING).gt("gross_amount", ZERO).lt("estimated_deposit_on", today);
+      // Un cobro sin fecha estimada (nula) no pasa la comparación: no está atrasado.
+      return pendingOnly(query).lt("estimated_deposit_on", today);
   }
 }
 

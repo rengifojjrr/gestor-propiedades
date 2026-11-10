@@ -197,6 +197,9 @@ describe("con cobros de todos los estados", () => {
     // Disputas abiertas: sobre cobros sin tocar y sobre algunos ya reembolsados del todo.
     for (let i = 30; i < 36; i += 1) await disputeTx(c, at(i), { action: "abrir", on: "2026-11-02" });
     for (let i = 80; i < 95; i += 1) await disputeTx(c, at(i), { action: "abrir", on: "2026-11-02" });
+    // De esas, cuatro se pierden (y quedan reembolsadas del todo) y cinco se ganan (y vuelven a su ciclo).
+    for (let i = 86; i < 90; i += 1) await disputeTx(c, at(i), { action: "perder", on: "2026-11-05" });
+    for (let i = 90; i < 95; i += 1) await disputeTx(c, at(i), { action: "ganar", on: "2026-11-05" });
     // Fallidos: solo se puede con los que no están depositados (los depositados se saltan aquí).
     for (let i = 50; i < 70; i += 1) if (i % 6 !== 0) await failTx(c, at(i));
     // A la papelera, de un solo lote.
@@ -233,23 +236,31 @@ describe("con cobros de todos los estados", () => {
       expect(idsOf(await leanTx(user.client, { status }, TODAY)), status).toEqual(idsOf(expected));
     }
     // Lo que distingue a cada regla está en los datos: depositados y disputados que además están reembolsados
-    // del todo, y reembolsos parciales (que no cambian de estado).
+    // del todo, reembolsos parciales (que no cambian de estado) y disputas ya cerradas (ganadas y perdidas).
     expect(all.some((row) => row.status === "depositado" && displayStatus(row) === "reembolsado")).toBe(true);
     expect(all.some((row) => row.disputeState === "abierta" && cmp(row.gross, ZERO) === 0)).toBe(true);
     expect(all.some((row) => cmp(row.refunded, ZERO) > 0 && cmp(row.gross, ZERO) > 0)).toBe(true);
+    expect(all.some((row) => row.disputeState === "ganada")).toBe(true);
+    expect(all.some((row) => row.disputeState === "perdida")).toBe(true);
   });
 
-  it("«por caer» y «atrasado» coinciden con las reglas del motor", async () => {
+  it("«por caer» y «atrasado» traen exactamente los cobros de `isPending` e `isOverdue` del motor", async () => {
     const all = await leanTx(user.client, {}, TODAY);
 
     const pending = all.filter((row) => isPending(row));
     const overdue = all.filter((row) => isOverdue(row, TODAY));
     expect(pending.length).toBeGreaterThan(overdue.length);
     expect(overdue.length).toBeGreaterThan(0);
-    // Lo que distingue a las dos reglas está en los datos: por caer con el bruto en cero (reembolsados del todo)
-    // y por caer en disputa. Siguen por caer; lo que ya no pueden es estar atrasados los del bruto en cero.
-    expect(pending.some((row) => cmp(row.gross, ZERO) === 0)).toBe(true);
-    expect(pending.some((row) => row.disputeState === "abierta")).toBe(true);
+    // Lo que distingue a la regla está en los datos. Sin depositar y aun así NO por caer, todos con la fecha
+    // estimada ya pasada: reembolsados del todo, con la disputa abierta y con la disputa perdida.
+    const late = (row: LeanTx): boolean => row.estimatedDepositOn !== null && row.estimatedDepositOn < TODAY;
+    const held = all.filter((row) => (row.status === "registrado" || row.status === "en_transito") && !isPending(row));
+    expect(held.some((row) => late(row) && row.disputeState === null && cmp(row.gross, ZERO) === 0)).toBe(true);
+    expect(held.some((row) => late(row) && row.disputeState === "abierta" && cmp(row.gross, ZERO) > 0)).toBe(true);
+    expect(held.some((row) => late(row) && row.disputeState === "perdida")).toBe(true);
+    // Y por caer aunque les haya pasado algo: con reembolso parcial y con la disputa ganada.
+    expect(overdue.some((row) => cmp(row.refunded, ZERO) > 0)).toBe(true);
+    expect(overdue.some((row) => row.disputeState === "ganada")).toBe(true);
     const byStatus = await leanTx(user.client, { status: "por_caer" }, TODAY);
     expect(idsOf(byStatus)).toEqual(idsOf(pending));
     expect(idsOf(await leanTx(user.client, { status: "atrasado" }, TODAY))).toEqual(idsOf(overdue));
@@ -266,8 +277,8 @@ describe("con cobros de todos los estados", () => {
     for (const [currency, totals] of Object.entries(filtered)) {
       expect(totals.net, currency).toBe(summary[currency]?.totals.pendingNet);
     }
-    // Un reembolso total no devuelve la comisión: esos cobros restan en la tarjeta, y por eso están en el filtro.
-    expect(pending.some((row) => cmp(row.gross, ZERO) === 0 && cmp(row.net, ZERO) < 0)).toBe(true);
+    // Ni reembolsados del todo (su neto negativo no resta en la tarjeta) ni con la disputa abierta.
+    expect(pending.every((row) => cmp(row.gross, ZERO) > 0 && row.disputeState !== "abierta")).toBe(true);
   });
 
   it("la papelera va aparte: por defecto no aparece, y con trashed solo aparece ella", async () => {
