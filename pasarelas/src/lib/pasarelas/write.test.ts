@@ -176,6 +176,8 @@ function expectRowIsSound({ fields: f, allocations }: Row): void {
     expect(f.grossAmount).toBe(sub(f.grossOriginal, f.refundedAmount));
   }
   expect(f.status === "depositado").toBe(f.depositedOn !== null);
+  // Spec §5.2.7: una disputa perdida es un reembolso total. La base no lo exige: lo garantizan los planes.
+  if (f.disputeState === "perdida") expect(f.refundedAmount).toBe(f.grossOriginal);
   if (f.schemeVersionId === null) expect(f.allocBaseAmount).toBe("0.00");
   else expect(f.allocBase).not.toBeNull();
   // El disparador del reparto: la suma de lo asignado es exactamente la base.
@@ -271,6 +273,13 @@ function save(write: TxWrite, prev?: TxSnapshot): TxSnapshot {
 /** E1 ya guardado (con los cambios que se pidan en lo que se registra). */
 function savedE1(patch: Partial<NewTxInput> = {}, cfg: PayConfig = cfgDemo()): TxSnapshot {
   return save(planCreate(cfg, inputE1(patch)));
+}
+
+/** E1 con la disputa perdida: todo reembolsado (100,00) y la disputa cobrada (15,00). */
+function lostE1(): TxSnapshot {
+  const tx = savedE1();
+  const opened = save(planDispute(tx, { action: "abrir", on: "2026-11-16" }), tx);
+  return save(planDispute(opened, { action: "perder", on: "2026-11-20" }), opened);
 }
 
 const shares = (write: TxWrite): string[] | undefined => write.allocations?.map((line) => line.amount);
@@ -822,6 +831,64 @@ describe("planEdit", () => {
     save(write, tx);
   });
 
+  test("con la disputa perdida, subir el monto sube el reembolso total: no queda nada que repartir", () => {
+    const tx = lostE1();
+    const write = planEdit(cfgDemo(), tx, { grossOriginal: "200.00" });
+    expect(write.fields.breakdown?.state).toEqual({
+      grossOriginal: "200.00",
+      refunded: "200.00",
+      dispute: "perdida",
+      failed: false,
+    });
+    expect(fieldNames(write)).toEqual([
+      "allocBaseAmount",
+      "breakdown",
+      "feesTotal",
+      "grossOriginal",
+      "netAmount",
+      "refundedAmount",
+    ]);
+    // Lo que la pasarela se queda de 200,00 (6,10) más la disputa (15,00): pérdida, repartida 50/30/20.
+    expect(write.fields).toMatchObject({
+      grossOriginal: "200.00",
+      refundedAmount: "200.00",
+      feesTotal: "21.10",
+      netAmount: "-21.10",
+      allocBaseAmount: "-21.10",
+    });
+    expect(shares(write)).toEqual(["-10.55", "-6.33", "-4.22"]);
+    expect(write.event.data).toMatchObject({
+      antes: { bruto: "0.00", reembolsado: "100.00", disputa: "perdida" },
+      despues: { bruto: "0.00", reembolsado: "200.00", disputa: "perdida" },
+    });
+    const edited = save(write, tx);
+    expect([edited.grossOriginal, edited.refunded, edited.gross]).toEqual(["200.00", "200.00", "0.00"]);
+  });
+
+  test("con la disputa perdida, un monto mal tecleado también se corrige hacia abajo", () => {
+    const tx = lostE1();
+    const write = planEdit(cfgDemo(), tx, { grossOriginal: "50.00" });
+    expect(write.fields).toMatchObject({
+      grossOriginal: "50.00",
+      refundedAmount: "50.00",
+      feesTotal: "16.75",
+      netAmount: "-16.75",
+    });
+    expect(shares(write)).toEqual(["-8.38", "-5.02", "-3.35"]);
+    const edited = save(write, tx);
+    expect([edited.refunded, edited.gross, edited.disputeState]).toEqual(["50.00", "0.00", "perdida"]);
+  });
+
+  test("con la disputa perdida, cambiar otra cosa deja el reembolso total como estaba", () => {
+    const tx = lostE1();
+    const write = planEdit(withPayPal(cfgDemo()), tx, { gatewayId: "gw-paypal", extraIds: [] });
+    expect(write.fields.breakdown?.state).toEqual(tx.breakdown.state);
+    expect("refundedAmount" in write.fields).toBe(false);
+    // PayPal devuelve su comisión al reembolsar: solo queda su costo de disputa.
+    expect(write.fields).toMatchObject({ feesTotal: "20.00", netAmount: "-20.00" });
+    save(write, tx);
+  });
+
   test("un cobro fallido se puede corregir y sigue fallido, en cero", () => {
     let tx = savedE1();
     tx = save(planFail(tx), tx);
@@ -1014,6 +1081,31 @@ describe("planRefundTotal", () => {
     let tx = savedE1();
     tx = save(planFail(tx), tx);
     expectStateError(() => planRefundTotal(tx, "25.00"), "fallido");
+  });
+
+  test("con la disputa perdida el reembolso es total: no se corrige a menos, ni a cero, ni a más", () => {
+    const tx = lostE1();
+    for (const total of ["25.00", "0.00", "99.99", "100.01"]) {
+      expectStateError(() => planRefundTotal(tx, total), "disputa_perdida");
+    }
+    // Sigue pudiendo decirse lo que ya es: todo reembolsado, sin nada que cambiar.
+    const write = planRefundTotal(tx, "100.00");
+    expect(write.fields).toEqual({});
+    expect(write.allocations).toBeNull();
+    save(write, tx);
+  });
+
+  test("con la disputa perdida tampoco se le suma un reembolso: ya está todo reembolsado", () => {
+    expectStateError(() => planRefund(lostE1(), { amount: "0.01", on: "2026-11-21" }), "reembolso_excede");
+  });
+
+  test("con la disputa abierta o ganada el reembolso se sigue corrigiendo", () => {
+    let tx = savedE1();
+    tx = save(planDispute(tx, { action: "abrir", on: "2026-11-16" }), tx);
+    tx = save(planRefundTotal(tx, "25.00"), tx);
+    tx = save(planDispute(tx, { action: "ganar", on: "2026-11-20" }), tx);
+    tx = save(planRefundTotal(tx, "0.00"), tx);
+    expect([tx.refunded, tx.gross, tx.disputeState]).toEqual(["0.00", "100.00", "ganada"]);
   });
 });
 

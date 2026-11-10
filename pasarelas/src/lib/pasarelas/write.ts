@@ -48,7 +48,8 @@ export type PayStateCode =
   | "con_reembolso"
   | "con_disputa"
   | "disputa_existente"
-  | "sin_disputa_abierta";
+  | "sin_disputa_abierta"
+  | "disputa_perdida";
 
 /** El mensaje de cada error de estado, para mostrarlo tal cual. */
 export const PAY_STATE_TEXT: Record<PayStateCode, string> = {
@@ -68,6 +69,7 @@ export const PAY_STATE_TEXT: Record<PayStateCode, string> = {
   con_disputa: "Un cobro con disputa no se puede marcar como fallido.",
   disputa_existente: "El cobro ya tiene una disputa abierta o perdida.",
   sin_disputa_abierta: "El cobro no tiene una disputa abierta.",
+  disputa_perdida: "Con la disputa perdida el cobro queda reembolsado por completo.",
 };
 
 /** El cambio pedido no corresponde al estado del cobro. */
@@ -353,6 +355,8 @@ function sameIds(a: readonly string[], b: readonly string[]): boolean {
  * esquema o fecha); lo demás conserva lo congelado, igual que el reembolso, la disputa y el «fallido». La fecha
  * estimada se recalcula si cambió la fecha, la pasarela o las opciones, salvo que esté puesta a mano.
  *
+ * Una disputa perdida es un reembolso total (spec §5.2.7): ahí lo reembolsado sigue al monto, suba o baje.
+ *
  * Al cambiar de pasarela hay que decir qué opciones lleva (`extraIds`): las de la anterior no son suyas. Al
  * cambiar de empresa, el canal tiene que ser de la nueva.
  */
@@ -395,15 +399,17 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
     { label: "cuenta destino", did: pick(input.bankAccountId, tx.bankAccountId) !== tx.bankAccountId },
   ].flatMap((item) => (item.did ? [item.label] : []));
   if (labels.length === 0) throw new PayStateError("sin_cambios");
-  if (cmp(grossOriginal, tx.refunded) < 0) throw new PayStateError("reembolso_excede");
+  const lost = prev.state.dispute === "perdida";
+  if (!lost && cmp(grossOriginal, tx.refunded) < 0) throw new PayStateError("reembolso_excede");
 
   // Un canal es de una sola empresa: si cambia la empresa, la plataforma se vuelve a resolver (y a comprobar).
   const again = { ...changed, channel: changed.channel || changed.company };
   const anyRule = again.gateway || again.channel || again.extras || again.scheme || again.date;
+  const state = { ...prev.state, grossOriginal, refunded: lost ? grossOriginal : prev.state.refunded };
   // Lo congelado solo se vuelve a calcular si cambió algo que entra en el cálculo.
   const b =
     anyRule || grossOriginal !== tx.grossOriginal || currency !== tx.currency
-      ? compute(reResolve(prev.rules, cfg, sel, again), { ...prev.state, grossOriginal }, currency)
+      ? compute(reResolve(prev.rules, cfg, sel, again), state, currency)
       : prev;
   const movesDeposit = (changed.date || changed.gateway || changed.extras) && !tx.estimatedIsManual;
   return update(
@@ -446,10 +452,14 @@ export function planRefund(tx: TxSnapshot, a: { amount: Money; on: ISODate; note
   );
 }
 
-/** Corrige el total reembolsado (de cero a lo cobrado) en vez de sumarle. */
+/**
+ * Corrige el total reembolsado (de cero a lo cobrado) en vez de sumarle. Con la disputa perdida el reembolso es
+ * total y no admite otro valor.
+ */
 export function planRefundTotal(tx: TxSnapshot, total: Money): TxWrite {
   requireLive(tx);
   if (!isMoney(total) || cmp(total, ZERO) < 0) throw new PayStateError("monto_invalido");
+  if (tx.disputeState === "perdida" && cmp(total, tx.grossOriginal) !== 0) throw new PayStateError("disputa_perdida");
   return update(tx, refundedTo(tx, total), "reembolso", `Reembolso corregido a ${formatMoney(total, tx.currency)}`);
 }
 
@@ -457,7 +467,7 @@ export function planRefundTotal(tx: TxSnapshot, total: Money): TxWrite {
 
 /**
  * Una disputa se abre sobre un cobro sin disputa o con una ganada; se gana, se pierde o se anula solo si está
- * abierta. Perderla implica el reembolso total.
+ * abierta. Perderla implica el reembolso total, y así se queda: `planEdit` y `planRefundTotal` lo mantienen.
  */
 export function planDispute(
   tx: TxSnapshot,
