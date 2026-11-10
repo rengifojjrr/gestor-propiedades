@@ -111,7 +111,9 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
   sí, porque pregunta a Auth. Tras `mfa.unenroll()` el token sigue en aal2 hasta `refreshSession()`; renovado baja a
   aal1 si no queda ningún factor **o** si el que se quitó era el que usó esa sesión, aunque queden otros.
 - Cambiar `supabase/config.toml` no tiene efecto hasta reiniciar el stack (`db:stop` y `db:start`). Sin
-  `require_current_password`, Auth **ignora** la contraseña actual al cambiarla.
+  `require_current_password`, Auth **ignora** la contraseña actual al cambiarla. La prueba que depende de ese ajuste
+  (`e2e/sesion.spec.ts`, «exige la actual») le pregunta a Auth si lo tiene activo y, si no, se omite sola diciendo por
+  qué: en un stack que arrancó antes de este `config.toml` sale omitida, no en verde.
 - Punta a punta: `newUser()`, `login()` y `loginWithTotp()` de `e2e/helpers.ts` (usuarios reales del stack local,
   entrando por la pantalla).
 

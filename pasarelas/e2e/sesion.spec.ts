@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
-import { totp } from "../tests/integration/helpers";
+import { createUser, totp } from "../tests/integration/helpers";
 import { expectNoSeriousAxe, login, loginWithTotp, newUser, type TestUser } from "./helpers";
 
 /**
@@ -277,17 +277,35 @@ test.describe("segundo factor", () => {
   });
 });
 
+/**
+ * ¿Auth exige la contraseña actual para cambiarla (`require_current_password` en `supabase/config.toml`)? El ajuste
+ * no surte efecto hasta reiniciar el stack, y el stack local es compartido: una prueba no lo reinicia. Se le
+ * pregunta a Auth con un usuario de usar y tirar: sin la contraseña actual, o rechaza el cambio o lo hace.
+ */
+async function stackRequiresCurrentPassword(): Promise<boolean> {
+  const { client } = await createUser();
+  const { error } = await client.auth.updateUser({ password: `Sonda-${randomUUID()}` });
+  if (!error) return false;
+  if (error.code === "current_password_required") return true;
+  throw new Error(`No se pudo saber si el stack exige la contraseña actual: ${error.code ?? error.message}`);
+}
+
+function passwordForm(page: Page) {
+  return {
+    actual: page.getByLabel("Contraseña actual"),
+    primera: page.getByLabel("Contraseña nueva", { exact: true }),
+    repetida: page.getByLabel("Repite la contraseña nueva"),
+    cambiar: page.getByRole("button", { name: "Cambiar contraseña" }),
+  };
+}
+
 test.describe("contraseña y sesión", () => {
-  test("cambiar la contraseña exige la actual", async ({ page }) => {
+  test("cambiar la contraseña: avisa por campo, y después solo vale la nueva", async ({ page }) => {
     const user = await newUser();
     const nueva = `Nueva-${randomUUID()}`;
     await login(page, user);
     await openSettings(page);
-
-    const actual = page.getByLabel("Contraseña actual");
-    const primera = page.getByLabel("Contraseña nueva", { exact: true });
-    const repetida = page.getByLabel("Repite la contraseña nueva");
-    const cambiar = page.getByRole("button", { name: "Cambiar contraseña" });
+    const { actual, primera, repetida, cambiar } = passwordForm(page);
 
     await actual.fill(user.password);
     await primera.fill(nueva);
@@ -297,12 +315,6 @@ test.describe("contraseña y sesión", () => {
     // Lo escrito se queda: no hay que volver a escribir las tres por un error en una.
     await expect(actual).toHaveValue(user.password);
     await expect(primera).toHaveValue(nueva);
-
-    await actual.fill("no-es-la-actual");
-    await primera.fill(nueva);
-    await repetida.fill(nueva);
-    await cambiar.click();
-    await expect(page.getByText("La contraseña actual no es correcta.")).toBeVisible();
     await expectNoSeriousAxe(page);
 
     await actual.fill(user.password);
@@ -324,6 +336,36 @@ test.describe("contraseña y sesión", () => {
     await page.getByRole("button", { name: "Entrar" }).click();
     await expect(page.getByRole("alert").filter({ hasText: BAD_CREDENTIALS })).toBeVisible();
     await login(page, { email: user.email, password: nueva });
+    await expect(page).toHaveURL(/\/pasarelas$/);
+  });
+
+  test("cambiar la contraseña exige la actual (con require_current_password activo en el stack)", async ({ page }) => {
+    test.skip(
+      !(await stackRequiresCurrentPassword()),
+      "Pendiente de configuración: el stack local arrancó sin `require_current_password` (supabase/config.toml). " +
+        "Corre de nuevo tras reiniciarlo (`npm run db:stop` y `npm run db:start`) cuando nadie más lo esté usando.",
+    );
+    const user = await newUser();
+    const nueva = `Nueva-${randomUUID()}`;
+    await login(page, user);
+    await openSettings(page);
+    const { actual, primera, repetida, cambiar } = passwordForm(page);
+
+    await actual.fill("no-es-la-actual");
+    await primera.fill(nueva);
+    await repetida.fill(nueva);
+    await cambiar.click();
+    await expect(page.getByText("La contraseña actual no es correcta.")).toBeVisible();
+    await expect(primera).toHaveValue(nueva);
+    await expectNoSeriousAxe(page);
+
+    // No se cambió: la nueva no abre la cuenta y la de antes sí.
+    await signOutHere(page);
+    await page.getByLabel("Correo").fill(user.email);
+    await page.getByLabel("Contraseña").fill(nueva);
+    await page.getByRole("button", { name: "Entrar" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: BAD_CREDENTIALS })).toBeVisible();
+    await login(page, user);
     await expect(page).toHaveURL(/\/pasarelas$/);
   });
 
