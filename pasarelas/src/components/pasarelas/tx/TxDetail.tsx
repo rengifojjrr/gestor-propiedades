@@ -87,7 +87,7 @@ function DataCard({ tx, cfg }: { tx: TxSnapshot; cfg: PayConfig }) {
               "—"
             ) : (
               <span className="flex flex-col items-end">
-                <DepositWindowText window={estimated} />
+                <DepositWindowText window={estimated} past={tx.status === "depositado" || tx.status === "fallido"} />
                 {tx.estimatedIsManual ? <span className="text-sm text-ink-soft">puesta a mano</span> : null}
               </span>
             )}

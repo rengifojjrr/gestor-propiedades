@@ -11,9 +11,19 @@ export const isWindow = (window: DateWindow): boolean => window.from !== window.
 
 /**
  * «Llega entre el lun 16 y el mié 18 nov», o «Llega el mié 18 nov» si es un solo día: al registrar y en el detalle.
- * Cada punta es un `<time>` con su fecha.
+ * Con `past` (un cobro ya depositado o fallido, que ya no «llega») dice «Se estimaba entre el … y el …». Cada punta
+ * es un `<time>` con su fecha.
  */
-export function DepositWindowText({ window, className }: { window: DateWindow; className?: string }) {
+export function DepositWindowText({
+  window,
+  past = false,
+  className,
+}: {
+  window: DateWindow;
+  past?: boolean;
+  className?: string;
+}) {
+  const verb = past ? "Se estimaba" : "Llega";
   const [first, last] = windowDayLabels(window);
   const time = (value: string, text: string) => (
     <time dateTime={value} className="cifra whitespace-nowrap">
@@ -23,10 +33,12 @@ export function DepositWindowText({ window, className }: { window: DateWindow; c
   return (
     <span className={className}>
       {last === undefined ? (
-        <>Llega el {time(window.to, first)}</>
+        <>
+          {verb} el {time(window.to, first)}
+        </>
       ) : (
         <>
-          Llega entre el {time(window.from, first)} y el {time(window.to, last)}
+          {verb} entre el {time(window.from, first)} y el {time(window.to, last)}
         </>
       )}
     </span>

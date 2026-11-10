@@ -206,6 +206,14 @@ test.describe("ventanas de depósito", () => {
     expect(await windowTimes(detail)).toEqual(["2026-11-16", "2026-11-18"]);
     expect(await savedWindow(reference)).toEqual(["2026-11-16", "2026-11-18"]);
     await checkScreen(page);
+
+    // Ya depositado, la ventana se lee en pasado: ya no «llega».
+    await page.getByRole("region", { name: "Acciones" }).getByRole("button", { name: "Marcar depositado" }).click();
+    const deposit = page.getByRole("dialog", { name: "Marcar depositado" });
+    await deposit.getByLabel("Fecha del depósito").fill(todayNY(new Date()));
+    await deposit.getByRole("button", { name: "Marcar depositado" }).click();
+    await expect(deposit).toBeHidden();
+    await expect(detail.getByTestId("fecha-estimada")).toHaveText("Se estimaba entre el lun 16 y el mié 18 nov");
   });
 
   test("con «Pago rápido» (0 días): el mismo día", async ({ page }) => {
