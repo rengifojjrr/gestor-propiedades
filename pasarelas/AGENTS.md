@@ -99,6 +99,22 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 - CLI 3: todo es local por defecto; lo remoto se pide con `--remote`. Nada en este repo usa `--remote`.
 - Los permisos (`grant`) van explícitos en la migración: no se depende de los que el proyecto dé por defecto.
 
+## Sesión
+
+- Cada página y cada Server Action empieza con `await requireSession()` (`@/lib/auth/session`): sin sesión manda a
+  `/login`; con segundo factor y sin el código (aal1), a `/login/verificar`. El proxy (`src/proxy.ts`) solo refresca
+  la cookie y manda a `/login` a quien no tiene sesión; el layout solo pinta el aviso del segundo factor. Ninguno de
+  los dos protege una pantalla ni una acción.
+- `siguiente` (a dónde se vuelve tras entrar) viene de la URL: pásalo siempre por `safeNextPath`
+  (`@/lib/auth/next-path`).
+- `getClaims()` no nota una sesión cerrada desde otro dispositivo hasta que el token caduca (1 h); `mfa.listFactors()`
+  sí, porque pregunta a Auth. Tras `mfa.unenroll()` el token sigue en aal2 hasta `refreshSession()`; renovado baja a
+  aal1 si no queda ningún factor **o** si el que se quitó era el que usó esa sesión, aunque queden otros.
+- Cambiar `supabase/config.toml` no tiene efecto hasta reiniciar el stack (`db:stop` y `db:start`). Sin
+  `require_current_password`, Auth **ignora** la contraseña actual al cambiarla.
+- Punta a punta: `newUser()`, `login()` y `loginWithTotp()` de `e2e/helpers.ts` (usuarios reales del stack local,
+  entrando por la pantalla).
+
 ## Dónde va cada cosa
 
 | Carpeta | Qué hay |

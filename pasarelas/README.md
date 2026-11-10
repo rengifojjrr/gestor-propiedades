@@ -43,4 +43,34 @@ E2E_BASE_URL=http://127.0.0.1:31xx npm run test:e2e -- --trace off e2e/<archivo>
 El Supabase local es **uno solo y compartido** entre todas las copias de trabajo: si alguien más lo está usando, no
 hagas `npm run db:reset` (borra la base) ni `npm run db:stop` (lo detiene para todos).
 
+## Sesión y segundo factor
+
+Se entra con correo y contraseña en `/login`; **no hay registro**. Si la cuenta tiene segundo factor (TOTP), la
+entrada sigue en `/login/verificar` y hasta escribir el código no se ve ninguna pantalla ni ningún dato (lo exige
+también la base, con RLS). En **Ajustes → Seguridad** se activa el segundo factor (QR o clave), se agregan o quitan
+dispositivos, se cambia la contraseña y se cierra la sesión, aquí o en todos los dispositivos. Mientras la cuenta no
+tenga segundo factor, todas las pantallas lo avisan.
+
+No están en la app, y se resuelven desde el panel de Supabase: **crear la cuenta del dueño** (Authentication → Users
+→ «Add user»), **restablecer una contraseña olvidada** y **quitar el segundo factor de un teléfono perdido** (no hay
+códigos de respaldo: conviene activar un segundo dispositivo).
+
+### Ajustes de Auth que la app da por hechos
+
+En local los pone `supabase/config.toml` (cambiarlo exige reiniciar el stack: `npm run db:stop` y `npm run db:start`;
+los datos se conservan). En el proyecto alojado hay que dejarlos igual, en el panel (Authentication) o con la API de
+administración (`PATCH /v1/projects/{ref}/config/auth`; entre paréntesis, el nombre del campo cuando se conoce):
+
+| Ajuste | Local (`supabase/config.toml`) | Proyecto alojado |
+|---|---|---|
+| Registro público **apagado** | `[auth] enable_signup = false` | Sign In / Providers → «Allow new users to sign up» apagado (`disable_signup: true`) |
+| Cambiar la contraseña **exige la actual** | `[auth.email] require_current_password = true` | (`security_update_password_require_current_password: true`) |
+| Contraseña de **10 caracteres** o más | `[auth] minimum_password_length = 10` | Longitud mínima de la contraseña: 10 |
+| Segundo factor **TOTP activo** | `[auth.mfa.totp] enroll_enabled = true` y `verify_enabled = true` | Multi-Factor → TOTP activado (`mfa_totp_enroll_enabled` y `mfa_totp_verify_enabled`) |
+| **URL del sitio** | `[auth] site_url` | URL Configuration → «Site URL»: la dirección pública de la app |
+
+Si «exige la actual» queda apagado, Supabase **ignora** la contraseña actual que manda la app y cualquiera con una
+sesión abierta puede cambiarla. Con segundo factor activo, Supabase solo deja cambiar la contraseña o quitar un
+dispositivo a una sesión que entró con su código.
+
 Convenciones del proyecto y trampas conocidas: [`AGENTS.md`](AGENTS.md).
