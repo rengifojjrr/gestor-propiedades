@@ -23,10 +23,25 @@ type Ids = {
   beneficiary: { id: string; name: string };
 };
 
-type Screen = { name: string; path: (ids: Ids) => string; heading: (ids: Ids) => string | RegExp };
+type Screen = {
+  name: string;
+  path: (ids: Ids) => string;
+  heading: (ids: Ids) => string | RegExp;
+  /** Lo que la pantalla pinta después de la página y tiene que estar antes de medir (sin esto basta el título). */
+  ready?: (page: Page) => Promise<void>;
+};
 
 const SCREENS: Screen[] = [
-  { name: "Resumen", path: () => "/pasarelas", heading: () => "Resumen" },
+  {
+    name: "Resumen",
+    path: () => "/pasarelas",
+    heading: () => "Resumen",
+    // Los cinco dibujos (Recharts, con `next/dynamic`) llegan después de la página: axe, el ancho y los 44 px se
+    // miden con ellos ya pintados, no contra el esqueleto que los reemplaza mientras cargan.
+    ready: async (page) => {
+      await expect(page.locator("figure .recharts-surface")).toHaveCount(5);
+    },
+  },
   { name: "Registrar cobro", path: () => "/pasarelas/registrar", heading: () => "Registrar cobro" },
   { name: "Cobros", path: () => "/pasarelas/cobros", heading: () => "Cobros" },
   { name: "Detalle del cobro", path: (ids) => `/pasarelas/cobros/${ids.tx}`, heading: () => /^Cobro de / },
@@ -185,6 +200,7 @@ for (const scheme of ["light", "dark"] as const) {
         await login(page, owner);
         await page.goto(screen.path(ids));
         await expect(page.getByRole("heading", { level: 1, name: screen.heading(ids) })).toBeVisible();
+        await screen.ready?.(page);
         await expectAccessible(page);
       });
     }
