@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 import type { Database } from "@/lib/supabase/types";
 import {
+  anonClient,
   createUser,
   e1Item,
   enrollTotp,
@@ -156,5 +157,19 @@ describe("una sesión cerrada deja de leer y de escribir de inmediato", () => {
     await expectSinAcceso(otra);
     expect((await otra.storage.from(BUCKET).download(recibo)).data).toBeNull();
     expect((await user.client.storage.from(BUCKET).download(recibo)).error).toBeNull();
+  });
+});
+
+describe("el registro público", () => {
+  it("está apagado: con la clave publicable no se puede crear una cuenta", async () => {
+    const email = `registro-${randomUUID()}@example.com`;
+    const password = `Clave-${randomUUID()}`;
+
+    const { data, error } = await anonClient().auth.signUp({ email, password });
+
+    expect(error?.code).toBe("signup_disabled");
+    expect(data.user).toBeNull();
+    const entrada = await anonClient().auth.signInWithPassword({ email, password });
+    expect(entrada.error?.code).toBe("invalid_credentials");
   });
 });
