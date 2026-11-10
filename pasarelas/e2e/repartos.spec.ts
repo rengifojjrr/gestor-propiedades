@@ -5,7 +5,7 @@ import { receiptLabel } from "../src/components/pasarelas/receipts/label";
 import { ZONE, todayNY, wallTimeToInstant } from "../src/lib/pasarelas/dates";
 import { SETTLEMENT_ALREADY_SAVED_TEXT } from "../src/components/pasarelas/splits/settlementText";
 import { SCHEME_ISSUE_TEXT } from "../src/lib/pasarelas/schemes";
-import { adminClient, e1Item, saveTransactions, signInAal1 } from "../tests/integration/helpers";
+import { adminClient, createUser, e1Item, saveTransactions, signInAal1 } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
 import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
 import { serverData } from "./server-data";
@@ -422,6 +422,35 @@ test("en «Nuevo esquema», «Nuevo beneficiario» lo crea sin salir de la panta
     { beneficiary_id: user.basics.beneficiaryIds.a, pct: "70.0000" },
     { beneficiary_id: created.id, pct: "30.0000" },
   ]);
+});
+
+test("sin ningún beneficiario, «Nuevo esquema» deja crearlo ahí mismo y guardar el esquema", async ({ page }, testInfo) => {
+  // Un usuario nuevo y vacío (sin la siembra de `newUser`): antes, la pantalla mandaba a Repartos a crear primero los
+  // beneficiarios.
+  const empty = await createUser();
+  const { data: before } = await admin.from("pay_beneficiaries").select("id").eq("user_id", empty.id).throwOnError();
+  expect(before).toEqual([]);
+  await page.context().clearCookies();
+  await login(page, empty);
+  const beneficiary = `Primer Socio ${testInfo.project.name}`;
+  await page.goto("/pasarelas/repartos/esquemas/nuevo");
+  await expect(page.getByText("Todavía no tienes beneficiarios activos")).toBeVisible();
+  await expect(page.getByRole("group", { name: "Línea 1" })).toHaveCount(0);
+  await page.getByLabel("Nombre del esquema").fill(`Solo uno ${testInfo.project.name}`);
+  await expectCleanScreen(page);
+
+  await page.getByRole("button", { name: "Nuevo beneficiario" }).click();
+  const dialog = page.getByRole("dialog", { name: "Nuevo beneficiario" });
+  await dialog.getByLabel("Nombre").fill(beneficiary);
+  await dialog.getByRole("button", { name: "Guardar beneficiario" }).click();
+  await expect(dialog).toBeHidden();
+  const line = page.getByRole("group", { name: "Línea 1" });
+  await expect(line.getByLabel("Beneficiario").locator("option:checked")).toHaveText(beneficiary);
+  await expect(line.getByLabel("Porcentaje")).toBeFocused();
+  await page.keyboard.type("100");
+  await page.getByRole("button", { name: "Guardar esquema" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: `Solo uno ${testInfo.project.name}` })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Vigente hoy" })).toContainText(beneficiary);
 });
 
 test("si Desactivar falla desde la cabecera se dice ahí mismo, y el diálogo de borrar no hereda ese error", async ({
