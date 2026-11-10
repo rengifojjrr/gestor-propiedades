@@ -351,6 +351,49 @@ describe("pay_save_scheme", () => {
     expectRejected(res, "23503", "pay_scheme_version_in_use");
     expect(await versiones(v1.scheme_id)).toEqual(trasReemplazo);
   });
+
+  it("con un scheme_id que no existe da pay_scheme_not_found y no crea nada", async () => {
+    const schemeId = randomUUID();
+
+    const res = await client.rpc("pay_save_scheme", {
+      p: { scheme_id: schemeId, name: "Esquema fantasma", lines: [{ beneficiary_id: b.beneficiaryIds.a, pct: "100" }] },
+    });
+
+    expectRejected(res, "P0002", "pay_scheme_not_found");
+    expect(await versiones(schemeId)).toEqual([]);
+  });
+
+  it("con el esquema de otro usuario da pay_scheme_not_found y ese esquema queda como estaba", async () => {
+    const admin = adminClient();
+    const leer = async () =>
+      unwrap(
+        await admin
+          .from("pay_schemes")
+          .select("name, notes, updated_at, pay_scheme_versions(id, version)")
+          .eq("id", b.schemeId)
+          .single(),
+        "esquema ajeno",
+      );
+    const antes = await leer();
+    const intruso = (await createUser()).client;
+    const suyo = unwrap(
+      await intruso.from("pay_beneficiaries").insert({ name: "Grupo A" }).select("id").single(),
+      "beneficiario del intruso",
+    );
+
+    const res = await intruso.rpc("pay_save_scheme", {
+      p: {
+        scheme_id: b.schemeId,
+        name: "Tomado",
+        notes: "tomado",
+        effective_from: "2026-12-15",
+        lines: [{ beneficiary_id: suyo.id, pct: "100" }],
+      },
+    });
+
+    expectRejected(res, "P0002", "pay_scheme_not_found");
+    expect(await leer()).toEqual(antes);
+  });
 });
 
 describe("pay_create_gateway", () => {
