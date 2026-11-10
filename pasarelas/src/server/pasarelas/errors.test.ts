@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { PAY_RULE_TEXT, PAY_STATE_TEXT, PayRuleError, PayStateError } from "@/lib/pasarelas";
 import type { PayRuleCode, PayStateCode } from "@/lib/pasarelas";
-import { UserError, errorMessage } from "./errors";
+import { UserError, errorMessage, isExpectedError } from "./errors";
 
 const GENERIC = "No se pudo guardar. Inténtalo de nuevo.";
 const SECOND_FACTOR = "Verifica tu segundo factor para seguir";
@@ -268,5 +268,34 @@ describe("lo desconocido", () => {
       expect(text).not.toMatch(/pay_|constraint|relation|policy|violates|[0-9a-f]{8}-[0-9a-f]{4}|90\.3/i);
       expect(text.length).toBeGreaterThan(10);
     }
+  });
+});
+
+describe("isExpectedError: qué hay que registrar en el servidor", () => {
+  test("los errores de la app y los rechazos que tienen su mensaje son esperados", () => {
+    const expected = [
+      new UserError("Ese cobro ya no existe."),
+      new PayStateError("reembolso_excede"),
+      new PayRuleError("sin_tarifa"),
+      unique("pay_companies_name_uq"),
+      db("23503", 'insert or update on table "pay_transaction_receipts" violates foreign key constraint "x_fkey"'),
+      db("42501", 'new row violates row-level security policy "pay_transactions_mfa"'),
+      storage("413", "Payload too large", "The object exceeded the maximum allowed size"),
+    ];
+    for (const error of expected) expect(isExpectedError(error)).toBe(true);
+  });
+
+  test("lo que da el mensaje general no es esperado: un fallo de red, un ZodError lanzado, un SQLSTATE desconocido", () => {
+    const zodThrown = z.object({ a: z.string() }).safeParse({}).error;
+    const unexpected = [
+      new TypeError("fetch failed"),
+      zodThrown,
+      db("XX000", "internal error at pay_save_transactions line 42"),
+      db("40001", "could not serialize access due to concurrent update"),
+      storage("500", "InternalError", "Internal Server Error"),
+      "algo raro",
+      null,
+    ];
+    for (const error of unexpected) expect(isExpectedError(error)).toBe(false);
   });
 });

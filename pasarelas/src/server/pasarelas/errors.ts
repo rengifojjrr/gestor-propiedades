@@ -115,3 +115,14 @@ export function errorMessage(e: unknown): string {
   if (typeof e.code === "string") return databaseText(e.code, typeof e.message === "string" ? e.message : "");
   return GENERIC_TEXT;
 }
+
+/**
+ * Si el error es uno esperado: los que la app lanza a propósito y los rechazos de la base o de Storage que este
+ * archivo reconoce con un mensaje propio (un nombre repetido, algo que ya no existe, el segundo factor). Lo demás
+ * (un fallo de red, un `ZodError` lanzado, un SQLSTATE que no está en las tablas, un bug) da el mensaje general, y
+ * quien lo atrapa tiene que registrarlo: la persona no ve el detalle y, sin el registro, no quedaría en ningún sitio.
+ */
+export function isExpectedError(e: unknown): boolean {
+  if (e instanceof UserError || e instanceof PayStateError || e instanceof PayRuleError) return true;
+  return errorMessage(e) !== GENERIC_TEXT;
+}
