@@ -115,11 +115,12 @@ test.describe.serial("acciones del servidor y comprobantes", () => {
   test("createTransaction registra E1 y la página enseña sus cifras; dos pulsaciones con el mismo id dejan un solo cobro", async ({
     page,
   }) => {
+    await login(page, owner);
+    // Se cuentan desde aquí: la entrada también es una Server Action y no es de las que se prueban.
     let actionCalls = 0;
     page.on("response", (response) => {
       if (isActionCall(response.request())) actionCalls += 1;
     });
-    await login(page, owner);
     await openBench(page);
     // La página lee la configuración con getPayConfig, que siembra los feriados la primera vez.
     const holidays = await admin.from("pay_holidays").select("day").eq("user_id", owner.id);
