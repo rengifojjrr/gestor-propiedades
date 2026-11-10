@@ -1,6 +1,6 @@
+import assert from "node:assert/strict";
 import { createHmac, randomUUID } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { expect } from "vitest";
 import type { Database, Json } from "@/lib/supabase/types";
 
 /**
@@ -46,15 +46,19 @@ export function unwrap<T>(res: { data: T; error: { message: string } | null }, q
   return res.data;
 }
 
-/** Comprueba que la base rechazó la operación con ese SQLSTATE (y, si se pide, con ese texto en el mensaje). */
+/**
+ * Comprueba que la base rechazó la operación con ese SQLSTATE (y, si se pide, con ese texto en el mensaje).
+ * Usa `node:assert` y no el `expect` de Vitest: este archivo también lo importan las pruebas de punta a punta
+ * (`e2e/helpers.ts`), y Vitest no se puede cargar desde Playwright.
+ */
 export function expectRejected(
   res: { data: unknown; error: { code?: string; message: string } | null },
   code: string,
   texto?: string,
 ): void {
-  expect(res.error, "la base debió rechazar la operación").not.toBeNull();
-  expect(res.error?.code).toBe(code);
-  if (texto) expect(res.error?.message).toContain(texto);
+  assert.ok(res.error, "la base debió rechazar la operación");
+  assert.equal(res.error.code, code);
+  if (texto) assert.ok(res.error.message.includes(texto), `«${res.error.message}» debía contener «${texto}»`);
 }
 
 /** Cliente con la clave secreta (rol service_role, salta la RLS). Solo para preparar o inspeccionar datos. */
