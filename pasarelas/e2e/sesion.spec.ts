@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
-import { createUser, totp } from "../tests/integration/helpers";
+import { totp } from "../tests/integration/helpers";
 import { expectNoSeriousAxe, login, loginWithTotp, newUser, type TestUser } from "./helpers";
 
 /**
@@ -277,19 +277,6 @@ test.describe("segundo factor", () => {
   });
 });
 
-/**
- * ¿Auth exige la contraseña actual para cambiarla (`require_current_password` en `supabase/config.toml`)? El ajuste
- * no surte efecto hasta reiniciar el stack, y el stack local es compartido: una prueba no lo reinicia. Se le
- * pregunta a Auth con un usuario de usar y tirar: sin la contraseña actual, o rechaza el cambio o lo hace.
- */
-async function stackRequiresCurrentPassword(): Promise<boolean> {
-  const { client } = await createUser();
-  const { error } = await client.auth.updateUser({ password: `Sonda-${randomUUID()}` });
-  if (!error) return false;
-  if (error.code === "current_password_required") return true;
-  throw new Error(`No se pudo saber si el stack exige la contraseña actual: ${error.code ?? error.message}`);
-}
-
 function passwordForm(page: Page) {
   return {
     actual: page.getByLabel("Contraseña actual"),
@@ -339,12 +326,8 @@ test.describe("contraseña y sesión", () => {
     await expect(page).toHaveURL(/\/pasarelas$/);
   });
 
-  test("cambiar la contraseña exige la actual (con require_current_password activo en el stack)", async ({ page }) => {
-    test.skip(
-      !(await stackRequiresCurrentPassword()),
-      "Pendiente de configuración: el stack local arrancó sin `require_current_password` (supabase/config.toml). " +
-        "Corre de nuevo tras reiniciarlo (`npm run db:stop` y `npm run db:start`) cuando nadie más lo esté usando.",
-    );
+  // La app comprueba la actual por su cuenta: no depende de `require_current_password` en la configuración de Auth.
+  test("cambiar la contraseña exige la actual", async ({ page }) => {
     const user = await newUser();
     const nueva = `Nueva-${randomUUID()}`;
     await login(page, user);
@@ -378,7 +361,9 @@ test.describe("contraseña y sesión", () => {
 
     await login(page, user);
     await openSettings(page);
-    await page.getByRole("button", { name: "Cerrar sesión en todos los dispositivos" }).click();
+    const everywhere = page.getByRole("button", { name: "Cerrar sesión en todos los dispositivos" });
+    await expect(everywhere).toHaveAccessibleDescription("Otro dispositivo puede tardar hasta una hora en quedar fuera.");
+    await everywhere.click();
     await expect(page).toHaveURL(/\/login$/);
     await page.goto("/pasarelas");
     await expect(page).toHaveURL(/\/login$/);
@@ -416,6 +401,8 @@ test.describe("cabeceras", () => {
       expect(headers["x-frame-options"], path).toBe("DENY");
       expect(headers["referrer-policy"], path).toBe("strict-origin-when-cross-origin");
       expect(headers["permissions-policy"], path).toContain("camera=()");
+      // Solo este sitio: la app no decide por los subdominios del dueño ni lo inscribe en la lista de precarga.
+      expect(headers["strict-transport-security"], path).toBe("max-age=63072000");
       expect(headers["x-powered-by"], path).toBeUndefined();
     }
   });

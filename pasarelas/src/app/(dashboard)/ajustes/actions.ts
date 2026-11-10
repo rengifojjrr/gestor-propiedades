@@ -1,10 +1,12 @@
 "use server";
 
+import { createClient as createStandaloneClient } from "@supabase/supabase-js";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireSession } from "@/lib/auth/session";
 import { TotpCode, WRONG_CODE } from "@/lib/auth/totp-code";
 import { createClient } from "@/lib/supabase/server";
+import type { Database } from "@/lib/supabase/types";
 
 /*
  * Las acciones de Ajustes → Seguridad. Cada una es un POST público: exige la sesión y valida lo que recibe.
@@ -110,9 +112,32 @@ export type PasswordResult =
   | { ok: true }
   | { ok: false; error?: string; fieldErrors?: Partial<Record<PasswordField, string>> };
 
-/** Cambia la contraseña. Auth exige la actual (`require_current_password`) y cierra las demás sesiones. */
+const WRONG_CURRENT = "La contraseña actual no es correcta.";
+
+/**
+ * ¿Es `password` la contraseña actual de `email`? Se comprueba entrando con ella en un cliente APARTE: sin cookies y
+ * sin guardar la sesión, así que la sesión de quien pide el cambio no se toca. La sesión de prueba se cierra en
+ * seguida. Devuelve `null` si Auth no responde algo que permita saberlo (p. ej., demasiados intentos).
+ */
+async function isCurrentPassword(email: string, password: string): Promise<boolean | null> {
+  const probe = createStandaloneClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } },
+  );
+  const { error } = await probe.auth.signInWithPassword({ email, password });
+  if (error) return error.code === "invalid_credentials" ? false : null;
+  await probe.auth.signOut({ scope: "local" });
+  return true;
+}
+
+/**
+ * Cambia la contraseña y cierra las demás sesiones. La actual se comprueba aquí, en la app, antes de cambiar nada:
+ * no se depende de que el proyecto de Supabase tenga encendido «exigir la contraseña actual»
+ * (`require_current_password`). Igual se le manda a Auth, por si el proyecto también lo exige.
+ */
 export async function changePassword(formData: FormData): Promise<PasswordResult> {
-  await requireSession();
+  const session = await requireSession();
   const input = NewPassword.safeParse({
     current: formData.get("current"),
     password: formData.get("password"),
@@ -126,6 +151,12 @@ export async function changePassword(formData: FormData): Promise<PasswordResult
     };
   }
 
+  const current = await isCurrentPassword(session.email, input.data.current);
+  if (current === false) return { ok: false, fieldErrors: { current: WRONG_CURRENT } };
+  if (current === null) {
+    return { ok: false, error: "No se pudo comprobar tu contraseña actual. Espera un momento e inténtalo de nuevo." };
+  }
+
   const supabase = await createClient();
   const { error } = await supabase.auth.updateUser({
     password: input.data.password,
@@ -136,7 +167,7 @@ export async function changePassword(formData: FormData): Promise<PasswordResult
   switch (error.code) {
     case "current_password_invalid":
     case "current_password_required":
-      return { ok: false, fieldErrors: { current: "La contraseña actual no es correcta." } };
+      return { ok: false, fieldErrors: { current: WRONG_CURRENT } };
     case "same_password":
       return { ok: false, fieldErrors: { password: "La contraseña nueva tiene que ser distinta de la actual." } };
     case "weak_password":

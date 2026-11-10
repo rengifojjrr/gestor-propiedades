@@ -69,8 +69,8 @@ administración (`PATCH /v1/projects/{ref}/config/auth`; entre paréntesis, el n
 | Segundo factor **TOTP activo** | `[auth.mfa.totp] enroll_enabled = true` y `verify_enabled = true` | Multi-Factor → TOTP activado (`mfa_totp_enroll_enabled` y `mfa_totp_verify_enabled`) |
 | **URL del sitio** | `[auth] site_url` | URL Configuration → «Site URL»: la dirección pública de la app |
 
-Si «exige la actual» queda apagado, Supabase **ignora** la contraseña actual que manda la app y cualquiera con una
-sesión abierta puede cambiarla. Con segundo factor activo, Supabase solo deja cambiar la contraseña o quitar un
+Si «exige la actual» queda apagado, Supabase **ignora** la contraseña actual que manda la app; la app la comprueba igual
+por su cuenta (entra con ella antes de cambiar nada), así que el ajuste queda como segunda barrera. Con segundo factor activo, Supabase solo deja cambiar la contraseña o quitar un
 dispositivo a una sesión que entró con su código.
 
 Convenciones del proyecto y trampas conocidas: [`AGENTS.md`](AGENTS.md).

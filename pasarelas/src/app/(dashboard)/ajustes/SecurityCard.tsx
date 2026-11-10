@@ -240,6 +240,8 @@ function PasswordChange({ email }: { email: string }) {
   );
 }
 
+const EVERYWHERE_HINT_ID = "cerrar-en-todos-aviso";
+
 function SessionEnd({ email }: { email: string }) {
   return (
     <section className={SECTION}>
@@ -251,10 +253,14 @@ function SessionEnd({ email }: { email: string }) {
         <Button type="submit" name="scope" value="local">
           Cerrar sesión
         </Button>
-        <Button type="submit" name="scope" value="global" variant="ghost">
+        <Button type="submit" name="scope" value="global" variant="ghost" aria-describedby={EVERYWHERE_HINT_ID}>
           Cerrar sesión en todos los dispositivos
         </Button>
       </form>
+      {/* La sesión de otro dispositivo se cierra en Auth, pero su token sigue firmado hasta que caduca (1 h). */}
+      <p id={EVERYWHERE_HINT_ID} className="text-sm text-ink-soft">
+        Otro dispositivo puede tardar hasta una hora en quedar fuera.
+      </p>
     </section>
   );
 }
