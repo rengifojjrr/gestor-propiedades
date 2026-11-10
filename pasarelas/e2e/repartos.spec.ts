@@ -12,8 +12,9 @@ import { serverData } from "./server-data";
 
 /**
  * Repartos: el libro por beneficiario y moneda (un saldo negativo dice «a favor de la empresa»), armar un esquema
- * 50/30/20 (con 50/30 y sin «Resto» no se guarda, y se dice por qué) y registrar una liquidación de 45,15 al
- * Grupo A con su comprobante. Un corte de red al guardar un beneficiario o al desactivarlo se dice ahí mismo, con
+ * 50/30/20 (con 50/30 y sin «Resto» no se guarda, y se dice por qué), corregir la última versión de un esquema que
+ * ningún cobro usa (con cobros solo se le cambia el nombre) y registrar una liquidación de 45,15 al Grupo A con su
+ * comprobante. Un corte de red al guardar un beneficiario o al desactivarlo se dice ahí mismo, con
  * «Ver cómo quedó», sin perder lo escrito; borrar uno sin historia lleva a Repartos. Una liquidación guarda el tipo que se ve, y un corte de la respuesta no la duplica
  * ni borra su comprobante. Al final, los comprobantes de un cobro (las mismas piezas de subida): se nombran por su
  * tipo y su fecha, nunca por el nombre del archivo. Un usuario nuevo por proyecto (celular y escritorio), con el
@@ -181,6 +182,187 @@ test("armar un esquema 50/30/20; con 50/30 y sin «Resto» no se guarda y dice p
   await expect(current).toContainText("Resto: Grupo C");
   await expect(current).toContainText("Desde el inicio");
   await expectCleanScreen(page);
+});
+
+/** Las versiones de un esquema, de la primera a la última, como las dejó la base. */
+async function schemeVersionsOf(schemeId: string) {
+  const { data } = await admin
+    .from("pay_scheme_versions")
+    .select("id, version, base, effective_from")
+    .eq("scheme_id", schemeId)
+    .order("version")
+    .throwOnError();
+  return data;
+}
+
+/** Lo que se dice si, mientras se corregía, un cobro empezó a usar la versión. */
+const VERSION_USED_TEXT =
+  "Mientras la corregías se registró un cobro con esta versión, así que ya no se corrige: cambiaría lo ya " +
+  "repartido. Para repartir distinto de aquí en adelante, crea una versión nueva desde una fecha en la ficha del " +
+  "esquema.";
+
+test("corregir un esquema sin cobros: de «Sobre el bruto» a «Sobre el neto» con otra línea, y sigue siendo la versión 1", async ({
+  page,
+}, testInfo) => {
+  const name = `Todos ${testInfo.project.name}`;
+  const line = (n: number) => page.getByRole("group", { name: `Línea ${n}` });
+
+  // Se arma por la pantalla, sobre el bruto (el error del dueño).
+  await page.goto("/pasarelas/repartos/esquemas/nuevo");
+  await page.getByLabel("Nombre del esquema").fill(name);
+  await page.getByLabel("Se reparte").selectOption({ label: "Sobre el bruto" });
+  await line(1).getByLabel("Beneficiario").selectOption({ label: "Grupo A" });
+  await line(1).getByLabel("Porcentaje").fill("60");
+  await page.getByRole("button", { name: "Agregar línea" }).click();
+  await line(2).getByLabel("Beneficiario").selectOption({ label: "Grupo B" });
+  await line(2).getByLabel("Porcentaje").fill("40");
+  await page.getByRole("button", { name: "Guardar esquema" }).click();
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+  const schemeId = /\/esquemas\/([0-9a-f-]{36})$/.exec(new URL(page.url()).pathname)?.[1] ?? "";
+  const [created] = await schemeVersionsOf(schemeId);
+
+  // «Editar», en la cabecera de la ficha, junto a Desactivar y Borrar.
+  await page.getByRole("link", { name: "Editar", exact: true }).click();
+  await expect(page).toHaveURL((url) => url.pathname === `/pasarelas/repartos/esquemas/${schemeId}/editar`);
+  await expect(page.getByRole("heading", { level: 1, name: "Editar esquema" })).toBeVisible();
+  await expect(page.getByText("Ningún cobro usa todavía esta versión: se corrige tal cual.")).toBeVisible();
+  // La fecha no se cambia: se lee.
+  await expect(page.getByText("Rige desde el inicio")).toBeVisible();
+  await expect(page.getByLabel("Vigente desde")).toHaveCount(0);
+  // Parte de lo que tiene la versión.
+  await expect(page.getByLabel("Nombre del esquema")).toHaveValue(name);
+  await expect(page.getByLabel("Se reparte")).toHaveValue("bruto");
+  await expect(line(1).getByLabel("Beneficiario")).toHaveValue(user.basics.beneficiaryIds.a);
+  await expect(line(1).getByLabel("Porcentaje")).toHaveValue("60");
+  await expect(line(2).getByLabel("Beneficiario")).toHaveValue(user.basics.beneficiaryIds.b);
+  await expect(line(2).getByLabel("Porcentaje")).toHaveValue("40");
+  await expectCleanScreen(page);
+
+  await page.getByLabel("Se reparte").selectOption({ label: "Sobre el neto" });
+  await line(2).getByLabel("Porcentaje").fill("30");
+  await page.getByRole("button", { name: "Agregar línea" }).click();
+  await line(3).getByLabel("Beneficiario").selectOption({ label: "Grupo C" });
+  await line(3).getByLabel("Porcentaje").fill("10");
+  await page.getByRole("button", { name: "Guardar cambios" }).click();
+
+  // Vuelve a la ficha, que ya enseña lo corregido: sobre el neto, con el Grupo C, y una sola versión, la 1.
+  await expect(page.getByText("Esquema corregido")).toBeVisible();
+  await expect(page).toHaveURL((url) => url.pathname === `/pasarelas/repartos/esquemas/${schemeId}`);
+  const current = page.getByRole("region", { name: "Vigente hoy" });
+  await expect(current).toContainText("Sobre el neto");
+  await expect(current).toContainText("Grupo C");
+  await expect(current).toContainText("10 %");
+  const versions = page.getByRole("region", { name: "Versiones" });
+  await expect(versions).toContainText("Versión 1");
+  await expect(versions).not.toContainText("Versión 2");
+  const [fixed, ...more] = await schemeVersionsOf(schemeId);
+  expect(more).toEqual([]);
+  expect(fixed).toMatchObject({ version: 1, base: "neto", effective_from: created?.effective_from });
+  await expectCleanScreen(page);
+
+  // «Versión nueva» dice que los errores se arreglan con «Editar», y no deja caer sin saberlo en la fecha de la 1.
+  const newVersion = page.getByRole("region", { name: "Versión nueva" });
+  await expect(newVersion).toContainText("usa «Editar»");
+  await newVersion.getByLabel("Vigente desde").selectOption({ label: "Desde el inicio" });
+  await expect(newVersion.getByText("Ya hay una versión desde el inicio, la 1")).toBeVisible();
+  await expect(newVersion.getByRole("button", { name: "Guardar versión nueva" })).toBeDisabled();
+  await expectCleanScreen(page);
+  await newVersion.getByLabel("Vigente desde").selectOption({ label: "Desde una fecha" });
+  await expect(newVersion.getByText("Ya hay una versión desde el inicio, la 1")).toBeHidden();
+  await expect(newVersion.getByRole("button", { name: "Guardar versión nueva" })).toBeEnabled();
+});
+
+test("un esquema con cobros no se corrige: «Editar» dice cuántos y deja cambiar solo el nombre; si un cobro llega mientras se corrige, se dice sin perder lo escrito", async ({
+  page,
+}, testInfo) => {
+  const name = `Con cobros ${testInfo.project.name}`;
+  const client = await signInAal1(user.email, user.password);
+  // Beneficiarios propios: los cobros de esta prueba no mueven el libro de los Grupos A, B y C.
+  const a = await freshBeneficiary(`Socio Cobros 1 ${testInfo.project.name}`);
+  const b = await freshBeneficiary(`Socio Cobros 2 ${testInfo.project.name}`);
+  const { data: saved } = await client
+    .rpc("pay_save_scheme", {
+      p: {
+        name,
+        base: "bruto",
+        lines: [
+          { beneficiary_id: a, pct: "60" },
+          { beneficiary_id: b, pct: "40" },
+        ],
+      },
+    })
+    .throwOnError();
+  const schemeId = (saved as { scheme_id: string }).scheme_id;
+  const before = await schemeVersionsOf(schemeId);
+  const editUrl = `/pasarelas/repartos/esquemas/${schemeId}/editar`;
+
+  // Desde Repartos, «Editar <nombre>» junto a su nombre. Todavía ningún cobro la usa.
+  await page.goto("/pasarelas/repartos");
+  await page.getByRole("region", { name: "Esquemas" }).getByRole("link", { name: `Editar ${name}` }).click();
+  await expect(page).toHaveURL((url) => url.pathname === editUrl);
+  await expect(page.getByText("Ningún cobro usa todavía esta versión: se corrige tal cual.")).toBeVisible();
+  const line = (n: number) => page.getByRole("group", { name: `Línea ${n}` });
+  await page.getByLabel("Se reparte").selectOption({ label: "Sobre el neto" });
+  await line(1).getByLabel("Porcentaje").fill("70");
+  await line(2).getByLabel("Porcentaje").fill("30");
+
+  // Mientras tanto, desde otra pestaña, se registran dos cobros con este esquema; uno ya está en la papelera.
+  const today = todayNY(new Date());
+  const txIds = [randomUUID(), randomUUID()];
+  for (const [index, id] of txIds.entries()) {
+    await serverData().createTx(client, {
+      id,
+      companyId: user.basics.companyId,
+      channelId: null,
+      gatewayId: user.basics.gatewayId,
+      extraIds: [],
+      schemeId,
+      occurredOn: today,
+      occurredAt: wallTimeToInstant(`${today}T12:00`, ZONE),
+      currency: "USD",
+      grossOriginal: "20.00",
+      reference: `pi_e2e_corregir_${testInfo.project.name}_${index}`,
+      note: null,
+    });
+  }
+  expect(await serverData().trashTx(client, [txIds[1] ?? ""])).toBe(1);
+
+  // Guardar ya no corrige: se dice en el editor y lo escrito sigue ahí. La versión no cambió.
+  await page.getByRole("button", { name: "Guardar cambios" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: VERSION_USED_TEXT })).toBeVisible();
+  await expect(page.getByLabel("Se reparte")).toHaveValue("neto");
+  await expect(line(1).getByLabel("Porcentaje")).toHaveValue("70");
+  await expect(line(2).getByLabel("Porcentaje")).toHaveValue("30");
+  expect(await schemeVersionsOf(schemeId)).toEqual(before);
+  await expectCleanScreen(page);
+
+  // Al volver a abrirla dice cuántos cobros la usan (también el de la papelera) y no ofrece corregirla.
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1, name: "Editar esquema" })).toBeVisible();
+  await expect(page.getByText("Esta versión ya repartió 2 cobros: no se corrige.")).toBeVisible();
+  await expect(page.getByLabel("Se reparte")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Guardar cambios" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Ir a «Versión nueva»" })).toHaveAttribute(
+    "href",
+    `/pasarelas/repartos/esquemas/${schemeId}#esquema-nueva-version`,
+  );
+  await expectCleanScreen(page);
+
+  // Cambiar solo el nombre: uno repetido se rechaza sin perder lo escrito; otro se guarda sin versión nueva.
+  const rename = page.getByRole("region", { name: "Cambiar solo el nombre" });
+  await rename.getByLabel("Nombre del esquema").fill("Reparto 50/30/20");
+  await rename.getByRole("button", { name: "Guardar nombre" }).click();
+  await expect(rename.getByRole("alert")).toHaveText("Ya hay un esquema de reparto con ese nombre.");
+  await expect(rename.getByLabel("Nombre del esquema")).toHaveValue("Reparto 50/30/20");
+  await expectCleanScreen(page);
+
+  const renamed = `${name} renombrado`;
+  await rename.getByLabel("Nombre del esquema").fill(renamed);
+  await rename.getByRole("button", { name: "Guardar nombre" }).click();
+  await expect(page.getByText("Nombre cambiado")).toBeVisible();
+  await expect(page).toHaveURL((url) => url.pathname === `/pasarelas/repartos/esquemas/${schemeId}`);
+  await expect(page.getByRole("heading", { level: 1, name: renamed })).toBeVisible();
+  expect(await schemeVersionsOf(schemeId)).toEqual(before);
 });
 
 test("si Desactivar falla desde la cabecera se dice ahí mismo, y el diálogo de borrar no hereda ese error", async ({

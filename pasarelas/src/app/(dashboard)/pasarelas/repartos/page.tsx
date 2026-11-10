@@ -1,4 +1,4 @@
-import { Plus, Split } from "lucide-react";
+import { Pencil, Plus, Split } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Ledger, type BalanceRow } from "@/components/pasarelas/splits/BalanceList";
@@ -22,13 +22,16 @@ const NEW_SCHEME = (
   </ButtonLink>
 );
 
-/** Un esquema de la lista: la versión que rige hoy (o, si todavía no rige ninguna, la primera que va a regir). */
+/**
+ * Un esquema de la lista: la versión que rige hoy (o, si todavía no rige ninguna, la primera que va a regir), y
+ * «Editar» junto a su nombre.
+ */
 function SchemeItem({ scheme, today, nameOf }: { scheme: SchemeCfg; today: string; nameOf: (id: string) => string }) {
   const version = pickVersion(scheme.versions, today) ?? scheme.versions[0];
   return (
     <li className="flex min-w-0 flex-col gap-2 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="titulo text-base leading-snug">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="titulo min-w-0 flex-1 text-base leading-snug break-words">
           <Link
             href={`/pasarelas/repartos/esquemas/${scheme.id}`}
             className="-my-2 inline-flex min-h-11 items-center text-brand hover:underline"
@@ -37,6 +40,10 @@ function SchemeItem({ scheme, today, nameOf }: { scheme: SchemeCfg; today: strin
           </Link>
         </h3>
         {scheme.active ? null : <Badge>Inactivo</Badge>}
+        <ButtonLink variant="ghost" href={`/pasarelas/repartos/esquemas/${scheme.id}/editar`} className="-my-2">
+          <Pencil aria-hidden className="size-5" />
+          Editar<span className="sr-only"> {scheme.name}</span>
+        </ButtonLink>
       </div>
       {version ? <SchemeVersionSummary version={version} nameOf={nameOf} /> : null}
     </li>

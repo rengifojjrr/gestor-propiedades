@@ -61,6 +61,12 @@ const SCREENS: Screen[] = [
     heading: (ids) => ids.scheme.name,
   },
   {
+    // El de la semilla ya repartió cobros: la pantalla dice cuántos y solo deja cambiar el nombre.
+    name: "Editar esquema",
+    path: (ids) => `/pasarelas/repartos/esquemas/${ids.scheme.id}/editar`,
+    heading: () => "Editar esquema",
+  },
+  {
     name: "Beneficiario",
     path: (ids) => `/pasarelas/repartos/beneficiarios/${ids.beneficiary.id}`,
     heading: (ids) => ids.beneficiary.name,

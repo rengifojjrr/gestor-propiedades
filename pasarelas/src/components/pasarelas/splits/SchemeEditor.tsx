@@ -2,13 +2,27 @@
 
 import { Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useId, useState } from "react";
-import { Alert, Button, Field, IconButton, Input, notify, Percent, PctInput, Select, SubmitButton } from "@/components/ui";
+import { useActionState, useId, useState } from "react";
+import {
+  Alert,
+  Button,
+  DateText,
+  Field,
+  IconButton,
+  Input,
+  notify,
+  Percent,
+  PctInput,
+  Select,
+  SubmitButton,
+} from "@/components/ui";
 import { dec, normPct } from "@/lib/pasarelas/decimal";
 import { parsePct } from "@/lib/pasarelas/money";
 import { SCHEME_ISSUE_TEXT, schemeTotal, validateScheme } from "@/lib/pasarelas/schemes";
 import type { AllocBase, ISODate, Pct } from "@/lib/pasarelas/types";
-import { saveScheme } from "@/server/pasarelas/actions/splits";
+import { correctScheme, renameScheme, saveScheme } from "@/server/pasarelas/actions/splits";
+import { ActionError } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { BASE_LABEL, SINCE_START } from "./labels";
 
 /** Lo que el editor parte sabiendo: el esquema vacío, o la última versión de uno que ya existe. */
@@ -22,6 +36,7 @@ export type SchemeDraft = {
 
 type LineDraft = { key: string; beneficiaryId: string; pct: string };
 type FieldErrors = Record<string, string[] | undefined> | undefined;
+type Choice = { id: string; name: string };
 
 /**
  * Lo que dice el editor cuando la llamada no llegó o no volvió (sin conexión). La petición pudo llegar y perderse
@@ -33,27 +48,39 @@ const NETWORK_TEXT =
 /** "33.3333" → "33,3333": como lo escribiría una persona. */
 const pctDraft = (pct: Pct): string => pct.replace(".", ",");
 
+const schemeHref = (schemeId: string) => `/pasarelas/repartos/esquemas/${schemeId}`;
+
 /**
  * El editor de un esquema de reparto: el nombre, sobre qué se reparte, cada beneficiario con su porcentaje (la suma
  * se ve mientras se escribe), quién recibe el «Resto» y desde cuándo rige. Mientras el esquema no valga (el mismo
- * `validateScheme` que usa el servidor) el botón no guarda y se dice por qué. Sin `schemeId` crea el esquema; con
- * `schemeId` le agrega una versión nueva: las anteriores no se tocan.
+ * `validateScheme` que usa el servidor) el botón no guarda y se dice por qué.
+ *
+ * Sin `schemeId` crea el esquema. Con `schemeId` le agrega una versión nueva (las anteriores no se tocan), que no
+ * puede regir desde la misma fecha que una de sus `versions`: la base la reemplazaría, y eso es corregir. Con
+ * `correcting`, corrige la versión de `initial`: su «vigente desde» no se cambia (se lee) y se manda la misma.
  */
 export function SchemeEditor({
   schemeId,
   initial,
   beneficiaries,
   defaultDate,
+  correcting = false,
+  versions = [],
 }: {
   schemeId: string | null;
   initial: SchemeDraft;
   /** Los que se pueden elegir: los activos y los que ya están en `initial`. */
-  beneficiaries: readonly { id: string; name: string }[];
+  beneficiaries: readonly Choice[];
   /** La fecha que se propone si no rige «desde el inicio». */
   defaultDate: ISODate;
+  /** Con `schemeId`: corrige la versión de `initial` en vez de agregar una. */
+  correcting?: boolean;
+  /** Las versiones que ya tiene el esquema, para no agregar otra desde la misma fecha. */
+  versions?: readonly { version: number; effectiveFrom: ISODate }[];
 }) {
   const router = useRouter();
   const issuesId = useId();
+  const clashId = useId();
   const [name, setName] = useState(initial.name);
   const [base, setBase] = useState<AllocBase>(initial.base);
   const [remainder, setRemainder] = useState(initial.remainderBeneficiaryId ?? "");
@@ -72,21 +99,25 @@ export function SchemeEditor({
   const total = schemeTotal(parsed.filter((line) => line.pct !== ""));
   const missing = normPct(dec("100").minus(dec(total)));
   const next = beneficiaries.find((b) => !lines.some((line) => line.beneficiaryId === b.id) && b.id !== remainder);
+  const effectiveFrom = correcting ? initial.effectiveFrom : sinceStart ? SINCE_START : date;
+  const clash = correcting ? undefined : versions.find((version) => version.effectiveFrom === effectiveFrom);
+  const blockedBy = [issues.length > 0 ? issuesId : null, clash ? clashId : null].filter(Boolean).join(" ");
 
   const updateLine = (key: string, patch: Partial<LineDraft>) =>
     setLines((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
 
   async function submit() {
+    const scheme = {
+      schemeId,
+      name,
+      base,
+      remainderBeneficiaryId: remainder || null,
+      effectiveFrom,
+      lines: lines.map((line) => ({ beneficiaryId: line.beneficiaryId, pct: line.pct })),
+    };
     let result;
     try {
-      result = await saveScheme({
-        schemeId,
-        name,
-        base,
-        remainderBeneficiaryId: remainder || null,
-        effectiveFrom: sinceStart ? SINCE_START : date,
-        lines: lines.map((line) => ({ beneficiaryId: line.beneficiaryId, pct: line.pct })),
-      });
+      result = await (correcting ? correctScheme(scheme) : saveScheme(scheme));
     } catch {
       // Sin conexión: se dice aquí, sin perder lo escrito (si no, la pantalla entera pasaría a su error).
       setError(NETWORK_TEXT);
@@ -99,9 +130,12 @@ export function SchemeEditor({
     }
     setError(null);
     setErrors(undefined);
-    if (schemeId === null) {
+    if (correcting) {
+      notify.success("Esquema corregido");
+      router.push(schemeHref(result.data.schemeId));
+    } else if (schemeId === null) {
       notify.success("Esquema guardado");
-      router.push(`/pasarelas/repartos/esquemas/${result.data.schemeId}`);
+      router.push(schemeHref(result.data.schemeId));
     } else {
       notify.success("Versión nueva guardada");
     }
@@ -196,26 +230,50 @@ export function SchemeEditor({
         </Alert>
       ) : null}
 
-      <div className="flex flex-col gap-3">
-        <Field
-          label="Vigente desde"
-          hint={
-            schemeId === null
-              ? "«Desde el inicio» vale para todos los cobros, también los de fechas pasadas."
-              : "Por defecto, mañana. Los cobros ya registrados conservan el reparto con el que se registraron."
-          }
-        >
-          <Select value={sinceStart ? "inicio" : "fecha"} onChange={(event) => setSinceStart(event.currentTarget.value === "inicio")}>
-            <option value="inicio">Desde el inicio</option>
-            <option value="fecha">Desde una fecha</option>
-          </Select>
-        </Field>
-        {sinceStart ? null : (
-          <Field label="Fecha" error={errors?.effectiveFrom?.[0]}>
-            <Input type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} required />
+      {correcting ? (
+        <p>
+          {initial.effectiveFrom === SINCE_START ? (
+            "Rige desde el inicio"
+          ) : (
+            <>
+              Rige desde el <DateText value={initial.effectiveFrom} />
+            </>
+          )}
+          <span className="text-ink-soft">: al corregirla, la fecha no cambia.</span>
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <Field
+            label="Vigente desde"
+            hint={
+              schemeId === null
+                ? "«Desde el inicio» vale para todos los cobros, también los de fechas pasadas."
+                : "Por defecto, mañana. Los cobros ya registrados conservan el reparto con el que se registraron."
+            }
+          >
+            <Select
+              value={sinceStart ? "inicio" : "fecha"}
+              onChange={(event) => setSinceStart(event.currentTarget.value === "inicio")}
+            >
+              <option value="inicio">Desde el inicio</option>
+              <option value="fecha">Desde una fecha</option>
+            </Select>
           </Field>
-        )}
-      </div>
+          {sinceStart ? null : (
+            <Field label="Fecha" error={errors?.effectiveFrom?.[0]}>
+              <Input type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} required />
+            </Field>
+          )}
+          {clash ? (
+            <div id={clashId}>
+              <Alert tone="warning">
+                Ya hay una versión desde {sinceStart ? "el inicio" : "esa fecha"}, la {clash.version}: una versión
+                nueva necesita otra fecha.
+              </Alert>
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {errors?.lines?.[0] ? (
         <Alert tone="danger" announce>
@@ -229,11 +287,52 @@ export function SchemeEditor({
       ) : null}
       <SubmitButton
         className="self-start"
-        disabled={issues.length > 0}
-        aria-describedby={issues.length > 0 ? issuesId : undefined}
+        disabled={blockedBy !== ""}
+        aria-describedby={blockedBy === "" ? undefined : blockedBy}
       >
-        {schemeId === null ? "Guardar esquema" : "Guardar versión nueva"}
+        {correcting ? "Guardar cambios" : schemeId === null ? "Guardar esquema" : "Guardar versión nueva"}
       </SubmitButton>
+    </form>
+  );
+}
+
+type NameState = {
+  /** Lo último que se envió: React vacía el campo al terminar la acción y vuelve con esto. */
+  name: string;
+  /** Si se cortó la red (`unsure`), no se sabe si se guardó: el aviso ofrece «Ver cómo quedó». */
+  error: ActionFailure | null;
+  fieldError: string | undefined;
+};
+
+/**
+ * Cambiar solo el nombre de un esquema, sin versión nueva: el nombre no cambia ningún reparto, así que vale aunque
+ * sus versiones ya tengan cobros. Al guardar vuelve a la ficha del esquema.
+ */
+export function SchemeNameForm({ schemeId, name }: { schemeId: string; name: string }) {
+  const router = useRouter();
+  const [state, formAction] = useActionState(
+    async (_previous: NameState, data: FormData): Promise<NameState> => {
+      const value = data.get("name");
+      const typed = typeof value === "string" ? value : "";
+      // Con `callAction`, un corte no sube a `error.tsx`: el formulario sigue con lo escrito y la duda.
+      const result = await callAction(() => renameScheme({ id: schemeId, name: typed }));
+      if (result.ok) {
+        notify.success("Nombre cambiado");
+        router.push(schemeHref(schemeId));
+        return { name: typed, error: null, fieldError: undefined };
+      }
+      return { name: typed, error: failureOf(result), fieldError: result.fieldErrors?.name?.[0] };
+    },
+    { name, error: null, fieldError: undefined },
+  );
+
+  return (
+    <form action={formAction} className="flex flex-col gap-4" noValidate>
+      <Field label="Nombre del esquema" error={state.fieldError}>
+        <Input name="name" defaultValue={state.name} maxLength={80} autoComplete="off" required />
+      </Field>
+      <ActionError failure={state.error} />
+      <SubmitButton className="self-start">Guardar nombre</SubmitButton>
     </form>
   );
 }

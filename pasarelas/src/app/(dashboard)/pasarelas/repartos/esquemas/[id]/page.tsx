@@ -1,9 +1,10 @@
+import { Pencil } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SchemeEditor } from "@/components/pasarelas/splits/SchemeEditor";
 import { SchemeStatusActions } from "@/components/pasarelas/splits/SchemeStatusActions";
 import { SchemeVersionSummary } from "@/components/pasarelas/splits/SchemeVersionSummary";
-import { Badge, Card, CardBody, CardHeader, CardTitle, PageHeader } from "@/components/ui";
+import { Badge, ButtonLink, Card, CardBody, CardHeader, CardTitle, PageHeader } from "@/components/ui";
 import { requireSession } from "@/lib/auth/session";
 import { addDays, pickVersion, todayNY } from "@/lib/pasarelas";
 import { zId } from "@/server/pasarelas/zod";
@@ -13,8 +14,9 @@ export const metadata: Metadata = { title: "Esquema de reparto" };
 
 /**
  * Un esquema de reparto: la versión que rige hoy, todas sus versiones (de la más nueva a la más vieja) y el editor de
- * una versión nueva, que parte de la última y rige por defecto desde mañana. Las versiones no se editan: cada cobro
- * guarda congelada la que usó.
+ * una versión nueva, que parte de la última y rige por defecto desde mañana; no puede regir desde la fecha de otra
+ * versión (eso la reemplazaría). Una versión que algún cobro usa no se toca: cada cobro guarda congelada la que usó.
+ * Un error en la última versión se arregla con «Editar» (`editar/`), mientras ningún cobro la use.
  */
 export default async function EsquemaPage({ params }: PageProps<"/pasarelas/repartos/esquemas/[id]">) {
   await requireSession();
@@ -39,7 +41,15 @@ export default async function EsquemaPage({ params }: PageProps<"/pasarelas/repa
         title={scheme.name}
         description={scheme.active ? undefined : <Badge>Inactivo</Badge>}
         back={{ href: "/pasarelas/repartos", label: "Repartos" }}
-        actions={<SchemeStatusActions id={scheme.id} name={scheme.name} active={scheme.active} />}
+        actions={
+          <>
+            <ButtonLink href={`/pasarelas/repartos/esquemas/${scheme.id}/editar`}>
+              <Pencil aria-hidden className="size-5" />
+              Editar
+            </ButtonLink>
+            <SchemeStatusActions id={scheme.id} name={scheme.name} active={scheme.active} />
+          </>
+        }
       />
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-4">
@@ -85,7 +95,8 @@ export default async function EsquemaPage({ params }: PageProps<"/pasarelas/repa
             </CardHeader>
             <CardBody className="flex flex-col gap-4">
               <p className="text-ink-soft">
-                Cambia el reparto desde una fecha. Lo ya registrado conserva el reparto con el que se registró.
+                Cambia el reparto desde una fecha. Lo ya registrado conserva el reparto con el que se registró. Para
+                arreglar un error en la última versión, sin crear otra, usa «Editar».
               </p>
               <SchemeEditor
                 // Otra clave con cada versión nueva: el editor vuelve a partir de la última guardada.
@@ -100,6 +111,7 @@ export default async function EsquemaPage({ params }: PageProps<"/pasarelas/repa
                 }}
                 beneficiaries={choices}
                 defaultDate={addDays(today, 1)}
+                versions={scheme.versions.map(({ version, effectiveFrom }) => ({ version, effectiveFrom }))}
               />
             </CardBody>
           </section>
