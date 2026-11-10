@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   cacheComponents: false,
   poweredByHeader: false,
   reactStrictMode: true,
+  // En desarrollo, Next 16.4 solo sirve sus recursos (/_next/hmr y demás) a `localhost`. Las pruebas de punta a
+  // punta entran por http://127.0.0.1:<puerto>: sin esto el websocket de recarga queda bloqueado y la consola se
+  // llena de errores. Solo afecta a `next dev`.
+  allowedDevOrigins: ["127.0.0.1"],
   // Este proyecto vive en una subcarpeta de un repo con otro proyecto en la raíz:
   // la raíz (de Turbopack y del rastreo de archivos) es ESTA carpeta, no la del repo.
   outputFileTracingRoot: path.join(__dirname),
