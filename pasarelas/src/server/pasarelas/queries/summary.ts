@@ -83,8 +83,10 @@ export type SummaryView = {
   /** El resumen del período en `currency`; `null` si no hubo cobros que cuenten. */
   summary: CurrencySummary | null;
   months: MonthRow[];
-  /** Lo atrasado y lo que cae en los próximos días, en `currency`, en partes que se marcan de una vez. No depende
-   * del período. */
+  /**
+   * Lo atrasado y lo que cae en los próximos días, en `currency`, en partes que se marcan depositado de una vez
+   * (`depositParts`). No depende del período.
+   */
   deposits: DepositPart[];
   /** Los días que cubre `deposits` (además de lo atrasado), ambos incluidos. */
   depositWindow: { from: ISODate; to: ISODate };

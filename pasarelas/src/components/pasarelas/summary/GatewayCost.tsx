@@ -14,7 +14,7 @@ export type GatewayCostProps = {
 /**
  * Lo que de verdad costó cada pasarela en el período: sus comisiones (con opciones, plataforma, reembolsos y
  * disputas) sobre su bruto. De la más cara a la más barata; una sin bruto (todo reembolsado) no tiene costo
- * efectivo: no se dibuja (no es un 0 %), va al final de la tabla con «—» y el resumen lo dice.
+ * efectivo: no se dibuja (no es un 0 %), va al final de la tabla con «Sin bruto» y el resumen lo dice.
  */
 export function GatewayCost({ summary, currency, nameOf }: GatewayCostProps) {
   const { costed, uncosted } = gatewaysByCost(summary.byGateway);
