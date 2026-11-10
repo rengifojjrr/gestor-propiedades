@@ -4,8 +4,9 @@ import { defineConfig } from "@playwright/test";
 /**
  * Pruebas de punta a punta contra el Supabase LOCAL.
  *
- * Por defecto compila y arranca la app en el puerto 3100 (`next build && next start`).
- * Con E2E_BASE_URL=http://127.0.0.1:<puerto> usa un servidor que ya esté corriendo (p. ej. `next dev -p 3110`).
+ * Por defecto compila y arranca SU PROPIO servidor (`next build && next start`) en el puerto 3100, o en el de
+ * E2E_PORT. Nunca reutiliza uno que ya esté escuchando ahí: si el puerto está ocupado, falla.
+ * Para usar un servidor que ya esté corriendo (p. ej. `next dev -p 3110`): E2E_BASE_URL=http://127.0.0.1:<puerto>.
  */
 if (existsSync(".env.local")) {
   for (const line of readFileSync(".env.local", "utf8").split("\n")) {
@@ -43,8 +44,11 @@ export default defineConfig({
     ? undefined
     : {
         command: `npm run build && npm run start -- -p ${PORT}`,
-        url: `${LOCAL_URL}/login`,
-        reuseExistingServer: true,
+        // Se espera la raíz, que siempre responde (con la página o con la redirección a la entrada).
+        url: LOCAL_URL,
+        // Reutilizar lo que hubiera en el puerto probaría el código de otro (otra tarea, otro worktree) sin
+        // avisar. Para reutilizar un servidor a propósito está E2E_BASE_URL.
+        reuseExistingServer: false,
         timeout: 300_000,
       },
 });
