@@ -1230,7 +1230,8 @@ todavía deje pasar errores de consola por rutas «pendientes» (ya existen toda
 
 Una revisión adversarial de toda la rama (seis dimensiones, cada hallazgo grave verificado por otro agente que
 intentó refutarlo) dejó 17 hallazgos confirmados y 26 menores. Están, con su escenario, su evidencia y el arreglo
-verificado, en `/tmp/claude-0/-home-user-gestor-propiedades/b1082bf1-8952-53e0-b565-87e2dda8ba35/scratchpad/revision-final.json`: «#n» es el n-ésimo de `confirmed` y «mN» el N-ésimo de `minors` (contando desde 1). Cada tarea
+verificado, en un JSON de trabajo que no se guarda en el repo: «#n» es el n-ésimo hallazgo confirmado y «mN» el
+N-ésimo menor (contando desde 1); lo que se arregló de cada uno se dice en las tareas de abajo. Cada tarea
 de esta ola es dueña de sus archivos: no toca los de las otras, que corren a la vez. Todas terminan con sus
 pruebas (unitarias, de integración y de punta a punta en modo producción) en verde y la salida limpia.
 
@@ -1369,7 +1370,8 @@ un nuevo `tests/integration/sesiones.test.ts` y `src/app/(dashboard)/ajustes/Sec
 ### Remates tras revisar las tareas 30 y 33 (tareas 37 y 38)
 
 Las tareas 30 y 33 se integraron sin pasar por su revisión; una revisión aparte (cada hallazgo grave verificado por
-otro agente) está en `/tmp/claude-0/-home-user-gestor-propiedades/b1082bf1-8952-53e0-b565-87e2dda8ba35/scratchpad/revision-30-33.json`: `confirmed` (R1 a R4), `previousNotFixed` (lo que quedó a medias) y `minors`.
+otro agente) quedó en un JSON de trabajo que no se guarda en el repo: los confirmados (R1 a R4), lo que quedó a
+medias y los menores. Lo que se arregló de cada uno se dice en las tareas 37 y 38.
 
 ### Task 37: Remates de cobros, fechas estimadas y configuración
 
@@ -1414,6 +1416,43 @@ y `e2e/{cobros,cobro-detalle,registrar,cuentas-feriados,pasarelas,listo-cuando}.
    dudosos); tras un corte en los comprobantes del cobro, «Ver cómo quedó» antes de volver a subir (no duplicar); la
    etiqueta del comprobante usa `formatDate` del motor; «Quitar» un comprobante y las acciones de la liquidación usan
    `callAction`.
+
+### Remates tras revisar el cierre (tareas 39 y 40)
+
+Una revisión independiente de los últimos cambios (cada hallazgo verificado por otro agente que intentó refutarlo)
+encontró que el arreglo del corte de red del diálogo de cuentas destino faltaba en los beneficiarios. Un barrido de
+todos los componentes que llaman a una Server Action dejó cuatro más sin protección, en la entrada y en Ajustes →
+Seguridad. Ahí, además, el corte caía en `ajustes/error.tsx`, que dice «Tus datos están guardados», y eso es falso
+si se cortó al cambiar la contraseña. Las dos tareas son dueñas de archivos distintos y corren a la vez.
+
+### Task 39: Cortes de red en beneficiarios; importar el mismo archivo; la prueba del refresco de cuentas
+
+**Dueña de:** `src/components/pasarelas/splits/{BeneficiaryFormDialog,BeneficiaryActions}.tsx`,
+`src/components/pasarelas/import/ImportScreen.tsx` y, solo para agregar o ajustar sus pruebas,
+`e2e/{repartos,importar,cuentas-feriados}.spec.ts`.
+
+1. Crear o editar un beneficiario, y activarlo, desactivarlo o borrarlo desde su ficha, llaman con `callAction`. El
+   fallo se pinta con `ActionError` o `DialogActionError`, como en `accounts/`: un corte no sube a `error.tsx`, no se
+   pierde lo escrito y se ofrece «Ver cómo quedó». La redirección de borrar sigue su camino.
+2. Importar: el control de archivo se vacía tras elegir, así que volver a elegir el mismo archivo (corregido y
+   guardado con el mismo nombre) se vuelve a leer. Además queda desactivado hasta hidratar, como el del logo.
+3. La prueba del corte en el diálogo de cuentas comprueba de verdad que la lista se vuelve a pintar al cerrarlo.
+   La petición llega al servidor, se corta solo la respuesta, y la cuenta aparece tras «Cancelar».
+
+### Task 40: Cortes de red en la entrada y en Ajustes → Seguridad
+
+**Dueña de:** `src/app/(auth)/login/{LoginForm.tsx,verificar/VerifyForm.tsx,verificar/page.tsx}`, un componente
+nuevo de cerrar sesión si hace falta, `src/app/(dashboard)/ajustes/SecurityCard.tsx`, lo mínimo al final de
+`src/components/pasarelas/callAction.ts` si hace falta un ayudante genérico (declarado en el informe) y, solo para
+agregar pruebas, `e2e/{sesion,ajustes}.spec.ts`.
+
+1. Entrar y escribir el código del segundo factor: con un corte, la pantalla no cae en `global-error.tsx`. El
+   correo sigue escrito y se dice que se perdió la conexión y que se vuelva a intentar (repetir es seguro). Las
+   redirecciones al salir bien siguen funcionando.
+2. Ajustes → Seguridad: agregar un dispositivo, confirmar su código, quitarlo y cambiar la contraseña. Un corte se
+   dice en la tarjeta, sin caer en `ajustes/error.tsx`. Si no se sabe si el cambio quedó, se dice y se dice cómo
+   averiguarlo.
+3. Cerrar sesión (en la pantalla del código y en Ajustes): un corte se dice ahí mismo, con «Ver cómo quedó».
 
 ### Task 22: Documentación, revisión y entrega
 
