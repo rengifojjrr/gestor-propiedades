@@ -991,6 +991,8 @@ EventsTimeline.tsx,ReceiptsCard.tsx}`; `e2e/cobro-detalle.spec.ts`.
       revertir depósito, reembolso (monto, fecha, nota; muestra el antes y el después), disputa (abrir, ganada,
       perdida, anular), marcar fallido o reabrir, recalcular, a la papelera. Las no permitidas no se muestran.
 - [ ] Papelera: restaurar, borrar del todo (confirmación que dice que también se borran los comprobantes) y vaciar.
+- [ ] Viene de la tarea 10: registrar E1 por la pantalla «Registrar cobro» con un comprobante, tocar «Ver cobro» en
+      el aviso y ver en el detalle `9,70`, `90,30`, `45,15` / `27,09` / `18,06`, la fecha estimada y el comprobante.
 - [ ] `e2e/cobro-detalle.spec.ts`: **«Listo cuando» n.º 6** — reembolso parcial de 40 sobre el cobro E1: bruto
       `60,00`, costo del reembolso `1,16`, neto `52,90`, reparto `26,45` / `15,87` / `10,58`, y el historial lo
       registra; abrir disputa suma `15,00` y ganarla lo revierte; mandar a la papelera lo saca de la lista y
@@ -1138,6 +1140,26 @@ extraIds, useReportedFee, rows: ImportRow[] }` en lotes de 500 → `{ created, d
       no duplica nada**, una fila inválida no deja el lote a medias); `e2e/importar.spec.ts` con el archivo de
       ejemplo de Stripe: sube, revisa «Así lo entendí», guarda, los cobros aparecen con sus comisiones, y al
       repetir el archivo dice que ya existían.
+
+### Task 28: Registrar cobro — arreglos tras la revisión
+
+**Archivos:** modificar `src/components/pasarelas/registrar/RegisterForm.tsx`,
+`src/app/(dashboard)/pasarelas/registrar/{page.tsx,error.tsx}` y `e2e/registrar.spec.ts`.
+
+- [ ] **El `id` del cobro nace en el navegador al montar el formulario** (`useState(() => crypto.randomUUID())`; no
+      se pinta en el HTML, así que no rompe la hidratación) y no llega del servidor. Hoy llega como prop de la página:
+      al volver con «Atrás» a una página restaurada de la caché del navegador, el formulario remonta con un `id` ya
+      usado, `createTransaction` (idempotente) no crea nada y la pantalla dice que guardó. Prueba: guardar un cobro,
+      ir a otra pantalla, volver con «Atrás», guardar otro → hay dos cobros.
+- [ ] Un fallo **después** de guardar el cobro (la subida del comprobante, el aviso) nunca dice «No se pudo guardar
+      el cobro»: dice que el cobro quedó guardado y qué falló.
+- [ ] Si el comprobante no se subió, el aviso de éxito lo dice (no un «Cobro guardado.» a secas) y remite al
+      reintento. Si el fallo es por el contenido del archivo (no se puede leer, no es lo que dice ser), en lugar de
+      «Reintentar comprobante» se ofrece «Elegir otro archivo» para ese cobro.
+- [ ] Cada reintento pendiente dice que el comprobante también se puede agregar después desde el detalle del cobro
+      (salir de la pantalla no pierde el cobro, solo ese reintento).
+- [ ] `registrar/error.tsx` no dice «Tus datos están guardados.» (es un formulario de alta): dice qué hacer.
+- [ ] `npm run typecheck`, `npm run lint`, `npm test` y `e2e/registrar.spec.ts` en verde en modo producción.
 
 ---
 
