@@ -2,7 +2,7 @@
 
 import { Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   Alert,
   Button,
@@ -15,24 +15,30 @@ import {
   notify,
   PctInput,
   SubmitButton,
+  Switch,
 } from "@/components/ui";
 import { createGateway } from "@/server/pasarelas/actions/gateways";
 import { callAction } from "../callAction";
 import { EMPTY_EXTRA, EMPTY_GATEWAY, firstError, type ExtraDraft, type FieldErrors } from "./drafts";
 import { ExtraFieldsInputs } from "./ExtraFieldsInputs";
 import { GatewayFieldsInputs } from "./GatewayFieldsInputs";
+import { draftTotal } from "./international";
+import { InternationalTotal } from "./InternationalTotal";
 
 type ExtraRow = ExtraDraft & { key: string };
 
 /**
- * «Agregar pasarela»: sus datos, su tarifa (que rige desde el inicio) y, si tiene, sus opciones. Todo se crea de
- * una vez; al terminar lleva a su ficha.
+ * «Agregar pasarela»: sus datos, su tarifa (que rige desde el inicio), si cobra un recargo a los pagos
+ * internacionales y, si tiene, sus opciones. Todo se crea de una vez; al terminar lleva a su ficha.
  */
 export function NewGatewayForm() {
   const router = useRouter();
+  const abroadId = useId();
   const [gateway, setGateway] = useState(EMPTY_GATEWAY);
   const [pct, setPct] = useState("");
   const [fixed, setFixed] = useState("0,00");
+  // El recargo internacional: se escribe aquí y se guarda como una opción aparte, «Pago internacional».
+  const [abroad, setAbroad] = useState({ on: false, pct: "", fixed: "0,00" });
   const [extras, setExtras] = useState<ExtraRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<FieldErrors>(undefined);
@@ -49,6 +55,7 @@ export function NewGatewayForm() {
         pct,
         fixed,
         extras: extras.map(({ key: _key, ...extra }) => extra),
+        international: abroad.on ? { pct: abroad.pct, fixed: abroad.fixed } : null,
       }),
     );
     if (!result.ok) {
@@ -61,6 +68,7 @@ export function NewGatewayForm() {
   }
 
   const extrasError = firstError(errors, "extras");
+  const abroadError = firstError(errors, "international");
 
   return (
     <form action={submit} className="flex flex-col gap-4" noValidate>
@@ -90,6 +98,50 @@ export function NewGatewayForm() {
             </Field>
           </div>
         </CardBody>
+      </Card>
+
+      <Card>
+        <section aria-labelledby={abroadId}>
+          <CardHeader>
+            <CardTitle id={abroadId}>Pagos internacionales</CardTitle>
+          </CardHeader>
+          <CardBody className="flex flex-col gap-4">
+            <Switch
+              label="¿Cobra un recargo a los pagos internacionales?"
+              hint="Se suma a la tarifa, sobre el bruto. Al registrar un cobro te preguntamos si fue nacional o internacional."
+              checked={abroad.on}
+              onChange={(event) => setAbroad({ ...abroad, on: event.currentTarget.checked })}
+            />
+            {abroad.on ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Recargo">
+                    <PctInput
+                      value={abroad.pct}
+                      onChange={(event) => setAbroad({ ...abroad, pct: event.currentTarget.value })}
+                      required
+                    />
+                  </Field>
+                  <Field label="Fijo adicional">
+                    <MoneyInput
+                      value={abroad.fixed}
+                      onChange={(event) => setAbroad({ ...abroad, fixed: event.currentTarget.value })}
+                    />
+                  </Field>
+                </div>
+                <InternationalTotal
+                  total={draftTotal({ pct, fixed }, abroad)}
+                  missing="Escribe la comisión, la cuota fija y el recargo para ver cuánto paga un pago internacional."
+                />
+              </>
+            ) : null}
+            {abroadError ? (
+              <Alert tone="danger" announce>
+                Revisa el recargo: {abroadError}
+              </Alert>
+            ) : null}
+          </CardBody>
+        </section>
       </Card>
 
       <Card>

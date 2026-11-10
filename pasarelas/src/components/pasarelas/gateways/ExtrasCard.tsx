@@ -31,6 +31,7 @@ import { ActionError, DialogActionError } from "../ActionError";
 import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { ExtraFieldsInputs } from "./ExtraFieldsInputs";
 import { FeeText } from "./FeeText";
+import { isOption } from "./international";
 
 /** Lo que se edita en el diálogo: una opción nueva (`id` nulo) o una que ya existe. */
 type Editing = { id: string | null; draft: ExtraDraft; active: boolean };
@@ -103,17 +104,21 @@ function ExtraItem({
   );
 }
 
-/** Las opciones de la pasarela: agregar, editar (también activarla o no), encender por defecto y borrar. */
+/**
+ * Las opciones de la pasarela: agregar, editar (también activarla o no), encender por defecto y borrar. El recargo
+ * internacional no es una opción más: va en su propia tarjeta y aquí no se lista.
+ */
 export function ExtrasCard({
   gatewayId,
   dayType,
-  extras,
+  extras: all,
 }: {
   gatewayId: string;
   /** Los días de la pasarela (hábiles o corridos): los propios de una opción se cuentan igual. */
   dayType: DayType;
   extras: ExtraCfg[];
 }) {
+  const extras = all.filter(isOption);
   const titleId = useId();
   const [editing, setEditing] = useState<Editing | null>(null);
   const [errors, setErrors] = useState<FieldErrors>(undefined);

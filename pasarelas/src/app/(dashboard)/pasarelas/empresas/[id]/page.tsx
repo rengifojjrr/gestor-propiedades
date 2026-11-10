@@ -5,6 +5,7 @@ import { CompanySummary } from "@/components/pasarelas/companies/CompanySummary"
 import { ChannelsCard } from "@/components/pasarelas/companies/ChannelsCard";
 import { GatewaysCard } from "@/components/pasarelas/companies/GatewaysCard";
 import { companyTxHref } from "@/components/pasarelas/companies/txHref";
+import { isOption } from "@/components/pasarelas/gateways/international";
 import { Badge, ButtonLink, PageHeader } from "@/components/ui";
 import { summarize, todayNY } from "@/lib/pasarelas";
 import { requireSession } from "@/lib/auth/session";
@@ -43,7 +44,8 @@ export default async function EmpresaPage({ params, searchParams }: PageProps<"/
     active: gateway.active,
     payoutDays: gateway.payoutDays,
     payoutDayType: gateway.payoutDayType,
-    extras: gateway.extras.map(({ id: extraId, name, defaultOn, active }) => ({
+    // El recargo internacional no se enciende por defecto: se aplica si el pago fue internacional.
+    extras: gateway.extras.filter(isOption).map(({ id: extraId, name, defaultOn, active }) => ({
       id: extraId,
       name,
       defaultOn,

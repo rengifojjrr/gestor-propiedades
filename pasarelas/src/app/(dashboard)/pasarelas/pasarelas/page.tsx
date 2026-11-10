@@ -2,6 +2,7 @@ import { CreditCard, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { FeeText } from "@/components/pasarelas/gateways/FeeText";
+import { isOption } from "@/components/pasarelas/gateways/international";
 import { LagText } from "@/components/pasarelas/gateways/LagText";
 import { payoutText } from "@/components/pasarelas/gateways/days";
 import { Badge, ButtonLink, Card, CardBody, EmptyState, PageHeader } from "@/components/ui";
@@ -24,7 +25,8 @@ const ADD = (
 /** Una pasarela de la lista: su tarifa de hoy, cuándo cae el dinero y cuánto tarda de verdad. */
 function GatewayItem({ gateway, totals, today }: { gateway: GatewayCfg; totals: GatewayTotals[]; today: string }) {
   const fee = pickVersion(gateway.feeVersions, today);
-  const options = gateway.extras.filter((extra) => extra.active).length;
+  // El recargo internacional no cuenta como una opción.
+  const options = gateway.extras.filter((extra) => extra.active && isOption(extra)).length;
   const titleId = `pasarela-${gateway.id}`;
   return (
     <Card>

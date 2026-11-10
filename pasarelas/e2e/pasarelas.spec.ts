@@ -57,6 +57,10 @@ async function cutActions(page: Page, url: string): Promise<() => Promise<void>>
   return () => page.unroute(url, handler);
 }
 
+/** El aviso pasajero con ese texto. */
+const toastWith = (page: Page, text: string) =>
+  page.getByRole("region", { name: /Avisos/ }).getByRole("listitem").filter({ hasText: text });
+
 async function checkScreen(page: Page): Promise<void> {
   await expectNoSeriousAxe(page);
   await expectNoHorizontalOverflow(page);
@@ -116,6 +120,136 @@ test("crear «PayPal Demo» 3,49 % + 0,49 con la opción «Transferencia inmedia
   await page.getByRole("main").getByRole("link", { name: "Pasarelas" }).click();
   await expect(page.getByRole("article", { name: "PayPal Demo" })).toContainText("3,49 % + 0,49");
   await expect(page.getByRole("article", { name: "PayPal Demo" })).toContainText("1 día hábil");
+});
+
+test("crear «Stripe Demo» 2,9 % + 0,30 con recargo internacional de 1,5 %: la cuenta completa se ve mientras se escribe", async ({
+  page,
+}) => {
+  // Con su propio usuario: «Stripe Demo» también se llamaría «Stripe» al buscar la tarjeta de las otras pruebas.
+  await login(page, await newUser());
+  await page.goto("/pasarelas/pasarelas/nueva");
+  await expect(page.getByRole("heading", { level: 1, name: "Agregar pasarela" })).toBeVisible();
+  await page.getByLabel("Nombre", { exact: true }).fill("Stripe Demo");
+  await page.getByLabel("Comisión", { exact: true }).fill("2,9");
+  await page.getByLabel("Cuota fija", { exact: true }).fill("0,30");
+
+  const abroad = page.getByRole("region", { name: "Pagos internacionales" });
+  const surcharge = abroad.getByRole("switch", { name: "¿Cobra un recargo a los pagos internacionales?" });
+  await expect(surcharge).not.toBeChecked();
+  await expect(abroad.getByLabel("Recargo", { exact: true })).toHaveCount(0);
+  await surcharge.check();
+  await abroad.getByLabel("Recargo", { exact: true }).fill("1,5");
+  await expect(abroad.getByLabel("Fijo adicional")).toHaveValue("0,00");
+  await expect(abroad).toContainText("Un pago internacional paga 4,4 % + 0,30");
+  // La cuenta sigue a lo que se escribe, también en la tarifa.
+  await abroad.getByLabel("Fijo adicional").fill("0,15");
+  await expect(abroad).toContainText("Un pago internacional paga 4,4 % + 0,45");
+  await abroad.getByLabel("Fijo adicional").fill("0");
+  await expect(abroad).toContainText("Un pago internacional paga 4,4 % + 0,30");
+  // No es una opción más: la lista de «Opciones» sigue vacía.
+  await expect(page.getByRole("group", { name: /^Opción \d/ })).toHaveCount(0);
+  await checkScreen(page);
+
+  await page.getByRole("button", { name: "Crear pasarela" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Stripe Demo" })).toBeVisible();
+  const card = page.getByRole("region", { name: "Pagos internacionales" });
+  await expect(card).toContainText("Un pago internacional paga 4,4 % + 0,30");
+  await expect(card.getByLabel("Recargo", { exact: true })).toHaveValue("1,5");
+  await expect(card.getByLabel("Fijo adicional")).toHaveValue("0,00");
+  // «Opciones» no la lista: no se enciende por defecto ni se edita como una opción.
+  const options = page.getByRole("region", { name: "Opciones" });
+  await expect(options).toContainText("Sin opciones");
+  await expect(options.getByText("Pago internacional")).toHaveCount(0);
+  await checkScreen(page);
+
+  await page.getByRole("main").getByRole("link", { name: "Pasarelas" }).click();
+  await expect(page.getByRole("article", { name: "Stripe Demo" })).toContainText("Ninguna");
+});
+
+test("la ficha agrega, cambia y quita el recargo internacional; un cobro nuevo usa el nuevo y el viejo no cambia", async ({
+  page,
+}) => {
+  const solo = await newUser();
+  const soloDb = await signInAal1(solo.email, solo.password);
+  const today = todayNY(new Date());
+  /** Un cobro de 100,00 USD por Stripe, hoy, internacional si se le pasa el recargo. */
+  const register = async (extraIds: string[]): Promise<string> => {
+    const id = randomUUID();
+    await serverData().createTx(soloDb, {
+      id,
+      companyId: solo.basics.companyId,
+      channelId: null,
+      gatewayId: solo.basics.gatewayId,
+      extraIds,
+      schemeId: null,
+      occurredOn: today,
+      occurredAt: wallTimeToInstant(`${today}T12:00`, ZONE),
+      currency: "USD",
+      grossOriginal: "100.00",
+      reference: null,
+      note: null,
+    });
+    return id;
+  };
+  /** Las comisiones totales congeladas del cobro. */
+  const feesOf = async (id: string) => (await serverData().getSnapshots(soloDb, [id]))[0]?.breakdown.feesTotal;
+  /** El recargo internacional encendido de Stripe, como está en la base. */
+  const activeSurcharge = async () => {
+    const { data } = await soloDb
+      .from("pay_gateway_extras")
+      .select("id, pct::text, fixed::text")
+      .eq("gateway_id", solo.basics.gatewayId)
+      .eq("kind", "internacional")
+      .eq("active", true);
+    return data ?? [];
+  };
+
+  await login(page, solo);
+  await page.goto(`/pasarelas/pasarelas/${solo.basics.gatewayId}`);
+  const card = page.getByRole("region", { name: "Pagos internacionales" });
+  await expect(card).toContainText("Sin recargo: un pago internacional paga lo mismo que uno nacional.");
+  await checkScreen(page);
+
+  await card.getByLabel("Recargo", { exact: true }).fill("1,5");
+  await expect(card).toContainText("Un pago internacional paga 4,4 % + 0,30 con la tarifa vigente hoy.");
+  await card.getByRole("button", { name: "Agregar recargo" }).click();
+  // axe mide el contraste del aviso ya entero, no a medio aparecer.
+  await expect(toastWith(page, "Recargo agregado")).toHaveCSS("opacity", "1");
+  await expect(card.getByRole("button", { name: "Guardar recargo" })).toBeVisible();
+  await expect(card.getByRole("button", { name: "Quitar recargo" })).toBeVisible();
+  await expect(card).toContainText("Lo ya registrado no cambia");
+  const [added] = await activeSurcharge();
+  expect(added).toMatchObject({ pct: "1.5000", fixed: "0.00" });
+  await checkScreen(page);
+
+  // Un cobro internacional con 1,5 %: 3,20 de Stripe + 1,50 de recargo.
+  const before = await register([added?.id ?? ""]);
+  expect(await feesOf(before)).toBe("4.70");
+
+  await card.getByLabel("Recargo", { exact: true }).fill("2");
+  await card.getByLabel("Fijo adicional").fill("0,10");
+  await expect(card).toContainText("Un pago internacional paga 4,9 % + 0,40");
+  await card.getByRole("button", { name: "Guardar recargo" }).click();
+  await expect(toastWith(page, "Recargo guardado")).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("region", { name: "Pagos internacionales" }).getByLabel("Recargo", { exact: true }),
+  ).toHaveValue("2");
+  expect(await activeSurcharge()).toEqual([{ id: added?.id, pct: "2.0000", fixed: "0.10" }]);
+
+  // El viejo conserva lo congelado; uno nuevo, 3,20 + 2,10.
+  expect(await feesOf(before)).toBe("4.70");
+  const after = await register([added?.id ?? ""]);
+  expect(await feesOf(after)).toBe("5.30");
+
+  await page.getByRole("region", { name: "Pagos internacionales" }).getByRole("button", { name: "Quitar recargo" }).click();
+  await expect(page.getByRole("region", { name: "Pagos internacionales" })).toContainText(
+    "Sin recargo: un pago internacional paga lo mismo que uno nacional.",
+  );
+  await expect(toastWith(page, "Recargo quitado")).toHaveCSS("opacity", "1");
+  expect(await activeSurcharge()).toEqual([]);
+  expect(await feesOf(before)).toBe("4.70");
+  await checkScreen(page);
 });
 
 test("«Listo cuando» n.º 3: una tarifa vigente desde mañana no cambia el cobro ya registrado", async ({ page }) => {

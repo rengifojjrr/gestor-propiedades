@@ -4,6 +4,8 @@ import { ExtrasCard } from "@/components/pasarelas/gateways/ExtrasCard";
 import { FeeVersionsCard } from "@/components/pasarelas/gateways/FeeVersionsCard";
 import { GatewaySettingsForm } from "@/components/pasarelas/gateways/GatewaySettingsForm";
 import { GatewayStatusActions } from "@/components/pasarelas/gateways/GatewayStatusActions";
+import { InternationalCard } from "@/components/pasarelas/gateways/InternationalCard";
+import { activeInternational } from "@/components/pasarelas/gateways/international";
 import { LagText } from "@/components/pasarelas/gateways/LagText";
 import { moneyDraft } from "@/components/pasarelas/gateways/drafts";
 import { payoutText } from "@/components/pasarelas/gateways/days";
@@ -67,7 +69,10 @@ function TotalsCard({ totals, payout }: { totals: GatewayTotals[]; payout: strin
   );
 }
 
-/** La ficha de una pasarela: sus tarifas con «vigente desde», sus opciones, sus datos y su tiempo real. */
+/**
+ * La ficha de una pasarela: sus tarifas con «vigente desde», su recargo a los pagos internacionales, sus opciones,
+ * sus datos y su tiempo real.
+ */
 export default async function PasarelaPage({ params }: PageProps<"/pasarelas/pasarelas/[id]">) {
   await requireSession();
   const parsed = zId.safeParse((await params).id);
@@ -80,6 +85,7 @@ export default async function PasarelaPage({ params }: PageProps<"/pasarelas/pas
   const current = pickVersion(gateway.feeVersions, today);
   const totals = allTotals.filter((row) => row.gatewayId === gateway.id);
   const payout = payoutText(gateway.payoutDays, gateway.payoutDayType);
+  const international = activeInternational(gateway);
 
   return (
     <>
@@ -96,6 +102,13 @@ export default async function PasarelaPage({ params }: PageProps<"/pasarelas/pas
             versions={gateway.feeVersions}
             currentId={current?.id ?? null}
             defaultFrom={addDays(today, 1)}
+          />
+          <InternationalCard
+            // Otra clave si cambia lo guardado: la tarjeta vuelve a partir de ahí (también al agregarlo o quitarlo).
+            key={international === null ? "sin-recargo" : `${international.id}|${international.pct}|${international.fixed}`}
+            gatewayId={gateway.id}
+            fee={current === null ? null : { pct: current.pct, fixed: current.fixed }}
+            international={international}
           />
           <ExtrasCard gatewayId={gateway.id} dayType={gateway.payoutDayType} extras={gateway.extras} />
         </div>
