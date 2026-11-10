@@ -1454,6 +1454,21 @@ agregar pruebas, `e2e/{sesion,ajustes}.spec.ts`.
    averiguarlo.
 3. Cerrar sesión (en la pantalla del código y en Ajustes): un corte se dice ahí mismo, con «Ver cómo quedó».
 
+### Task 41: Editar un esquema de reparto y agregar un beneficiario desde el editor
+
+Pedido del dueño, ya usando la app publicada: corregir un esquema después de crearlo (puso «Sobre el bruto» y era
+«Sobre el neto») y agregar un beneficiario sin salir del editor. Sin migración: `pay_save_scheme` ya reemplaza una
+versión con la misma fecha si ningún cobro la usa.
+
+**Dueña de:** `splits/{SchemeEditor,BeneficiaryFormDialog}.tsx`, `repartos/page.tsx` (tarjeta «Esquemas»),
+`repartos/esquemas/[id]/page.tsx`, la ruta nueva `repartos/esquemas/[id]/editar/`, lo mínimo de
+`server/pasarelas/{queries,ops,actions}/splits.ts`, `tests/integration/repartos.test.ts` y `e2e/repartos.spec.ts`.
+
+1. «Editar» (en la ficha y en la lista) corrige la última versión si ningún cobro la usa: nombre, base, líneas y resto,
+   con la misma fecha y «Guardar cambios». Si la usa alguno, dice cuántos, deja cambiar solo el nombre y lleva a
+   «Versión nueva».
+2. «Nuevo beneficiario» dentro del editor: lo crea y lo deja en una línea nueva.
+
 ### Task 22: Documentación, revisión y entrega
 
 **Archivos:** `docs/PASARELAS.md`, `README.md`, raíz `README.md`.
