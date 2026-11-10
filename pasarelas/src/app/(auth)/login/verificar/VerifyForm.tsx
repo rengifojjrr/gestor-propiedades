@@ -13,7 +13,7 @@ export function VerifyForm({ next }: { next: string }) {
   return (
     <form action={action} className="flex flex-col gap-4">
       <input type="hidden" name={NEXT_PARAM} value={next} />
-      {state.error ? <Alert tone="danger" title={state.error} /> : null}
+      {state.error ? <Alert tone="danger" announce title={state.error} /> : null}
       <Field label="Código" hint="Los 6 dígitos que muestra tu app de autenticación.">
         <Input
           name="code"

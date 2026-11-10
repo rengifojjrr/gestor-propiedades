@@ -13,7 +13,7 @@ export function LoginForm({ next }: { next: string }) {
   return (
     <form action={action} className="flex flex-col gap-4">
       <input type="hidden" name={NEXT_PARAM} value={next} />
-      {state.error ? <Alert tone="danger" title={state.error} /> : null}
+      {state.error ? <Alert tone="danger" announce title={state.error} /> : null}
       <Field label="Correo">
         <Input
           type="email"

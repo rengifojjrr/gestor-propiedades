@@ -99,7 +99,7 @@ function SecondFactor({ factors }: { factors: VerifiedFactor[] }) {
       <p className="text-ink-soft">
         Además de la contraseña, entrar pide un código de 6 dígitos que genera una app de autenticación en tu teléfono.
       </p>
-      {error ? <Alert tone="danger" title={error} /> : null}
+      {error ? <Alert tone="danger" announce title={error} /> : null}
 
       {factors.length > 0 ? (
         <ul className="flex flex-col gap-2">
@@ -222,7 +222,7 @@ function PasswordChange({ email }: { email: string }) {
       <form action={submit} className="flex max-w-sm flex-col gap-3">
         {/* Para que el gestor de contraseñas sepa de qué cuenta es la contraseña nueva. */}
         <input type="text" name="username" autoComplete="username" value={email} readOnly hidden />
-        {problem?.error ? <Alert tone="danger" title={problem.error} /> : null}
+        {problem?.error ? <Alert tone="danger" announce title={problem.error} /> : null}
         <Field label="Contraseña actual" error={problem?.fieldErrors?.current}>
           <Input type="password" autoComplete="current-password" required {...bind("current")} />
         </Field>
