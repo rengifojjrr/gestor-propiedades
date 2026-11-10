@@ -189,10 +189,11 @@ export function wallTimeToInstant(wall: string, zoneName: string): string {
   if (!WALL_TIME.test(wall) || !isISODate(wall.slice(0, 10))) {
     throw new RangeError(`Fecha y hora inválidas (se espera AAAA-MM-DDTHH:mm[:ss]): ${wall}`);
   }
-  if (!IANAZone.isValidZone(zoneName)) throw new RangeError(`Zona horaria desconocida: «${zoneName}»`);
+  // `create` guarda cada zona ya vista (y si es válida): no se vuelve a preguntar a `Intl` en cada llamada.
+  const zone = IANAZone.create(zoneName);
+  if (!zone.isValid) throw new RangeError(`Zona horaria desconocida: «${zoneName}»`);
   // La hora «de pared» leída como si fuera UTC: el instante real es esa hora menos el desfase de la zona.
   const wallMs = Date.parse(`${wall.length === 16 ? `${wall}:00` : wall}Z`);
-  const zone = IANAZone.create(zoneName);
   // Desfases en minutos (EDT = −240, EST = −300) un día antes y un día después: solo difieren junto a un cambio.
   const dayBefore = zone.offset(wallMs - DAY_MS);
   const dayAfter = zone.offset(wallMs + DAY_MS);
