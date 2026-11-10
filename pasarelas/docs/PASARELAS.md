@@ -164,8 +164,9 @@ un dato, avisa de que ya se había guardado con los datos del primer intento, pe
   comprobante. Un cambio en el medio de pago o en la nota no se detecta y se pierde.
 
 Lo mismo pasa al entrar, al escribir el código y en Ajustes → Seguridad. Entrar y el código piden repetir, que es
-seguro. Para cambiar la contraseña, el aviso dice cómo saber si cambió: se vuelve a intentar, y si responde que la
-actual no es correcta, es que ya se cambió y vale la nueva.
+seguro. Al entrar se conserva el correo, pero la contraseña y los códigos de 6 dígitos hay que escribirlos otra vez.
+Para cambiar la contraseña, el aviso dice cómo saber si cambió: se vuelve a intentar, y si responde que la actual no
+es correcta, es que ya se cambió y vale la nueva.
 
 ## Las piezas
 

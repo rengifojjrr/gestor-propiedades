@@ -91,6 +91,8 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
   controlados volverían a lo que trajo el HTML del servidor (o a la primera opción, sin marcar) aunque el estado diga
   otra cosa. `Select`, `Checkbox` y `Switch` del kit mantienen `defaultSelected` / `defaultChecked` iguales al valor
   controlado, así que el reinicio no cambia nada en pantalla: dentro de un `<form action>` usa esos, no los nativos.
+  Y mientras la acción corre, `Input`, `Textarea`, `MoneyInput` y `PctInput` del kit son de solo lectura
+  (`useFormStatus`). Así nadie escribe algo que el reinicio, al terminar, cambiaría por lo enviado.
 - Comprobantes con URL firmada: `<img>` normal (o `<Image unoptimized>`), nunca `next/image` optimizado.
 - Tailwind 4 entra por el cargador `@tailwindcss/turbopack` (ver `next.config.ts`); no hay `postcss.config`.
 - Zod 4: `{ error: '…' }` y `z.flattenError(resultado.error).fieldErrors`.
@@ -166,10 +168,14 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
   `global-error.tsx` en la entrada): se desmonta la pantalla y se pierde lo escrito. Hay tres formas:
   - `callAction(() => accion(…))` (`components/pasarelas/callAction.ts`) para las que devuelven el `ActionResult` del
     módulo: con un corte no lanza y devuelve un error con `unsure: true` («no se sabe si se guardó»).
-  - `callActionOr(() => accion(…), () => loQueSeDice)` para las que traen su propio tipo de resultado: la entrada y
-    el código (`RETRY_TEXT`, porque repetir es seguro), Ajustes → Seguridad (`UNSURE_TEXT`, o un texto propio que
-    explica cómo saber si cambió la contraseña) y cerrar sesión (`src/app/(auth)/login/SignOutForm.tsx`). Por eso
-    la entrada ya no funciona con JavaScript apagado: React repite el envío hecho antes de hidratar.
+  - `callActionOr(() => accion(…), () => loQueSeDice)` para las que traen su propio tipo de resultado. Lo que se
+    dice depende de si repetir es seguro:
+    - `RETRY_TEXT` en la entrada, el código y al empezar a activar un dispositivo.
+    - `UNSURE_TEXT`, con «Ver cómo quedó», al confirmar o quitar un dispositivo y al cerrar sesión
+      (`src/app/(auth)/login/SignOutForm.tsx`).
+    - Un texto propio al cambiar la contraseña, que explica cómo saber si cambió.
+
+    Por eso la entrada ya no funciona con JavaScript apagado. React repite el envío que se hizo antes de hidratar.
   - Un `try/catch` propio, con su propio texto: los formularios y diálogos de `companies/` (logo incluido,
     `useActionForm`), el importador, `registrar/RegisterForm.tsx`, `splits/SchemeEditor.tsx`,
     `splits/SettlementForm.tsx` y `receipts/upload.ts`.
