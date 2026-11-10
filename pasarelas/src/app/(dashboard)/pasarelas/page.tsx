@@ -1,11 +1,13 @@
 import { ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
 import { ButtonLink, EmptyState, PageHeader } from "@/components/ui";
+import { requireSession } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Resumen" };
 
 /** Resumen mínimo, para que el marco tenga a dónde ir. La pantalla completa lo reemplaza. */
-export default function ResumenPage() {
+export default async function ResumenPage() {
+  await requireSession();
   return (
     <>
       <PageHeader title="Resumen" />
