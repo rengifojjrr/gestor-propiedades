@@ -18,7 +18,7 @@ export type Totals = {
   avgTicket: Money;
   /** Comisiones sobre el bruto; `null` si el bruto es 0. */
   feePct: Pct | null;
-  /** Por caer: registrados y en tránsito. */
+  /** Por caer (`isPending`): lo que se ve como registrado o en tránsito. */
   pendingNet: Money;
   pendingCount: number;
   depositedNet: Money;
@@ -225,16 +225,17 @@ export function lagStats(
 
 /**
  * Lo que está por caer, agrupado por fecha estimada, cuenta y moneda: todo lo atrasado (fecha estimada anterior a
- * `today`) y lo que cae en `[today, today + days − 1]`. Solo cobros por caer, con fecha estimada y bruto vigente
- * mayor que cero. Salen por fecha ascendente, así que lo atrasado va primero; a igual fecha, por moneda y luego por
- * cuenta («sin cuenta» al final). `ids` guarda los cobros de cada grupo en el orden en que llegaron.
+ * `today`) y lo que cae en `[today, today + days − 1]`. Solo cobros por caer (`isPending`, la misma regla que la
+ * tarjeta «Por caer») y con fecha estimada. Salen por fecha ascendente, así que lo atrasado va primero; a igual
+ * fecha, por moneda y luego por cuenta («sin cuenta» al final). `ids` guarda los cobros de cada grupo en el orden
+ * en que llegaron.
  */
 export function upcomingDeposits(rows: readonly LeanTx[], today: ISODate, days = 14): DepositGroup[] {
   const lastDay = addDays(today, days - 1);
   const groups = new Map<string, DepositGroup>();
   for (const row of rows) {
     const date = row.estimatedDepositOn;
-    if (!isPending(row) || date === null || cmp(row.gross, ZERO) <= 0) continue;
+    if (!isPending(row) || date === null) continue;
     const overdue = isOverdue(row, today);
     if (!overdue && date > lastDay) continue;
     const key = JSON.stringify([date, row.bankAccountId, row.currency]);

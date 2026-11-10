@@ -41,12 +41,21 @@ export function isPartialRefund(t: Pick<LeanTx, "status" | "refunded" | "grossOr
   return t.status !== "fallido" && cmp(t.refunded, ZERO) > 0 && cmp(t.refunded, t.grossOriginal) < 0;
 }
 
-/** Por caer: registrado o en tránsito. */
-export function isPending(t: Pick<LeanTx, "status">): boolean {
-  return t.status === "registrado" || t.status === "en_transito";
+/**
+ * Por caer: lo que SE VE como registrado o en tránsito. Es la única definición, para la tarjeta, el filtro de la
+ * lista, los próximos depósitos y lo atrasado. Un cobro con la disputa abierta (la pasarela retiene ese dinero) o
+ * reembolsado por completo (ya lo devolvió) no está por caer aunque nunca se haya depositado; uno con reembolso
+ * parcial sí, con su neto ya rebajado. Así, lo que está por caer siempre tiene bruto vigente mayor que cero.
+ */
+export function isPending(t: Pick<LeanTx, "status" | "disputeState" | "refunded" | "grossOriginal">): boolean {
+  const shown = displayStatus(t);
+  return shown === "registrado" || shown === "en_transito";
 }
 
-/** Atrasado: por caer, con fecha estimada anterior a hoy y bruto vigente mayor que cero. */
-export function isOverdue(t: Pick<LeanTx, "status" | "estimatedDepositOn" | "gross">, today: ISODate): boolean {
-  return isPending(t) && t.estimatedDepositOn !== null && t.estimatedDepositOn < today && cmp(t.gross, ZERO) > 0;
+/** Atrasado: por caer y con la fecha estimada anterior a hoy. */
+export function isOverdue(
+  t: Pick<LeanTx, "status" | "disputeState" | "refunded" | "grossOriginal" | "estimatedDepositOn">,
+  today: ISODate,
+): boolean {
+  return isPending(t) && t.estimatedDepositOn !== null && t.estimatedDepositOn < today;
 }

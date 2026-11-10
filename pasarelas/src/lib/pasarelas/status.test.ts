@@ -3,7 +3,7 @@ import { displayStatus, isOverdue, isPartialRefund, isPending, LIFECYCLE_LABEL, 
 import type { LeanTx } from "./types";
 
 type StatusTx = Pick<LeanTx, "status" | "disputeState" | "refunded" | "grossOriginal">;
-type OverdueTx = Pick<LeanTx, "status" | "estimatedDepositOn" | "gross">;
+type OverdueTx = StatusTx & Pick<LeanTx, "estimatedDepositOn">;
 
 const tx = (patch: Partial<StatusTx> = {}): StatusTx => ({
   status: "registrado",
@@ -14,12 +14,6 @@ const tx = (patch: Partial<StatusTx> = {}): StatusTx => ({
 });
 
 const HOY = "2026-11-09";
-const pendiente = (patch: Partial<OverdueTx> = {}): OverdueTx => ({
-  status: "en_transito",
-  estimatedDepositOn: "2026-11-06",
-  gross: "100.00",
-  ...patch,
-});
 
 describe("displayStatus: el orden del spec §4.1", () => {
   test("sin reembolso ni disputa, se ve el ciclo del dinero", () => {
@@ -77,41 +71,59 @@ describe("isPartialRefund", () => {
   });
 });
 
-describe("isPending", () => {
-  test("registrado y en tránsito están por caer; depositado y fallido, no", () => {
-    expect(isPending({ status: "registrado" })).toBe(true);
-    expect(isPending({ status: "en_transito" })).toBe(true);
-    expect(isPending({ status: "depositado" })).toBe(false);
-    expect(isPending({ status: "fallido" })).toBe(false);
+/**
+ * Cobros sin depositar (`registrado` salvo que el caso diga otra cosa) de 100,00, y si están por caer. La regla es
+ * una sola: está por caer lo que se ve como registrado o en tránsito.
+ */
+const CASOS: readonly { caso: string; patch: Partial<StatusTx>; porCaer: boolean }[] = [
+  { caso: "registrado", patch: {}, porCaer: true },
+  { caso: "en tránsito", patch: { status: "en_transito" }, porCaer: true },
+  { caso: "con reembolso parcial", patch: { refunded: "40.00" }, porCaer: true },
+  { caso: "en tránsito con reembolso parcial", patch: { status: "en_transito", refunded: "99.99" }, porCaer: true },
+  { caso: "con reembolso total", patch: { refunded: "100.00" }, porCaer: false },
+  { caso: "en tránsito con reembolso total", patch: { status: "en_transito", refunded: "100.00" }, porCaer: false },
+  { caso: "con disputa abierta", patch: { disputeState: "abierta" }, porCaer: false },
+  { caso: "en tránsito y en disputa", patch: { status: "en_transito", disputeState: "abierta" }, porCaer: false },
+  { caso: "con disputa ganada", patch: { disputeState: "ganada" }, porCaer: true },
+  // Perder la disputa implica el reembolso total.
+  { caso: "con disputa perdida", patch: { disputeState: "perdida", refunded: "100.00" }, porCaer: false },
+  { caso: "depositado", patch: { status: "depositado" }, porCaer: false },
+  { caso: "fallido", patch: { status: "fallido" }, porCaer: false },
+];
+
+describe("isPending: por caer es lo que se ve como registrado o en tránsito", () => {
+  test.each(CASOS)("$caso → $porCaer", ({ patch, porCaer }) => {
+    expect(isPending(tx(patch))).toBe(porCaer);
+  });
+
+  test("coincide con el estado visible en todas las combinaciones de ciclo, disputa y reembolso", () => {
+    for (const status of ["registrado", "en_transito", "depositado", "fallido"] as const) {
+      for (const disputeState of [null, "abierta", "ganada", "perdida"] as const) {
+        for (const refunded of ["0.00", "40.00", "100.00"]) {
+          const cobro = tx({ status, disputeState, refunded });
+          const visible = displayStatus(cobro);
+          expect(isPending(cobro), JSON.stringify(cobro)).toBe(visible === "registrado" || visible === "en_transito");
+        }
+      }
+    }
   });
 });
 
-describe("isOverdue", () => {
-  test("atrasado: por caer, con fecha estimada ya pasada y bruto vigente mayor que cero", () => {
-    expect(isOverdue(pendiente(), HOY)).toBe(true);
-    expect(isOverdue(pendiente({ status: "registrado", estimatedDepositOn: "2026-11-08" }), HOY)).toBe(true);
-    expect(isOverdue(pendiente({ gross: "0.01" }), HOY)).toBe(true);
+describe("isOverdue: por caer y con la fecha estimada ya pasada", () => {
+  const conFecha = (patch: Partial<StatusTx>, estimatedDepositOn: string | null): OverdueTx => ({
+    ...tx(patch),
+    estimatedDepositOn,
   });
 
-  test("si la fecha estimada es hoy o futura, todavía no", () => {
-    expect(isOverdue(pendiente({ estimatedDepositOn: HOY }), HOY)).toBe(false);
-    expect(isOverdue(pendiente({ estimatedDepositOn: "2026-11-10" }), HOY)).toBe(false);
+  test.each(CASOS)("$caso, con la fecha estimada ya pasada → $porCaer", ({ patch, porCaer }) => {
+    expect(isOverdue(conFecha(patch, "2026-11-08"), HOY)).toBe(porCaer);
+    expect(isOverdue(conFecha(patch, "2025-01-15"), HOY)).toBe(porCaer);
   });
 
-  test("falso con bruto 0.00", () => {
-    expect(isOverdue(pendiente({ gross: "0.00" }), HOY)).toBe(false);
-  });
-
-  test("falso con fallido", () => {
-    expect(isOverdue(pendiente({ status: "fallido" }), HOY)).toBe(false);
-  });
-
-  test("falso con depositado", () => {
-    expect(isOverdue(pendiente({ status: "depositado" }), HOY)).toBe(false);
-  });
-
-  test("falso sin fecha estimada", () => {
-    expect(isOverdue(pendiente({ estimatedDepositOn: null }), HOY)).toBe(false);
+  test.each(CASOS)("$caso, con la fecha estimada hoy, futura o sin fecha → nunca", ({ patch }) => {
+    expect(isOverdue(conFecha(patch, HOY), HOY)).toBe(false);
+    expect(isOverdue(conFecha(patch, "2026-11-10"), HOY)).toBe(false);
+    expect(isOverdue(conFecha(patch, null), HOY)).toBe(false);
   });
 });
 

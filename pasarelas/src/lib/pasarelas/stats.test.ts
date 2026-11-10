@@ -71,7 +71,7 @@ const u5 = tx("u5", {
   ...monto("80.00", "3.10", "76.90"),
   estimatedDepositOn: "2026-11-10",
 });
-/** Reembolso total con costo: bruto vigente 0,00 y neto negativo, sin cuenta destino. */
+/** Reembolso total con costo: bruto vigente 0,00 y neto negativo, sin cuenta destino. Ya no está por caer. */
 const u6 = tx("u6", {
   occurredOn: "2026-11-07",
   companyId: "emp-estudio",
@@ -128,8 +128,8 @@ describe("summarize: 6 filas en USD y 2 en EUR", () => {
       net: "439.45",
       avgTicket: "77.22", // 463,33 ÷ 6 = 77,2216…
       feePct: "5.15", // 23,88 ÷ 463,33 = 5,1540… %
-      pendingNet: "107.50", // u4 + u5 + u6 = 32,06 + 76,90 − 1,46
-      pendingCount: 3,
+      pendingNet: "108.96", // u4 + u5 = 32,06 + 76,90 (u6, reembolsado del todo, ya no está por caer)
+      pendingCount: 2,
       depositedNet: "331.95", // u1 + u2 + u3 = 90,30 + 193,90 + 47,75
       depositedCount: 3,
     });
@@ -315,6 +315,78 @@ describe("summarize: bordes", () => {
   });
 });
 
+describe("por caer: una sola definición para la tarjeta y para los próximos depósitos", () => {
+  /** Cuatro cobros de 100,00, los cuatro `registrado` y con la misma fecha estimada; solo dos están por caer. */
+  const normal = tx("normal", { estimatedDepositOn: "2026-11-10" });
+  /** E5: reembolso parcial de 40,00. Sigue por caer, con su neto ya rebajado. */
+  const parcial = tx("parcial", {
+    refunded: "40.00",
+    gross: "60.00",
+    fees: "7.10",
+    net: "52.90",
+    estimatedDepositOn: "2026-11-10",
+  });
+  /** E6: disputa abierta con costo de 15,00. La pasarela retiene ese dinero. */
+  const enDisputa = tx("en-disputa", {
+    disputeState: "abierta",
+    fees: "24.70",
+    net: "75.30",
+    estimatedDepositOn: "2026-11-10",
+  });
+  /** E4: reembolso total; la pasarela no devuelve su comisión. */
+  const reembolsado = tx("reembolsado", {
+    refunded: "100.00",
+    gross: "0.00",
+    fees: "3.20",
+    net: "-3.20",
+    estimatedDepositOn: "2026-11-10",
+  });
+  const grupo = [reembolsado, normal, enDisputa, parcial];
+
+  test("la tarjeta cuenta solo el normal y el del reembolso parcial", () => {
+    expect(summarize(grupo, HOY).USD?.totals).toMatchObject({
+      count: 4,
+      pendingNet: "143.20", // 90,30 + 52,90
+      pendingCount: 2,
+    });
+  });
+
+  test("los próximos depósitos traen esos mismos dos", () => {
+    expect(upcomingDeposits(grupo, HOY)).toEqual([
+      {
+        date: "2026-11-10",
+        bankAccountId: "cta-a",
+        currency: "USD",
+        net: "143.20",
+        count: 2,
+        ids: ["normal", "parcial"],
+        overdue: false,
+      },
+    ]);
+  });
+
+  test("y atrasados, también: con la fecha estimada ya pasada salen los mismos dos", () => {
+    const atrasados = grupo.map((fila) => ({ ...fila, estimatedDepositOn: "2026-11-05" }));
+    expect(upcomingDeposits(atrasados, HOY)).toEqual([
+      {
+        date: "2026-11-05",
+        bankAccountId: "cta-a",
+        currency: "USD",
+        net: "143.20",
+        count: 2,
+        ids: ["normal", "parcial"],
+        overdue: true,
+      },
+    ]);
+  });
+
+  test("al ganar la disputa el cobro vuelve a estar por caer", () => {
+    const ganada = tx("ganada", { disputeState: "ganada", estimatedDepositOn: "2026-11-10" });
+    expect(summarize([ganada], HOY).USD?.totals).toMatchObject({ pendingNet: "90.30", pendingCount: 1 });
+    expect(upcomingDeposits([ganada], HOY).map((deposito) => deposito.ids)).toEqual([["ganada"]]);
+  });
+});
+
 describe("totalsOf", () => {
   test("cuenta, bruto, comisiones y neto por moneda, sin los fallidos", () => {
     expect(totalsOf(FILAS)).toEqual({
@@ -402,7 +474,7 @@ describe("upcomingDeposits", () => {
   const porCaer = (id: string, estimatedDepositOn: string, patch: Partial<LeanTx> = {}): LeanTx =>
     tx(id, { status: "en_transito", estimatedDepositOn, ...patch });
 
-  test("con las filas a mano: primero el atrasado; fuera el depositado, el fallido y el de bruto 0.00", () => {
+  test("con las filas a mano: primero el atrasado; fuera el depositado, el fallido y el reembolsado", () => {
     expect(upcomingDeposits(FILAS, HOY)).toEqual([
       { date: "2026-11-04", bankAccountId: "cta-a", currency: "USD", net: "32.06", count: 1, ids: ["u4"], overdue: true },
       { date: HOY, bankAccountId: "cta-eur", currency: "EUR", net: "38.54", count: 1, ids: ["e2"], overdue: false },
@@ -410,13 +482,15 @@ describe("upcomingDeposits", () => {
     ]);
   });
 
-  test("excluye depositados, fallidos, bruto 0.00 y los que no tienen fecha estimada", () => {
+  test("excluye depositados, fallidos, reembolsados del todo, en disputa y los que no tienen fecha estimada", () => {
     const filas = [
       tx("depositado", { status: "depositado", estimatedDepositOn: "2026-11-10", depositedOn: "2026-11-08" }),
       tx("fallido", { status: "fallido", estimatedDepositOn: "2026-11-10" }),
       porCaer("reembolsado", "2026-11-10", { refunded: "100.00", gross: "0.00", fees: "3.20", net: "-3.20" }),
       tx("sin-fecha", { status: "registrado", estimatedDepositOn: null }),
       porCaer("atrasado-reembolsado", "2026-11-01", { refunded: "100.00", gross: "0.00", fees: "3.20", net: "-3.20" }),
+      porCaer("en-disputa", "2026-11-10", { disputeState: "abierta", fees: "24.70", net: "75.30" }),
+      porCaer("atrasado-en-disputa", "2026-11-01", { disputeState: "abierta", fees: "24.70", net: "75.30" }),
     ];
     expect(upcomingDeposits(filas, HOY)).toEqual([]);
   });
@@ -484,13 +558,13 @@ describe("upcomingDeposits", () => {
     expect(upcomingDeposits(filas, HOY, 1).map((grupo) => grupo.date)).toEqual(["2026-11-01", HOY]);
   });
 
-  test("un neto negativo por caer también se suma (bruto vigente mayor que cero)", () => {
+  test("un neto negativo por caer también se suma (una cuota fija mayor que lo cobrado)", () => {
     const filas = [
-      porCaer("disputa", "2026-11-10", { ...monto("10.00", "15.59", "-5.59") }),
+      porCaer("cuota-fija", "2026-11-10", { ...monto("0.20", "0.31", "-0.11") }),
       porCaer("normal", "2026-11-10", { ...monto("33.33", "1.27", "32.06") }),
     ];
     expect(upcomingDeposits(filas, HOY)).toEqual([
-      { date: "2026-11-10", bankAccountId: "cta-a", currency: "USD", net: "26.47", count: 2, ids: ["disputa", "normal"], overdue: false },
+      { date: "2026-11-10", bankAccountId: "cta-a", currency: "USD", net: "31.95", count: 2, ids: ["cuota-fija", "normal"], overdue: false },
     ]);
   });
 
