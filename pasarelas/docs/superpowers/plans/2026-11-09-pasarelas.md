@@ -1003,9 +1003,19 @@ GatewayShare.tsx,GatewayCost.tsx,AccountsChart.tsx,UpcomingDeposits.tsx,SplitsTa
 
 ### Task 18: Ajustes — exportar todo y contraseña a prueba de configuración
 
-**Archivos:** crear `src/app/(dashboard)/ajustes/{ExportCard.tsx,exportar/route.ts}` y `e2e/ajustes.spec.ts`;
-modificar `src/app/(dashboard)/ajustes/{page.tsx,actions.ts,SecurityCard.tsx}`, `next.config.ts` y
-`e2e/sesion.spec.ts`.
+**Archivos:** crear `src/server/pasarelas/queries/export.ts` (la lectura, con el cliente inyectado),
+`tests/integration/exportar.test.ts`, `src/app/(dashboard)/ajustes/{ExportCard.tsx,exportar/route.ts}` y
+`e2e/ajustes.spec.ts`; modificar `src/app/(dashboard)/ajustes/{page.tsx,actions.ts,SecurityCard.tsx}`,
+`next.config.ts` y `e2e/sesion.spec.ts`.
+
+**Produce:**
+
+```ts
+// queries/export.ts (server-only)
+export type ExportFile = { format: 'pasarelas-export'; version: 1; exportedAt: string;
+  tables: Record<string, Record<string, unknown>[]> };       // las 17 tablas pay_*, cada fila con todas sus columnas
+export async function exportAll(supabase: SupabaseClient<Database>, nowIso: string): Promise<ExportFile>;
+```
 
 - [ ] «Exportar todo» descarga un JSON con **todas** las columnas de todas las filas `pay_*` del usuario (las 17
       tablas, sin archivos), con la fecha en el nombre. Los montos y porcentajes salen como texto, tal como están
@@ -1020,9 +1030,12 @@ modificar `src/app/(dashboard)/ajustes/{page.tsx,actions.ts,SecurityCard.tsx}`, 
       tardar hasta una hora en quedar fuera.
 - [ ] `Strict-Transport-Security` queda en `max-age=63072000`, sin `includeSubDomains` ni `preload`: la app no
       decide por todo el dominio del dueño.
+- [ ] `tests/integration/exportar.test.ts`: `exportAll` trae las 17 tablas; en cada una, las claves de una fila
+      exportada son exactamente las columnas que devuelve `select('*')` (si mañana se añade una columna y no se
+      exporta, la prueba falla); los `numeric` salen como texto con sus decimales; con 1 005 feriados salen los
+      1 005; otro usuario no ve nada de eso.
 - [ ] `e2e/ajustes.spec.ts`: la descarga trae las 17 tablas y los cobros creados en la prueba, con el neto del
-      cobro E1 como el texto `"90.30"`; otro usuario que descarga no ve nada de eso; sin sesión, la ruta de
-      exportar no entrega datos.
+      cobro E1 como el texto `"90.30"`; sin sesión, la ruta de exportar no entrega datos.
 
 ### Task 19: Importar CSV (fase B)
 
