@@ -29,17 +29,45 @@ export type ExtraFields = {
   payoutDaysOverride: number | null;
 };
 
-/** Una pasarela nueva con su primera tarifa (que rige «desde el inicio») y sus opciones, en su orden. */
-export type NewGateway = GatewayFields & { pct: Pct; fixed: Money; extras: ExtraFields[] };
+/** El recargo de la pasarela a los pagos internacionales: se suma a su tarifa nacional, sobre el bruto. */
+export type InternationalFee = { pct: Pct; fixed: Money };
+
+/**
+ * Una pasarela nueva con su primera tarifa (que rige «desde el inicio») y sus opciones, en su orden; y, si cobra
+ * un recargo a los pagos internacionales, ese recargo (va detrás de las opciones).
+ */
+export type NewGateway = GatewayFields & {
+  pct: Pct;
+  fixed: Money;
+  extras: ExtraFields[];
+  international?: InternationalFee | null;
+};
 
 export type NewFeeVersion = { gatewayId: string; pct: Pct; fixed: Money; effectiveFrom: ISODate; note?: string | null };
 
 /** Sin `id`, una opción nueva (va al final); con `id`, la opción de esa pasarela que se edita. */
 export type SaveExtraInput = ExtraFields & { id?: string | null; gatewayId: string; active: boolean };
 
+/** Sin `id`, el recargo internacional nuevo de la pasarela; con `id`, el que tiene encendido, que se cambia. */
+export type SaveInternationalInput = InternationalFee & { id?: string | null; gatewayId: string };
+
+/**
+ * Cómo se guarda el recargo internacional: una opción de tipo `internacional` con este nombre (es el que sale en el
+ * desglose), sobre el bruto, apagada por defecto (se aplica solo si el pago fue internacional) y sin días propios.
+ */
+export const INTERNATIONAL_NAME = "Pago internacional";
+const INTERNATIONAL_COLUMNS = {
+  kind: "internacional",
+  name: INTERNATIONAL_NAME,
+  base: "bruto",
+  default_on: false,
+  payout_days_override: null,
+} as const;
+
 const GATEWAY_NOT_FOUND = "Esa pasarela ya no existe.";
 const FEE_NOT_FOUND = "Esa tarifa ya no existe.";
 const EXTRA_NOT_FOUND = "Esa opción ya no existe.";
+const INTERNATIONAL_NOT_FOUND = "Ese recargo internacional ya no existe.";
 const IN_USE = "Tiene cobros: desactívala en su lugar";
 const FEE_IN_USE = "Esta tarifa ya se usó en cobros: agrega una nueva con otra fecha";
 const FEE_DATE_TAKEN = "Ya hay una tarifa con esa fecha";
@@ -83,21 +111,28 @@ const gatewayColumns = (g: GatewayFields) => ({
 
 // ─── La pasarela ────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Crea la pasarela, su primera tarifa y sus opciones en una sola transacción (`pay_create_gateway`). */
+/**
+ * Crea la pasarela, su primera tarifa, sus opciones y su recargo internacional (si lo tiene) en una sola
+ * transacción (`pay_create_gateway`).
+ */
 export async function createGateway(supabase: Db, input: NewGateway): Promise<{ id: string }> {
+  const extras = input.extras.map((extra) => ({
+    name: extra.name,
+    pct: extra.pct,
+    fixed: extra.fixed,
+    base: extra.base,
+    default_on: extra.defaultOn,
+    payout_days_override: extra.payoutDaysOverride,
+  }));
+  const international = input.international
+    ? [{ ...INTERNATIONAL_COLUMNS, pct: input.international.pct, fixed: input.international.fixed }]
+    : [];
   const { data } = await supabase
     .rpc("pay_create_gateway", {
       p: {
         ...gatewayColumns(input),
         fee: { pct: input.pct, fixed: input.fixed },
-        extras: input.extras.map((extra) => ({
-          name: extra.name,
-          pct: extra.pct,
-          fixed: extra.fixed,
-          base: extra.base,
-          default_on: extra.defaultOn,
-          payout_days_override: extra.payoutDaysOverride,
-        })),
+        extras: [...extras, ...international],
       },
     })
     .throwOnError();
@@ -195,7 +230,10 @@ async function nextSort(supabase: Db, gatewayId: string): Promise<number> {
   return last === undefined ? 0 : last.sort + 1;
 }
 
-/** Agrega una opción a la pasarela (al final) o edita una suya. Lo ya registrado no cambia: cada cobro la congeló. */
+/**
+ * Agrega una opción a la pasarela (al final) o edita una suya. Lo ya registrado no cambia: cada cobro la congeló.
+ * El recargo internacional no es una opción más: se cambia con `saveInternational`.
+ */
 export async function saveExtra(supabase: Db, input: SaveExtraInput): Promise<{ id: string }> {
   if (input.id) {
     const { data } = await supabase
@@ -203,6 +241,7 @@ export async function saveExtra(supabase: Db, input: SaveExtraInput): Promise<{ 
       .update(extraColumns(input))
       .eq("id", input.id)
       .eq("gateway_id", input.gatewayId)
+      .eq("kind", "opcion")
       .select("id")
       .throwOnError();
     touched(data, EXTRA_NOT_FOUND);
@@ -236,4 +275,56 @@ export async function deleteExtra(supabase: Db, id: string): Promise<void> {
   if (count > 0) throw new UserError(IN_USE);
   const { data } = await supabase.from("pay_gateway_extras").delete().eq("id", id).select("id").throwOnError();
   touched(data, EXTRA_NOT_FOUND);
+}
+
+// ─── El recargo internacional ───────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Agrega el recargo internacional a la pasarela (sin `id`) o cambia el que tiene encendido (con `id`). Lo ya
+ * registrado no cambia: cada cobro internacional congeló el recargo con el que se calculó. Si la pasarela ya tiene
+ * uno encendido (otra pestaña lo agregó), la base no deja agregar otro: lo dice `errors.ts`.
+ */
+export async function saveInternational(supabase: Db, input: SaveInternationalInput): Promise<{ id: string }> {
+  const fee = { pct: input.pct, fixed: input.fixed };
+  if (input.id) {
+    const { data } = await supabase
+      .from("pay_gateway_extras")
+      .update(fee)
+      .eq("id", input.id)
+      .eq("gateway_id", input.gatewayId)
+      .eq("kind", "internacional")
+      .eq("active", true)
+      .select("id")
+      .throwOnError();
+    touched(data, INTERNATIONAL_NOT_FOUND);
+    return { id: input.id };
+  }
+  const sort = await nextSort(supabase, input.gatewayId);
+  const { data } = await onForeignKey(
+    () =>
+      supabase
+        .from("pay_gateway_extras")
+        .insert({ ...INTERNATIONAL_COLUMNS, ...fee, gateway_id: input.gatewayId, sort })
+        .select("id")
+        .single()
+        .throwOnError(),
+    GATEWAY_NOT_FOUND,
+  );
+  return { id: data.id };
+}
+
+/**
+ * Quita el recargo internacional: lo apaga, no lo borra (los cobros internacionales lo guardan en su desglose).
+ * Desde ese momento, al registrar ya no se pregunta si el pago fue nacional o internacional.
+ */
+export async function removeInternational(supabase: Db, id: string): Promise<void> {
+  const { data } = await supabase
+    .from("pay_gateway_extras")
+    .update({ active: false })
+    .eq("id", id)
+    .eq("kind", "internacional")
+    .eq("active", true)
+    .select("id")
+    .throwOnError();
+  touched(data, INTERNATIONAL_NOT_FOUND);
 }

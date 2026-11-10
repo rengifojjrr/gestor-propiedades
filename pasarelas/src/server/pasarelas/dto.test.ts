@@ -410,6 +410,7 @@ describe("toPayConfig", () => {
           payout_days_override: 0,
           active: true,
           sort: 0,
+          kind: "opcion",
         },
         {
           id: "ex-seguro",
@@ -422,6 +423,7 @@ describe("toPayConfig", () => {
           payout_days_override: null,
           active: false,
           sort: 1,
+          kind: "internacional",
         },
       ],
       companyGateways: [
@@ -524,6 +526,7 @@ describe("toPayConfig", () => {
               defaultOn: true,
               active: true,
               sort: 0,
+              kind: "opcion",
             },
             {
               id: "ex-seguro",
@@ -535,6 +538,7 @@ describe("toPayConfig", () => {
               defaultOn: false,
               active: false,
               sort: 1,
+              kind: "internacional",
             },
           ],
         },
@@ -640,6 +644,9 @@ describe("toPayConfig", () => {
       "Tipo de días desconocido",
     );
     expect(bad((r) => ((r.extras[0] as { base: string }).base = "neto"))).toThrow("Base de la opción desconocida");
+    expect(bad((r) => ((r.extras[0] as { kind: string }).kind = "extranjero"))).toThrow(
+      "Tipo de opción desconocido: «extranjero»",
+    );
     expect(bad((r) => ((r.schemeVersions[0] as { base: string }).base = "todo"))).toThrow(
       "Base del reparto desconocida",
     );

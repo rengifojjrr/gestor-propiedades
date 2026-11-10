@@ -60,6 +60,7 @@ export function cfgDemo(): PayConfig {
             defaultOn: true,
             active: true,
             sort: 0,
+            kind: "opcion",
           },
         ],
       },

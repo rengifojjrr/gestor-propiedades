@@ -34,6 +34,7 @@ const DATABASE_TEXT: Record<string, { named: Record<string, string>; other: stri
       pay_beneficiaries_name_uq: "Ya hay un beneficiario con ese nombre.",
       pay_schemes_name_uq: "Ya hay un esquema de reparto con ese nombre.",
       pay_transactions_reference_uq: "Ya hay un cobro de esa pasarela con esa referencia.",
+      pay_gateway_extras_internacional_uq: "Esta pasarela ya tiene un recargo internacional.",
     },
     other: "Ya existe un registro con esos datos.",
   },

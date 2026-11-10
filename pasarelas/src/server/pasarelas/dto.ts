@@ -47,7 +47,7 @@ export const CHANNEL_COLUMNS = "id, company_id, name, platform_fee_pct::text, pl
 export const GATEWAY_COLUMNS = "id, name, payout_days, payout_day_type, refunds_return_fee, dispute_fee::text, active";
 export const FEE_VERSION_COLUMNS = "id, gateway_id, pct::text, fixed::text, effective_from, note";
 export const EXTRA_COLUMNS =
-  "id, gateway_id, name, pct::text, fixed::text, base, default_on, payout_days_override, active, sort";
+  "id, gateway_id, name, pct::text, fixed::text, base, default_on, payout_days_override, active, sort, kind";
 export const COMPANY_GATEWAY_COLUMNS =
   "id, company_id, gateway_id, bank_account_id, payout_days_override, default_extra_ids, active";
 export const BANK_ACCOUNT_COLUMNS = "id, alias, last4, currency, active";
@@ -117,6 +117,7 @@ export type ExtraRow = {
   payout_days_override: number | null;
   active: boolean;
   sort: number;
+  kind: string;
 };
 export type CompanyGatewayRow = {
   id: string;
@@ -261,6 +262,7 @@ const LIFECYCLES: Record<Lifecycle, true> = { registrado: true, en_transito: tru
 const DISPUTE_STATES: Record<DisputeState, true> = { abierta: true, ganada: true, perdida: true };
 const DAY_TYPES: Record<DayType, true> = { habiles: true, corridos: true };
 const EXTRA_BASES: Record<ExtraBase, true> = { bruto: true, despues_de_comision: true };
+const EXTRA_KINDS: Record<ExtraCfg["kind"], true> = { opcion: true, internacional: true };
 const ALLOC_BASES: Record<AllocBase, true> = { neto: true, bruto: true };
 const BENEFICIARY_KINDS: Record<BeneficiaryKind, true> = { persona: true, empresa: true, cartera: true };
 const EVENT_KINDS: Record<EventKind, true> = {
@@ -341,6 +343,7 @@ export function toExtraCfg(row: ExtraRow): ExtraCfg {
     defaultOn: row.default_on,
     active: row.active,
     sort: row.sort,
+    kind: known(EXTRA_KINDS, row.kind, "Tipo de opción desconocido"),
   };
 }
 

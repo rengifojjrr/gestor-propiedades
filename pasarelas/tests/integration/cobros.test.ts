@@ -10,6 +10,7 @@ import {
   type NewTxInput,
 } from "@/lib/pasarelas";
 import { UserError, errorMessage } from "@/server/pasarelas/errors";
+import { saveInternational } from "@/server/pasarelas/ops/gateways";
 import { addHoliday } from "@/server/pasarelas/ops/holidays";
 import { receiptSignedUrl, registerReceipt, removeReceipt } from "@/server/pasarelas/ops/receipts";
 import {
@@ -547,6 +548,60 @@ describe("disputeTx, failTx, reopenTx, editTx y setEstimatedTx", () => {
     await setEstimatedTx(user.client, id, null);
     expect(await rowOf(id)).toMatchObject({ estimated_deposit_on: MARTES, estimated_is_manual: false });
     expect(await eventKinds(id)).toEqual(["creado", "fecha_estimada", "fecha_estimada"]);
+  });
+});
+
+// ─── Pagos internacionales ──────────────────────────────────────────────────────────────────────────────────
+
+describe("pagos internacionales: el recargo de la pasarela se aplica como una opción del cobro", () => {
+  /** Un usuario con lo de E1 y el recargo internacional de Stripe: 1,5 % sobre el bruto. */
+  async function withSurcharge(): Promise<{ user: TestUser; b: Basics; international: string }> {
+    const user = await createUser();
+    const b = await seedBasics(user.client);
+    const { id } = await saveInternational(user.client, { gatewayId: b.gatewayId, pct: "1.5", fixed: "0.00" });
+    return { user, b, international: id };
+  }
+
+  /** 100,00 por Stripe, sin canal ni «Pago rápido», repartido 50/30/20 sobre el neto. */
+  const via = (extraIds: string[]): Partial<NewTxInput> => ({ channelId: null, extraIds });
+
+  it("nacional paga la tarifa (3,20); internacional, 3,20 + 1,50 = 4,70, con su línea en el desglose", async () => {
+    const { user, b, international } = await withSurcharge();
+    const national = await register(user, b, via([]));
+    expect(await rowOf(national)).toMatchObject({ fees_total: "3.20", net_amount: "96.80" });
+
+    const abroad = await register(user, b, via([international]));
+    expect(await rowOf(abroad)).toMatchObject({ fees_total: "4.70", net_amount: "95.30" });
+    expect(await sharesOf(abroad, b)).toEqual(["47.65", "28.59", "19.06"]);
+    const [snapshot] = await getSnapshots(user.client, [abroad]);
+    expect(snapshot?.breakdown.lines.map((line) => [line.kind, line.name, line.amount])).toEqual([
+      ["pasarela", "Stripe", "3.20"],
+      ["opcion", "Pago internacional", "1.50"],
+    ]);
+  });
+
+  it("con «Pago rápido» y la plataforma al 5 %, se suman las tres: 3,20 + 1,50 + 1,50 + 5,00 = 11,20", async () => {
+    const { user, b, international } = await withSurcharge();
+    const id = await register(user, b, { extraIds: [b.extraId, international] });
+    expect(await rowOf(id)).toMatchObject({ fees_total: "11.20", net_amount: "88.80" });
+  });
+
+  it("editar de nacional a internacional vuelve a calcular, y de vuelta a nacional también", async () => {
+    const { user, b, international } = await withSurcharge();
+    const id = await register(user, b, via([]));
+    await editTx(user.client, id, { extraIds: [international] });
+    expect(await rowOf(id)).toMatchObject({ fees_total: "4.70", net_amount: "95.30" });
+    await editTx(user.client, id, { extraIds: [] });
+    expect(await rowOf(id)).toMatchObject({ fees_total: "3.20", net_amount: "96.80" });
+  });
+
+  it("cambiar el recargo no mueve el cobro ya registrado; uno nuevo usa el nuevo (2 % + 0,10)", async () => {
+    const { user, b, international } = await withSurcharge();
+    const before = await register(user, b, via([international]));
+    await saveInternational(user.client, { id: international, gatewayId: b.gatewayId, pct: "2", fixed: "0.10" });
+    expect(await rowOf(before)).toMatchObject({ fees_total: "4.70", net_amount: "95.30" });
+    const after = await register(user, b, via([international]));
+    expect(await rowOf(after)).toMatchObject({ fees_total: "5.30", net_amount: "94.70" });
   });
 });
 

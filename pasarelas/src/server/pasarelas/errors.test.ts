@@ -70,6 +70,9 @@ describe("errores de la base (PostgREST)", () => {
     expect(errorMessage(unique("pay_transactions_reference_uq"))).toBe(
       "Ya hay un cobro de esa pasarela con esa referencia.",
     );
+    expect(errorMessage(unique("pay_gateway_extras_internacional_uq"))).toBe(
+      "Esta pasarela ya tiene un recargo internacional.",
+    );
   });
 
   test("23505 de otra restricción: se dice que está repetido, sin nombrar la restricción", () => {

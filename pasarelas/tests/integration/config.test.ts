@@ -184,6 +184,7 @@ describe("loadPayConfig", () => {
               defaultOn: false,
               active: false,
               sort: -1,
+              kind: "opcion",
             },
             {
               id: b.extraId,
@@ -195,6 +196,7 @@ describe("loadPayConfig", () => {
               defaultOn: false,
               active: true,
               sort: 0,
+              kind: "opcion",
             },
           ],
         },

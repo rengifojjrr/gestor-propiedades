@@ -112,7 +112,17 @@ export type DiffRow = { key: string; label: string; before: string; after: strin
 
 export type FeeVersionCfg = { id: string; pct: Pct; fixed: Money; effectiveFrom: ISODate; note: string | null };
 
-export type ExtraCfg = ExtraRule & { defaultOn: boolean; active: boolean; sort: number };
+export type ExtraCfg = ExtraRule & {
+  defaultOn: boolean;
+  active: boolean;
+  sort: number;
+  /**
+   * `opcion`: una opción que se elige al registrar (p. ej. «Pago rápido»). `internacional`: el recargo de la
+   * pasarela a los pagos internacionales (a lo más una activa por pasarela); se aplica si el pago fue internacional.
+   * Para el motor las dos son iguales: porcentaje y fijo sobre su base.
+   */
+  kind: "opcion" | "internacional";
+};
 
 export type GatewayCfg = {
   id: string;

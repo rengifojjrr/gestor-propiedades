@@ -8,7 +8,9 @@ import {
   deleteExtra,
   deleteFeeVersion,
   deleteGateway,
+  removeInternational,
   saveExtra,
+  saveInternational,
   setGatewayActive,
   updateGateway,
   type NewGateway,
@@ -17,7 +19,15 @@ import { createTx, trashTx } from "@/server/pasarelas/ops/transactions";
 import { loadPayConfig } from "@/server/pasarelas/queries/config";
 import { getGateway, listGatewayTotals } from "@/server/pasarelas/queries/gateways";
 import { getSnapshots } from "@/server/pasarelas/queries/transactions";
-import { createUser, seedBasics, type Basics, type Db, type TestUser } from "./helpers";
+import {
+  createUser,
+  expectRejected,
+  seedBasics,
+  unwrap,
+  type Basics,
+  type Db,
+  type TestUser,
+} from "./helpers";
 
 /**
  * Las escrituras de la pantalla Pasarelas (`ops/gateways.ts`) y sus lecturas (`queries/gateways.ts`), con la sesión
@@ -123,6 +133,7 @@ describe("createGateway", () => {
           defaultOn: true,
           active: true,
           sort: 0,
+          kind: "opcion",
         },
         {
           id: expect.any(String),
@@ -134,8 +145,31 @@ describe("createGateway", () => {
           defaultOn: false,
           active: true,
           sort: 1,
+          kind: "opcion",
         },
       ],
+    });
+  });
+
+  it("con recargo internacional lo guarda como «Pago internacional»: sobre el bruto, apagado, sin días, al final", async () => {
+    const { id } = await createGateway(user.client, { ...paypal(), international: { pct: "1.5", fixed: "0.10" } });
+    const gateway = await getGateway(user.client, id);
+    expect(gateway?.extras.map((extra) => [extra.name, extra.kind])).toEqual([
+      ["Transferencia inmediata", "opcion"],
+      ["Seguro", "opcion"],
+      ["Pago internacional", "internacional"],
+    ]);
+    expect(gateway?.extras[2]).toEqual({
+      id: expect.any(String),
+      name: "Pago internacional",
+      pct: "1.5",
+      fixed: "0.10",
+      base: "bruto",
+      payoutDaysOverride: null,
+      defaultOn: false,
+      active: true,
+      sort: 2,
+      kind: "internacional",
     });
   });
 
@@ -368,6 +402,215 @@ describe("opciones: saveExtra y deleteExtra", () => {
     expect(await trashTx(user.client, [id])).toBe(1);
     expect(await userErrorOf(deleteExtra(user.client, b.extraId))).toBe(IN_USE);
     expect((await getGateway(user.client, b.gatewayId))?.extras.some((e) => e.id === b.extraId)).toBe(true);
+  });
+});
+
+describe("pagos internacionales: la opción de tipo «internacional»", () => {
+  const INTERNATIONAL_TAKEN = "Esta pasarela ya tiene un recargo internacional.";
+  const INTERNATIONAL_GONE = "Ese recargo internacional ya no existe.";
+
+  /** Las opciones de la pasarela con su tipo, en su orden, leídas tal cual de la tabla. */
+  async function kinds(client: Db, gatewayId: string) {
+    const { data } = await client
+      .from("pay_gateway_extras")
+      .select("name, kind, active")
+      .eq("gateway_id", gatewayId)
+      .order("sort")
+      .order("created_at")
+      .throwOnError();
+    return data;
+  }
+
+  /** Una pasarela nueva, creada directo con `pay_create_gateway` (como la llamaría cualquiera por la API). */
+  async function rpcGateway(client: Db, extras: Record<string, string>[]): Promise<string> {
+    return unwrap(
+      await client.rpc("pay_create_gateway", {
+        p: { name: `Stripe Demo ${randomUUID().slice(0, 8)}`, fee: { pct: "2.9", fixed: "0.30" }, extras },
+      }),
+      "pasarela",
+    );
+  }
+
+  it("la columna nace en «opcion»: las opciones de antes y las que se agregan sin decir de qué tipo son", async () => {
+    // seedBasics crea Stripe con «Pago rápido» por pay_create_gateway, sin decir el tipo.
+    expect(await kinds(user.client, b.gatewayId)).toEqual([{ name: "Pago rápido", kind: "opcion", active: true }]);
+    const { id: gatewayId } = await createGateway(user.client, paypal());
+    await user.client
+      .from("pay_gateway_extras")
+      .insert({ gateway_id: gatewayId, name: "Cuotas", pct: "2", sort: 5 })
+      .throwOnError();
+    expect(await kinds(user.client, gatewayId)).toEqual([
+      { name: "Transferencia inmediata", kind: "opcion", active: true },
+      { name: "Seguro", kind: "opcion", active: true },
+      { name: "Cuotas", kind: "opcion", active: true },
+    ]);
+  });
+
+  it("pay_create_gateway guarda el tipo de cada opción (por defecto «opcion»)", async () => {
+    const gatewayId = await rpcGateway(user.client, [
+      { name: "Pago rápido", pct: "1.5" },
+      { name: "Pago internacional", pct: "1.5", kind: "internacional" },
+    ]);
+    expect(await kinds(user.client, gatewayId)).toEqual([
+      { name: "Pago rápido", kind: "opcion", active: true },
+      { name: "Pago internacional", kind: "internacional", active: true },
+    ]);
+  });
+
+  it("un tipo que no es «opcion» ni «internacional» no se guarda", async () => {
+    expectRejected(
+      await user.client.from("pay_gateway_extras").insert({ gateway_id: b.gatewayId, name: "Rara", kind: "otra" }),
+      "23514",
+      "pay_gateway_extras_kind_check",
+    );
+  });
+
+  it("no se pueden tener dos internacionales activas en una pasarela; una inactiva no cuenta, ni la de otra pasarela", async () => {
+    const gatewayId = await rpcGateway(user.client, [{ name: "Pago internacional", pct: "1.5", kind: "internacional" }]);
+    const second = { gateway_id: gatewayId, name: "Pago internacional", pct: "2", kind: "internacional" };
+    const repeated = await user.client.from("pay_gateway_extras").insert(second);
+    expectRejected(repeated, "23505", "pay_gateway_extras_internacional_uq");
+    expect(errorMessage(repeated.error)).toBe(INTERNATIONAL_TAKEN);
+    // Dos a la vez en la misma llamada tampoco.
+    expectRejected(
+      await user.client.rpc("pay_create_gateway", {
+        p: {
+          name: `Stripe Demo ${randomUUID().slice(0, 8)}`,
+          fee: { pct: "2.9", fixed: "0.30" },
+          extras: [
+            { name: "Pago internacional", pct: "1.5", kind: "internacional" },
+            { name: "Pago internacional", pct: "2", kind: "internacional" },
+          ],
+        },
+      }),
+      "23505",
+      "pay_gateway_extras_internacional_uq",
+    );
+
+    // Apagada la primera, ya puede haber otra; volver a encender la primera chocaría con ella.
+    await user.client
+      .from("pay_gateway_extras")
+      .update({ active: false })
+      .eq("gateway_id", gatewayId)
+      .throwOnError();
+    await user.client.from("pay_gateway_extras").insert(second).throwOnError();
+    expectRejected(
+      await user.client
+        .from("pay_gateway_extras")
+        .update({ active: true })
+        .eq("gateway_id", gatewayId)
+        .eq("active", false),
+      "23505",
+      "pay_gateway_extras_internacional_uq",
+    );
+    expect(await kinds(user.client, gatewayId)).toEqual([
+      { name: "Pago internacional", kind: "internacional", active: false },
+      { name: "Pago internacional", kind: "internacional", active: true },
+    ]);
+
+    // Otra pasarela tiene la suya.
+    await rpcGateway(user.client, [{ name: "Pago internacional", pct: "1", kind: "internacional" }]);
+  });
+
+  it("saveInternational agrega el recargo y lo cambia; removeInternational lo apaga; agregarlo otra vez crea otro", async () => {
+    const { id: gatewayId } = await createGateway(user.client, paypal());
+    const { id } = await saveInternational(user.client, { gatewayId, pct: "1.5", fixed: "0.00" });
+    let gateway = await getGateway(user.client, gatewayId);
+    expect(gateway?.extras.find((extra) => extra.id === id)).toEqual({
+      id,
+      name: "Pago internacional",
+      pct: "1.5",
+      fixed: "0.00",
+      base: "bruto",
+      payoutDaysOverride: null,
+      defaultOn: false,
+      active: true,
+      sort: 2,
+      kind: "internacional",
+    });
+
+    expect(await saveInternational(user.client, { id, gatewayId, pct: "2.25", fixed: "0.30" })).toEqual({ id });
+    gateway = await getGateway(user.client, gatewayId);
+    expect(gateway?.extras.find((extra) => extra.id === id)).toMatchObject({ pct: "2.25", fixed: "0.30", active: true });
+
+    // Sin id, con uno ya activo (otra pestaña lo agregó): no se crea otro.
+    const taken: unknown = await saveInternational(user.client, { gatewayId, pct: "1", fixed: "0.00" }).catch(
+      (e: unknown) => e,
+    );
+    expect(errorMessage(taken)).toBe(INTERNATIONAL_TAKEN);
+
+    await removeInternational(user.client, id);
+    gateway = await getGateway(user.client, gatewayId);
+    expect(gateway?.extras.find((extra) => extra.id === id)?.active).toBe(false);
+    // Ya apagado, cambiarlo o quitarlo otra vez dice que no está.
+    expect(await userErrorOf(saveInternational(user.client, { id, gatewayId, pct: "3", fixed: "0.00" }))).toBe(
+      INTERNATIONAL_GONE,
+    );
+    expect(await userErrorOf(removeInternational(user.client, id))).toBe(INTERNATIONAL_GONE);
+
+    const again = await saveInternational(user.client, { gatewayId, pct: "1", fixed: "0.00" });
+    expect(again.id).not.toBe(id);
+    expect(await kinds(user.client, gatewayId)).toEqual([
+      { name: "Transferencia inmediata", kind: "opcion", active: true },
+      { name: "Seguro", kind: "opcion", active: true },
+      { name: "Pago internacional", kind: "internacional", active: false },
+      { name: "Pago internacional", kind: "internacional", active: true },
+    ]);
+  });
+
+  it("la internacional no se edita como una opción más, y una opción no se cambia como internacional", async () => {
+    const { id: gatewayId } = await createGateway(user.client, { ...paypal(), international: { pct: "1.5", fixed: "0.00" } });
+    const extras = (await getGateway(user.client, gatewayId))?.extras ?? [];
+    const international = extras.find((extra) => extra.kind === "internacional");
+    const option = extras.find((extra) => extra.kind === "opcion");
+    const fields = {
+      gatewayId,
+      name: "Otra cosa",
+      pct: "9",
+      fixed: "0.00",
+      base: "despues_de_comision" as const,
+      defaultOn: true,
+      payoutDaysOverride: 0,
+      active: true,
+    };
+    expect(await userErrorOf(saveExtra(user.client, { ...fields, id: international?.id }))).toBe(
+      "Esa opción ya no existe.",
+    );
+    expect(
+      await userErrorOf(saveInternational(user.client, { id: option?.id, gatewayId, pct: "9", fixed: "0.00" })),
+    ).toBe(INTERNATIONAL_GONE);
+    expect(await userErrorOf(removeInternational(user.client, option?.id ?? ""))).toBe(INTERNATIONAL_GONE);
+    expect(await getGateway(user.client, gatewayId)).toMatchObject({ extras });
+  });
+
+  it("otro usuario no ve ni cambia la opción internacional, ni agrega una a la pasarela ajena", async () => {
+    const { id: gatewayId } = await createGateway(user.client, { ...paypal(), international: { pct: "1.5", fixed: "0.00" } });
+    const id = (await getGateway(user.client, gatewayId))?.extras.find((extra) => extra.kind === "internacional")?.id;
+    if (id === undefined) throw new Error("Falta la opción internacional");
+
+    const { data: seen } = await other.client.from("pay_gateway_extras").select("id").eq("id", id).throwOnError();
+    expect(seen).toEqual([]);
+    const { data: changed } = await other.client
+      .from("pay_gateway_extras")
+      .update({ pct: "9", active: false })
+      .eq("id", id)
+      .select("id")
+      .throwOnError();
+    expect(changed).toEqual([]);
+    expect(await userErrorOf(saveInternational(other.client, { id, gatewayId, pct: "9", fixed: "0.00" }))).toBe(
+      INTERNATIONAL_GONE,
+    );
+    expect(await userErrorOf(removeInternational(other.client, id))).toBe(INTERNATIONAL_GONE);
+    const { id: bare } = await createGateway(user.client, paypal());
+    expect(await userErrorOf(saveInternational(other.client, { gatewayId: bare, pct: "9", fixed: "0.00" }))).toBe(
+      "Esa pasarela ya no existe.",
+    );
+    expect((await getGateway(user.client, bare))?.extras.some((extra) => extra.kind === "internacional")).toBe(false);
+
+    expect((await getGateway(user.client, gatewayId))?.extras.find((extra) => extra.id === id)).toMatchObject({
+      pct: "1.5",
+      active: true,
+    });
   });
 });
 

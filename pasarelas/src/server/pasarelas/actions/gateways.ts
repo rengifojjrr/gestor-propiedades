@@ -12,7 +12,9 @@ import {
   deleteExtra as deleteExtraOp,
   deleteFeeVersion as deleteFeeVersionOp,
   deleteGateway as deleteGatewayOp,
+  removeInternational as removeInternationalOp,
   saveExtra as saveExtraOp,
+  saveInternational as saveInternationalOp,
   setGatewayActive as setGatewayActiveOp,
   updateGateway as updateGatewayOp,
 } from "../ops/gateways";
@@ -77,11 +79,22 @@ const zExtraFields = z.object({
   payoutDaysOverride: zOptionalDays,
 });
 
+/** El recargo a los pagos internacionales: porcentaje y fijo, que pueden ser 0 y nunca negativos. */
+const zInternationalFee = z.object({ pct: zPct, fixed: zFee });
+
 const zById = z.object({ id: zId });
 
-/** Crea la pasarela con su primera tarifa y sus opciones, de una vez. Devuelve su id. */
+/**
+ * Crea la pasarela con su primera tarifa, sus opciones y, si cobra un recargo a los pagos internacionales, ese
+ * recargo (`international`; `null` o ausente: no cobra), de una vez. Devuelve su id.
+ */
 export async function createGateway(input: unknown): Promise<ActionResult<{ id: string }>> {
-  const schema = zGatewayFields.extend({ pct: zPct, fixed: zFee, extras: z.array(zExtraFields).max(20) });
+  const schema = zGatewayFields.extend({
+    pct: zPct,
+    fixed: zFee,
+    extras: z.array(zExtraFields).max(20),
+    international: zInternationalFee.nullish(),
+  });
   return runAction(schema, input, ({ supabase }, gateway) => createGatewayOp(supabase, gateway));
 }
 
@@ -135,4 +148,15 @@ export async function saveExtra(input: unknown): Promise<ActionResult<{ id: stri
 
 export async function deleteExtra(input: unknown): Promise<ActionResult> {
   return runAction(zById, input, ({ supabase }, { id }) => deleteExtraOp(supabase, id));
+}
+
+/** Agrega el recargo internacional de la pasarela (sin `id`) o cambia el que tiene encendido (con `id`). */
+export async function saveInternational(input: unknown): Promise<ActionResult<{ id: string }>> {
+  const schema = zInternationalFee.extend({ id: zId.nullish(), gatewayId: zId });
+  return runAction(schema, input, ({ supabase }, fee) => saveInternationalOp(supabase, fee));
+}
+
+/** Quita (apaga) el recargo internacional: lo ya registrado lo conserva en su desglose. */
+export async function removeInternational(input: unknown): Promise<ActionResult> {
+  return runAction(zById, input, ({ supabase }, { id }) => removeInternationalOp(supabase, id));
 }

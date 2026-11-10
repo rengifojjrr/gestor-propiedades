@@ -72,6 +72,7 @@ function extra(id: string, patch: Partial<ExtraCfg> = {}): ExtraCfg {
     defaultOn: false,
     active: true,
     sort: 0,
+    kind: "opcion",
     ...patch,
   };
 }

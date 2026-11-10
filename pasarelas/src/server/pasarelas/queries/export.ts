@@ -94,6 +94,7 @@ const EXPORT_COLUMNS = {
     payout_days_override: AS_IS,
     active: AS_IS,
     sort: AS_IS,
+    kind: AS_IS,
     created_at: AS_IS,
     updated_at: AS_IS,
   },
