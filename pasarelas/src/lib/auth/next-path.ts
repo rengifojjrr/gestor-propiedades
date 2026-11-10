@@ -30,6 +30,8 @@ export function safeNextPath(value: unknown): string {
 
   const url = new URL(value, PROBE_ORIGIN);
   if (url.origin !== PROBE_ORIGIN) return DEFAULT_NEXT_PATH;
+  // Se mira la ruta YA resuelta, que es la que se devuelve: `/..//evil.example` se resuelve a `//evil.example`.
+  if (url.pathname.startsWith("//")) return DEFAULT_NEXT_PATH;
   if (url.pathname === LOGIN_PATH || url.pathname.startsWith(`${LOGIN_PATH}/`)) return DEFAULT_NEXT_PATH;
   return `${url.pathname}${url.search}${url.hash}`;
 }

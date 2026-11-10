@@ -11,6 +11,12 @@ describe("safeNextPath", () => {
     expect(safeNextPath("/")).toBe("/");
   });
 
+  it("devuelve la ruta ya resuelta: los «..» no quedan para que los interprete el navegador", () => {
+    expect(safeNextPath("/pasarelas/cobros/../repartos")).toBe("/pasarelas/repartos");
+    expect(safeNextPath("/ajustes?volver=//evil.example")).toBe("/ajustes?volver=//evil.example");
+    expect(safeNextPath("/pasarelas/../login")).toBe(DEFAULT_NEXT_PATH);
+  });
+
   it.each([
     ["otro sitio sin esquema", "//evil.example"],
     ["otro sitio sin esquema, con ruta", "//evil.example/pasarelas"],
@@ -22,6 +28,10 @@ describe("safeNextPath", () => {
     ["una barra invertida más adentro", "/\\/evil.example"],
     ["un tabulador que el navegador descarta", "/\t/evil.example"],
     ["un salto de línea que el navegador descarta", "/\n/evil.example"],
+    ["un «..» que al resolverse deja «//host»", "/..//evil.example"],
+    ["un «.» que al resolverse deja «//host»", "/.//evil.example"],
+    ["un «..» más adentro que deja «//host»", "/pasarelas/..//evil.example/pasarelas"],
+    ["un «..» codificado que deja «//host»", "/%2e%2e//evil.example"],
     ["una ruta relativa", "pasarelas/cobros"],
     ["una ruta relativa hacia arriba", "../pasarelas"],
     ["una cadena vacía", ""],
