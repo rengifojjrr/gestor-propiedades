@@ -20,13 +20,14 @@ export const LIST_LIMIT = 1000;
 const NOT_FOUND_TEXT = "Ese comprobante ya no existe.";
 
 /** Lo que Storage sabe de un archivo: su tipo y su tamaño. */
-type StoredFile = { mime: string; sizeBytes: number };
+export type StoredFile = { mime: string; sizeBytes: number };
 
 /**
  * El archivo, como lo lista Storage, o `null` si no está. Lo que el usuario no puede ver cuenta como que no está.
  * Un archivo sin tipo o sin tamaño en sus metadatos se da con tipo vacío y tamaño 0: no pasa ninguna comprobación.
+ * Lo usan también los logos de las empresas, que viven en el mismo bucket.
  */
-async function storedFile(supabase: Db, path: string): Promise<StoredFile | null> {
+export async function storedFile(supabase: Db, path: string): Promise<StoredFile | null> {
   const cut = path.lastIndexOf("/");
   const name = path.slice(cut + 1);
   const { data, error } = await supabase.storage

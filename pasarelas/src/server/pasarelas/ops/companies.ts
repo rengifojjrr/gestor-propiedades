@@ -2,7 +2,8 @@ import "server-only";
 import type { Currency, Money, Pct } from "@/lib/pasarelas";
 import type { Db } from "../dto";
 import { UserError } from "../errors";
-import { LIST_LIMIT, RECEIPTS_BUCKET } from "./receipts";
+import { RECEIPTS_BUCKET, storedFile } from "./receipts";
+import { emptyFolder } from "./transactions";
 
 /**
  * Las escrituras de la pantalla Empresas: la empresa (su ficha, su logo, activa o no), sus canales de venta y las
@@ -19,6 +20,7 @@ const CHANNEL_NOT_FOUND = "Ese canal ya no existe.";
 const GATEWAY_NOT_FOUND = "Esa pasarela ya no está en esta empresa.";
 const IN_USE = "Tiene cobros: desactívala en su lugar";
 const REPEATED_GATEWAY = "Esa pasarela ya está en esta empresa";
+const LOGO_FILES_FAILED = "No se pudo borrar el logo de la empresa. La empresa sigue ahí: inténtalo de nuevo.";
 
 /** La restricción `unique (company_id, gateway_id)` de `pay_company_gateways` (el nombre que le da Postgres). */
 const COMPANY_GATEWAY_UNIQUE = "pay_company_gateways_company_id_gateway_id_key";
@@ -145,7 +147,7 @@ export async function deleteCompany(supabase: Db, userId: string, id: string): P
     .limit(1)
     .throwOnError();
   if (used.length > 0) throw new UserError(IN_USE);
-  await emptyFolder(supabase, `${userId}/${id}`);
+  await emptyFolder(supabase, `${userId}/${id}`, LOGO_FILES_FAILED);
   const { data } = await translating(
     () => supabase.from("pay_companies").delete().eq("id", id).select("id").throwOnError(),
     isReferenced,
@@ -156,46 +158,12 @@ export async function deleteCompany(supabase: Db, userId: string, id: string): P
 
 // ─── El logo ────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** El tipo y el tamaño que dice Storage de un archivo, o `null` si no está (o el usuario no lo puede ver). */
-async function storedFile(supabase: Db, path: string): Promise<{ mime: string; sizeBytes: number } | null> {
-  const cut = path.lastIndexOf("/");
-  const name = path.slice(cut + 1);
-  const { data, error } = await supabase.storage
-    .from(RECEIPTS_BUCKET)
-    .list(path.slice(0, cut), { limit: LIST_LIMIT, search: name });
-  if (error) throw error;
-  // `search` trae los nombres que se parecen: vale solo el que es igual. Una carpeta viene con `id` nulo.
-  const entry = data.find((file) => file.name === name && file.id !== null);
-  if (entry === undefined) return null;
-  const { mimetype, size } = (entry.metadata ?? {}) as { mimetype?: unknown; size?: unknown };
-  return { mime: typeof mimetype === "string" ? mimetype : "", sizeBytes: typeof size === "number" ? size : 0 };
-}
-
 /** Borra un archivo y comprueba que se fue: Storage no da error cuando no borra, dice qué borró. */
 async function removeFile(supabase: Db, path: string, message: string): Promise<void> {
   const { data, error } = await supabase.storage.from(RECEIPTS_BUCKET).remove([path]);
   if (error) throw error;
   // Si no borró nada y el archivo sigue ahí, no se pudo. Si ya no estaba, no hay nada que borrar.
   if (data.length === 0 && (await storedFile(supabase, path)) !== null) throw new UserError(message);
-}
-
-/** Borra todos los archivos de una carpeta del bucket. */
-async function emptyFolder(supabase: Db, folder: string): Promise<void> {
-  const bucket = supabase.storage.from(RECEIPTS_BUCKET);
-  for (;;) {
-    const listed = await bucket.list(folder, { limit: LIST_LIMIT });
-    if (listed.error) throw listed.error;
-    // Una subcarpeta viene con `id` nulo: no es un archivo.
-    const paths = listed.data.filter((entry) => entry.id !== null).map((entry) => `${folder}/${entry.name}`);
-    if (paths.length === 0) return;
-    const removed = await bucket.remove(paths);
-    if (removed.error) throw removed.error;
-    if (removed.data.length !== paths.length) {
-      throw new UserError("No se pudo borrar el logo de la empresa. La empresa sigue ahí: inténtalo de nuevo.");
-    }
-    // Si la lista no vino llena, la carpeta se vio entera y ya está vacía. Si vino llena, puede haber más.
-    if (listed.data.length < LIST_LIMIT) return;
-  }
 }
 
 /**

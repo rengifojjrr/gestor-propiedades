@@ -41,6 +41,8 @@ import { LIST_LIMIT, RECEIPTS_BUCKET } from "./receipts";
 type RecalcMode = "hoy" | "fecha_del_cobro";
 
 const NOT_FOUND_TEXT = "Ese cobro ya no existe.";
+const PURGE_FILES_FAILED =
+  "No se pudieron borrar los comprobantes de un cobro. Ese cobro sigue en la papelera: inténtalo de nuevo.";
 
 const hasChanges = (write: TxWrite): boolean => Object.keys(write.fields).length > 0;
 
@@ -187,8 +189,11 @@ export async function restoreTx(supabase: Db, ids: string[]): Promise<number> {
   return applyToAll(supabase, ids, planRestore);
 }
 
-/** Borra todos los archivos de la carpeta de un cobro. Si Storage deja alguno, lanza. */
-async function emptyFolder(supabase: Db, folder: string): Promise<void> {
+/**
+ * Borra todos los archivos de una carpeta del bucket (la de un cobro, o la del logo de una empresa). Si Storage
+ * deja alguno, lanza un `UserError` con `message`, que dice a la persona qué no se borró y qué quedó como estaba.
+ */
+export async function emptyFolder(supabase: Db, folder: string, message: string): Promise<void> {
   const bucket = supabase.storage.from(RECEIPTS_BUCKET);
   for (;;) {
     const listed = await bucket.list(folder, { limit: LIST_LIMIT });
@@ -199,11 +204,7 @@ async function emptyFolder(supabase: Db, folder: string): Promise<void> {
     const removed = await bucket.remove(paths);
     if (removed.error) throw removed.error;
     // Storage no da error cuando no borra: dice qué borró.
-    if (removed.data.length !== paths.length) {
-      throw new UserError(
-        "No se pudieron borrar los comprobantes de un cobro. Ese cobro sigue en la papelera: inténtalo de nuevo.",
-      );
-    }
+    if (removed.data.length !== paths.length) throw new UserError(message);
     // Si la lista no vino llena, la carpeta se vio entera y ya está vacía. Si vino llena, puede haber más.
     if (listed.data.length < LIST_LIMIT) return;
   }
@@ -235,7 +236,7 @@ export async function purgeTx(supabase: Db, userId: string, ids: string[]): Prom
   }
   let purged = 0;
   for (const { id } of trashed) {
-    await emptyFolder(supabase, `${userId}/${id}`);
+    await emptyFolder(supabase, `${userId}/${id}`, PURGE_FILES_FAILED);
     const { data } = await supabase
       .from("pay_transactions")
       .delete()

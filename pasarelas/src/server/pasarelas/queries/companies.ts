@@ -4,6 +4,7 @@ import type { Currency, ISODate, Money, Pct } from "@/lib/pasarelas";
 import type { Db } from "../dto";
 import { RECEIPTS_BUCKET } from "../ops/receipts";
 import { zId } from "../zod";
+import { readAll } from "./config";
 
 /**
  * Las lecturas de la pantalla Empresas: la lista, la ficha de una empresa (con sus canales, sus cuentas de pasarela
@@ -20,8 +21,6 @@ const COMPANY_GATEWAY_DETAIL_COLUMNS =
   "id, gateway_id, dashboard_url, checkout_url, bank_account_id, payout_days_override, default_extra_ids, active";
 const COMPANY_TOTAL_COLUMNS = "company_id, currency, tx_count, gross::text, fees::text, net::text, first_on, last_on";
 
-/** El tope de filas por petición de la API. */
-const PAGE_SIZE = 1000;
 /** Lo que dura la URL firmada de un logo: se genera al pintar la pantalla y no se guarda. */
 const LOGO_URL_SECONDS = 60;
 
@@ -177,42 +176,30 @@ function toCompanyGateway(row: CompanyGatewayDetailRow): CompanyGateway {
 
 // ─── Lecturas ───────────────────────────────────────────────────────────────────────────────────────────────
 
-/**
- * Todas las filas de una lectura, por tramos de 1000 (el tope de la API) hasta tener las que dice su total. Si un
- * tramo llega sin el total, se lanza en vez de dar la lectura por completa.
- */
-async function readAll<Row>(
-  page: (from: number, to: number) => PromiseLike<{ data: Row[]; count: number | null }>,
-): Promise<Row[]> {
-  const rows: Row[] = [];
-  for (;;) {
-    const { data, count } = await page(rows.length, rows.length + PAGE_SIZE - 1);
-    if (count === null) throw new Error("Una lectura de empresas llegó sin el total de filas (count).");
-    rows.push(...data);
-    if (data.length === 0 || rows.length >= count) return rows;
-  }
-}
-
 /** Las empresas del usuario por nombre (también las inactivas), cada una con lo facturado en total por moneda. */
 export async function listCompanies(supabase: Db): Promise<CompanyListItem[]> {
   const [companies, totals] = await Promise.all([
-    readAll((from, to) =>
-      supabase
-        .from("pay_companies")
-        .select(COMPANY_LIST_COLUMNS, { count: "exact" })
-        .order("name")
-        .order("id")
-        .range(from, to)
-        .throwOnError(),
+    readAll(
+      (from, to) =>
+        supabase
+          .from("pay_companies")
+          .select(COMPANY_LIST_COLUMNS, { count: "exact" })
+          .order("name")
+          .order("id")
+          .range(from, to)
+          .throwOnError(),
+      "empresas",
     ),
-    readAll((from, to) =>
-      supabase
-        .from("pay_company_totals")
-        .select(COMPANY_TOTAL_COLUMNS, { count: "exact" })
-        .order("company_id")
-        .order("currency")
-        .range(from, to)
-        .throwOnError(),
+    readAll(
+      (from, to) =>
+        supabase
+          .from("pay_company_totals")
+          .select(COMPANY_TOTAL_COLUMNS, { count: "exact" })
+          .order("company_id")
+          .order("currency")
+          .range(from, to)
+          .throwOnError(),
+      "empresas",
     ),
   ]);
   const byCompany = new Map<string, CompanyTotal[]>();
