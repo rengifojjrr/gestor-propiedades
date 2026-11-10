@@ -362,7 +362,9 @@ test.describe("contraseña y sesión", () => {
     await login(page, user);
     await openSettings(page);
     const everywhere = page.getByRole("button", { name: "Cerrar sesión en todos los dispositivos" });
-    await expect(everywhere).toHaveAccessibleDescription("Otro dispositivo puede tardar hasta una hora en quedar fuera.");
+    await expect(everywhere).toHaveAccessibleDescription(
+      "Los demás dispositivos pierden el acceso a tus datos de inmediato, aunque una pantalla que ya esté abierta puede tardar en notarlo.",
+    );
     await everywhere.click();
     await expect(page).toHaveURL(/\/login$/);
     await page.goto("/pasarelas");
