@@ -238,6 +238,54 @@ test.describe.serial("detalle del cobro", () => {
     await expect(history(page)).toContainText("Disputa abierta");
     await expect(history(page)).toContainText("Disputa ganada");
 
+    // Corregir el total reembolsado de 40,00 a 30,00: reemplaza lo reembolsado, no le suma.
+    await actions.getByRole("button", { name: "Registrar reembolso" }).click();
+    await refund.getByLabel("Corregir el total reembolsado").check();
+    const totalField = refund.getByLabel("Total reembolsado", { exact: true });
+    await expect(totalField).toHaveValue("40,00");
+    await expect(refund.getByLabel("Monto del reembolso")).toHaveCount(0);
+    await totalField.fill("30");
+    const correction = refund.getByRole("region", { name: "Antes y después" });
+    await expect(correction.getByRole("row").filter({ hasText: "Bruto" })).toContainText("$60,00");
+    await expect(correction.getByRole("row").filter({ hasText: "Bruto" })).toContainText("$70,00");
+    await expect(correction.getByRole("row").filter({ hasText: "Costo del reembolso" })).toContainText("$0,87");
+    await expect(correction.getByRole("row").filter({ hasText: "Neto" })).toContainText("$62,25");
+    await expectCleanScreen(page);
+    await refund.getByRole("button", { name: "Guardar el total" }).click();
+    await expect(refund).toBeHidden();
+    await expect(page.getByTestId("bruto")).toHaveText("$70,00");
+    await expect(feeLine(page, "Costo del reembolso")).toContainText("$0,87");
+    await expect(page.getByTestId("comisiones")).toHaveText("$7,75");
+    await expect(page.getByTestId("neto")).toHaveText("$62,25");
+    await expect(share(page, "Grupo A")).toContainText("$31,13");
+    await expect(share(page, "Grupo B")).toContainText("$18,67");
+    await expect(share(page, "Grupo C")).toContainText("$12,45");
+    await expect(history(page).getByRole("listitem").first()).toContainText("Reembolso corregido a $30,00");
+    await expectToast(page, "Total reembolsado corregido");
+
+    // Reembolsado del todo ya no admite otro reembolso: el botón pasa a «Corregir reembolso», solo con el total.
+    await actions.getByRole("button", { name: "Registrar reembolso" }).click();
+    await refund.getByLabel("Monto del reembolso").fill("70");
+    await refund.getByRole("button", { name: "Registrar reembolso" }).click();
+    await expect(refund).toBeHidden();
+    await expect(page.getByTestId("bruto")).toHaveText("$0,00");
+    await expect(stamp(page, "Reembolsado")).toBeVisible();
+    await expect(actions.getByRole("button", { name: "Registrar reembolso" })).toHaveCount(0);
+    await actions.getByRole("button", { name: "Corregir reembolso" }).click();
+    await expect(refund.getByRole("radio")).toHaveCount(0);
+    await expect(refund.getByLabel("Total reembolsado", { exact: true })).toHaveValue("100,00");
+    await refund.getByLabel("Total reembolsado", { exact: true }).fill("30");
+    await expect(refund.getByRole("region", { name: "Antes y después" }).getByRole("row").filter({ hasText: "Neto" })).toContainText(
+      "$62,25",
+    );
+    await expectCleanScreen(page);
+    await refund.getByRole("button", { name: "Guardar el total" }).click();
+    await expect(refund).toBeHidden();
+    await expect(page.getByTestId("bruto")).toHaveText("$70,00");
+    await expect(page.getByTestId("neto")).toHaveText("$62,25");
+    await expect(stamp(page, "Reembolso parcial")).toBeVisible();
+    await expect(actions.getByRole("button", { name: "Registrar reembolso" })).toBeVisible();
+
     // A la papelera: sale de la lista; restaurarlo lo devuelve.
     await actions.getByRole("button", { name: "A la papelera" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Enviar a la papelera" }).click();

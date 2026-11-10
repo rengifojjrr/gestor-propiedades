@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { parseBreakdown } from "@/lib/pasarelas/breakdown";
 import { DEMO, cfgDemo } from "@/lib/pasarelas/demo.fixture";
 import { planCreate, planDispute, planRefund, planRefundTotal } from "@/lib/pasarelas/write";
-import type { TxSnapshot } from "@/lib/pasarelas/types";
+import type { TxSnapshot, TxWrite } from "@/lib/pasarelas/types";
 import { previewChange } from "./preview";
 
 /** E1 guardado: 100,00 por Stripe con «Pago rápido» y el canal al 5 %, repartido 50/30/20; disputa a 15,00. */
@@ -53,6 +53,14 @@ function savedE1(): TxSnapshot {
   };
 }
 
+/** El cobro con un cambio ya guardado: el desglose nuevo (otra copia, como la devuelve la base) y sus columnas. */
+function applied(tx: TxSnapshot, plan: (tx: TxSnapshot) => TxWrite): TxSnapshot {
+  const { breakdown } = plan(tx).fields;
+  if (breakdown === undefined) throw new Error("El plan no cambió el desglose.");
+  const b = parseBreakdown(JSON.parse(JSON.stringify(breakdown)));
+  return { ...tx, refunded: b.state.refunded, gross: b.gross, fees: b.feesTotal, net: b.net, breakdown: b };
+}
+
 /** Las filas del antes y el después como «concepto: antes → después», fáciles de leer en la prueba. */
 const rows = (result: ReturnType<typeof previewChange>): string[] => {
   if (!result.ok) throw new Error(result.error);
@@ -85,6 +93,22 @@ describe("previewChange", () => {
       "Grupo A: 45.15 → 37.65",
       "Grupo B: 27.09 → 22.59",
       "Grupo C: 18.06 → 15.06",
+    ]);
+  });
+
+  test("corregir el total reembolsado de E1 de 40,00 a 30,00 reemplaza lo reembolsado, no le suma", () => {
+    const refunded = applied(savedE1(), (t) => planRefund(t, { amount: "40.00", on: "2026-11-15" }));
+    expect(rows(previewChange(refunded, (t) => planRefundTotal(t, "30.00")))).toEqual([
+      "Bruto: 60.00 → 70.00",
+      "Stripe: 2.04 → 2.33",
+      "Costo del reembolso: 1.16 → 0.87",
+      "Pago rápido: 0.90 → 1.05",
+      "Escuela de marketing: 3.00 → 3.50",
+      "Comisiones: 7.10 → 7.75",
+      "Neto: 52.90 → 62.25",
+      "Grupo A: 26.45 → 31.13",
+      "Grupo B: 15.87 → 18.67",
+      "Grupo C: 10.58 → 12.45",
     ]);
   });
 
