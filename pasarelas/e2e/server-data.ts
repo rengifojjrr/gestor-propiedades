@@ -23,3 +23,13 @@ export function serverData(): ServerData {
     ...(load("../src/server/pasarelas/queries/transactions") as TransactionsQueries),
   };
 }
+
+type DemoData = typeof import("../scripts/demo-data");
+
+/** La semilla demo (`scripts/demo-data.ts`): también importa módulos `server-only`, así que se carga igual. */
+export function demoData(): DemoData {
+  const load = createRequire(__filename);
+  const serverOnly = load.resolve("server-only");
+  load.cache[serverOnly] ??= { id: serverOnly, filename: serverOnly, loaded: true, exports: {} } as NodeJS.Module;
+  return load("../scripts/demo-data") as DemoData;
+}
