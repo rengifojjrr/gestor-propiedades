@@ -7,7 +7,7 @@
 export type ReceiptMime = "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
 
 /** El tope del bucket y de la tabla. */
-export const MAX_RECEIPT_BYTES = 10 * 1024 * 1024;
+const MAX_RECEIPT_BYTES = 10 * 1024 * 1024;
 
 /** La extensión con la que se guarda cada tipo en Storage. */
 export const RECEIPT_EXTENSION: Record<ReceiptMime, string> = {
