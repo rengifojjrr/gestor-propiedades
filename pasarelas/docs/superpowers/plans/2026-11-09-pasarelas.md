@@ -199,6 +199,14 @@ más de 2 decimales, letras o vacío → `null`. «De miles» se lee en sentido 
 agrupados (un primer grupo de 1 a 3 dígitos que no empieza por cero y luego grupos de 3); `0,500` y `1234,567` →
 `null`, no `500.00` ni `1234567.00`, porque adivinar multiplicaría por mil lo que casi seguro era un decimal.
 
+Qué marca `looksLikeCardNumber`: 13–19 dígitos que pasan Luhn escritos (1) en un tramo simple entero, con un espacio
+o un guion como mucho entre dígito y dígito; (2) de corrido, lleven lo que lleven al lado; o (3) en grupos de 4 a 6
+dígitos seguidos —separados por espacios, guiones, rayas o puntos—, con vecinos cortos (CVV, vencimiento) y, como
+mucho, **un** vecino de 4 a 6 dígitos pegado. No prueba todas las ventanas de grupos contiguos: así dos teléfonos,
+tres fechas o una lista de montos se marcaban del 20 % al 60 % de las veces. Queda un falso positivo de uno cada diez
+en lo que solo Luhn distingue de una tarjeta (`2026-11-03 2026-11-28`, cuatro montos de 4 cifras seguidos): el error
+de `zText` tiene que decir que el texto «parece un número de tarjeta» para que quien escribe pueda cambiarlo.
+
 Fórmulas: spec §5.2, al pie de la letra. `compute` lanza `RangeError` si `grossOriginal ≤ 0` o si `refunded` no
 está en `[0, grossOriginal]`.
 
