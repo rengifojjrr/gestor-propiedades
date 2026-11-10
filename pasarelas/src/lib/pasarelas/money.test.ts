@@ -86,9 +86,6 @@ describe("parseMoney", () => {
     "1,2,3",
     "1.234.56",
     "1.234,567.8",
-    "0,500", // «miles» que empiezan por cero: ambiguo
-    "0.500",
-    "1234,567", // grupo de miles de cuatro dígitos: ambiguo
     "+-5",
     "--5",
     "-$-5",
@@ -99,6 +96,31 @@ describe("parseMoney", () => {
     "5%",
   ])("ambiguo o inválido: «%s» → null", (input) => {
     expect(parseMoney(input)).toBeNull();
+  });
+
+  // Lectura estricta de «un solo separador seguido de exactamente 3 dígitos es de miles»: solo si los miles están
+  // bien agrupados (primer grupo de 1 a 3 dígitos que no empieza por cero). Leer «0,500» como 500 o «1234,567» como
+  // 1234567 multiplicaría por mil lo que casi seguro era un decimal mal escrito: mejor null y que se corrija.
+  test.each([
+    "0,500", // «miles» que empiezan por cero
+    "0.500",
+    "00,500",
+    "01,234",
+    "1234,567", // primer grupo de cuatro dígitos
+    "1234.567",
+    "12345,678",
+  ])("un separador y 3 dígitos, pero miles mal agrupados: «%s» → null", (input) => {
+    expect(parseMoney(input)).toBeNull();
+  });
+
+  test.each([
+    ["1,234", "1234.00"],
+    ["1.234", "1234.00"],
+    ["12,345", "12345.00"],
+    ["999.999", "999999.00"],
+    ["100,005", "100005.00"],
+  ])("un separador y 3 dígitos, con los miles bien agrupados: «%s» → %s", (input, expected) => {
+    expect(parseMoney(input)).toBe(expected);
   });
 
   test("lo que devuelve formatMoney en dólares o euros se vuelve a leer igual", () => {

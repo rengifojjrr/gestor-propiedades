@@ -195,7 +195,9 @@ export function isHttpUrl(text: string): boolean;
 
 Reglas de `parseMoney`: admite espacios, `$`, `€` y signo; si hay coma y punto, el **último** es el decimal; un solo
 separador seguido de exactamente 3 dígitos es de miles (`1,234` → `1234.00`); seguido de 1 o 2 dígitos es decimal;
-más de 2 decimales, letras o vacío → `null`.
+más de 2 decimales, letras o vacío → `null`. «De miles» se lee en sentido estricto: los miles tienen que estar bien
+agrupados (un primer grupo de 1 a 3 dígitos que no empieza por cero y luego grupos de 3); `0,500` y `1234,567` →
+`null`, no `500.00` ni `1234567.00`, porque adivinar multiplicaría por mil lo que casi seguro era un decimal.
 
 Fórmulas: spec §5.2, al pie de la letra. `compute` lanza `RangeError` si `grossOriginal ≤ 0` o si `refunded` no
 está en `[0, grossOriginal]`.

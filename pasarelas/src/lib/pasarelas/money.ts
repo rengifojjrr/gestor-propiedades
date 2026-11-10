@@ -47,6 +47,10 @@ function plainDecimal(body: string): string | null {
  * Lee un monto escrito a mano: admite espacios, `$`, `€` y signo. Si hay coma y punto, el último es el decimal;
  * un solo separador seguido de exactamente 3 dígitos es de miles («1,234» → "1234.00"); seguido de 1 o 2 es decimal.
  * Más de 2 decimales, letras, vacío o cualquier cosa ambigua → null.
+ *
+ * «De miles» se lee en sentido estricto: los miles tienen que estar bien agrupados (`GROUPED`: un primer grupo de 1 a
+ * 3 dígitos que no empieza por cero y luego grupos de 3). «0,500» y «1234,567» no lo están y dan null, no 500 ni
+ * 1234567: casi seguro eran un decimal mal escrito, y adivinar multiplicaría el monto por mil.
  */
 export function parseMoney(input: string): Money | null {
   const text = input.replace(/\s/g, "");
