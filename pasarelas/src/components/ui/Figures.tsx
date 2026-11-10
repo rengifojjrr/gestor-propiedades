@@ -1,9 +1,12 @@
+import { dec, toMoney } from "@/lib/pasarelas/decimal";
+import { formatMoney, formatPct } from "@/lib/pasarelas/money";
+import type { Currency, ISODate, Money as MoneyValue, Pct } from "@/lib/pasarelas/types";
 import { cn } from "./cn";
 import { moneyTone, type MoneyTone } from "./tone";
 
 /*
- * Componentes de presentación puros: reciben el texto YA formateado (`formatted`) y deciden cómo se pinta.
- * Los formateadores del motor (`formatMoney`, `formatPct`, `formatDate`, `formatDateTime`) se enlazan aparte.
+ * Cifras y fechas: reciben el valor canónico y lo pintan con los formateadores del motor, para que una misma
+ * cifra se lea igual en toda la app. Nadie formatea dinero a mano en una pantalla.
  */
 
 const TONES: Record<MoneyTone, string> = {
@@ -13,67 +16,73 @@ const TONES: Record<MoneyTone, string> = {
 };
 
 export type MoneyProps = {
-  /** El monto canónico (`"90.30"`, `"-3.20"`): de él sale el tono. */
-  value: string;
-  /** La moneda del monto (`"USD"`). */
-  currency: string;
-  /** El texto a pintar, con su signo si es negativo: `"$90,30"`, `"-$3,20"`. */
-  formatted: string;
+  /** El monto canónico, como texto: `"90.30"`, `"-3.20"`. */
+  value: MoneyValue;
+  /** La moneda del monto: `"USD"`. */
+  currency: Currency;
   className?: string;
 };
 
 /**
- * Un monto: cifras tabulares, sin partirse en dos líneas. Los negativos van en tinta roja además de su
- * signo (el signo viene en `formatted`: el color solo nunca es la única señal) y el cero, atenuado.
+ * Un monto, escrito con `formatMoney` (`$1.234,56` · `-$3,20` · `5,00 MXN`): cifras tabulares, sin partirse en
+ * dos líneas. Los negativos llevan su signo **y** van en tinta roja (el color nunca es la única señal); el cero,
+ * atenuado. El tono sale del mismo monto redondeado que se pinta. Si `value` no es un decimal, lanza `RangeError`:
+ * mejor un error que una cifra inventada.
  */
-export function Money({ value, currency, formatted, className }: MoneyProps) {
-  const tone = moneyTone(value);
+export function Money({ value, currency, className }: MoneyProps) {
+  const amount = toMoney(dec(value));
+  const tone = moneyTone(amount);
   return (
     <span data-tone={tone} data-currency={currency} className={cn("cifra whitespace-nowrap", TONES[tone], className)}>
-      {formatted}
+      {formatMoney(amount, currency)}
     </span>
   );
 }
 
 export type PercentProps = {
-  /** El porcentaje canónico (`"2.9"`). */
-  value: string;
-  /** El texto a pintar: `"2,9 %"`. */
-  formatted: string;
+  /** El porcentaje canónico, como texto: `"2.9"`. */
+  value: Pct;
   className?: string;
 };
 
-/** Un porcentaje, con cifras tabulares. */
-export function Percent({ value, formatted, className }: PercentProps) {
+/** Un porcentaje, escrito con `formatPct` (`2,9 %`) y con cifras tabulares. */
+export function Percent({ value, className }: PercentProps) {
   return (
     <span data-value={value} className={cn("cifra whitespace-nowrap", className)}>
-      {formatted}
+      {formatPct(value)}
     </span>
   );
 }
 
+/*
+ * PROVISIONAL — las fechas. `formatDate` y `formatDateTime` son de `src/lib/pasarelas/dates.ts`, que todavía no
+ * está junto al kit. Hasta entonces el texto se puede pasar en `formatted`; sin él se pinta la fecha ISO tal cual.
+ * Cuando exista `dates.ts`: importar los dos formateadores, pintar `formatDate(value)` / `formatDateTime(value)` y
+ * quitar `formatted`. `Figures.test.ts` falla a propósito ese día hasta que se haga.
+ */
+
 export type DateTextProps = {
-  /** La fecha de calendario (`"2026-11-13"`). */
-  value: string;
-  /** El texto a pintar: `"vie 13 nov 2026"`. */
-  formatted: string;
+  /** La fecha de calendario: `"2026-11-13"`. */
+  value: ISODate;
+  /** Provisional: el texto a pintar (`"vie 13 nov 2026"`). Sin él se pinta `value`. */
+  formatted?: string | undefined;
   className?: string;
 };
 
-/** Una fecha, como `<time>` (la máquina lee `value`; la persona, `formatted`). */
+/** Una fecha, como `<time>`: la máquina lee `value`; la persona, el texto. */
 export function DateText({ value, formatted, className }: DateTextProps) {
   return (
     <time dateTime={value} className={cn("cifra whitespace-nowrap", className)}>
-      {formatted}
+      {formatted ?? value}
     </time>
   );
 }
 
 export type DateTimeTextProps = {
-  /** El instante en ISO (`"2026-11-13T15:30:00Z"`). */
+  /** El instante en ISO: `"2026-11-13T15:30:00Z"`. */
   value: string;
-  /** El texto a pintar, en hora de Nueva York: `"vie 13 nov 2026, 10:30"`. */
-  formatted: string;
+  /** Provisional: el texto a pintar, en hora de Nueva York (`"vie 13 nov 2026, 10:30"`). Sin él se pinta `value`. */
+  formatted?: string | undefined;
   className?: string;
 };
 
@@ -81,7 +90,7 @@ export type DateTimeTextProps = {
 export function DateTimeText({ value, formatted, className }: DateTimeTextProps) {
   return (
     <time dateTime={value} className={cn("cifra whitespace-nowrap", className)}>
-      {formatted}
+      {formatted ?? value}
     </time>
   );
 }

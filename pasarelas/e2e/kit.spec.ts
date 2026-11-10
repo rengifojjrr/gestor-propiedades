@@ -205,10 +205,15 @@ test.describe("componentes", () => {
   test("cifras: tabulares, y los negativos con signo y tono propio", async ({ page }) => {
     await openKit(page);
     const figures = page.getByRole("region", { name: "Cifras" });
+    // La galería solo pasa el valor canónico ("-3.20", "USD"): el texto lo escribe formatMoney.
     const negative = figures.getByText("-$3,20", { exact: true });
     await expect(negative).toHaveAttribute("data-tone", "negative");
     await expect(figures.getByText("$90,30", { exact: true })).toHaveAttribute("data-tone", "positive");
     await expect(figures.getByText("$0,00", { exact: true })).toHaveAttribute("data-tone", "zero");
+    await expect(figures.getByText("5,00 MXN", { exact: true })).toHaveAttribute("data-currency", "MXN");
+    await expect(figures.getByText("-$121,25", { exact: true })).toHaveAttribute("data-tone", "negative");
+    await expect(figures.getByText("2,9 %", { exact: true })).toHaveAttribute("data-value", "2.9");
+    await expect(figures.getByText("9,7 % del bruto")).toBeVisible();
 
     const styles = await negative.evaluate((el) => {
       const computed = getComputedStyle(el);

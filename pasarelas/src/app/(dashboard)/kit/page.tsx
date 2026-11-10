@@ -68,9 +68,9 @@ const COLORS = [
 ] as const;
 
 const DEMO_ROWS = [
-  { id: "ch_demo_1042", company: "Tienda Demo", gross: ["100.00", "$100,00"], fees: ["-9.70", "-$9,70"], net: ["90.30", "$90,30"] },
-  { id: "ch_demo_1043", company: "Escuela Demo", gross: ["33.33", "$33,33"], fees: ["-1.27", "-$1,27"], net: ["32.06", "$32,06"] },
-  { id: "ch_demo_1044", company: "Tienda Demo", gross: ["0.00", "$0,00"], fees: ["-3.20", "-$3,20"], net: ["-3.20", "-$3,20"] },
+  { id: "ch_demo_1042", company: "Tienda Demo", gross: "100.00", fees: "-9.70", net: "90.30" },
+  { id: "ch_demo_1043", company: "Escuela Demo", gross: "33.33", fees: "-1.27", net: "32.06" },
+  { id: "ch_demo_1044", company: "Tienda Demo", gross: "0.00", fees: "-3.20", net: "-3.20" },
 ] as const;
 
 const PAGE_SIZE = 50;
@@ -138,39 +138,39 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
       <Section
         id="kit-cifras"
         title="Cifras"
-        intro="Reciben el texto ya formateado y deciden cómo se pinta. Siempre con números tabulares, para que las columnas se alineen."
+        intro="Reciben el valor canónico y lo escriben con los formateadores del motor: nadie formatea dinero a mano en una pantalla. Siempre con números tabulares, para que las columnas se alineen."
       >
         <Spec
           name="Money"
           props={[
-            ["value: string", "el monto canónico (\"90.30\", \"-3.20\"); de él sale el tono"],
-            ["currency: string", "la moneda (\"USD\")"],
-            ["formatted: string", "el texto a pintar, con su signo si es negativo"],
+            ["value: Money", "el monto canónico, como texto (\"90.30\", \"-3.20\"); se escribe con formatMoney. Los negativos salen con su signo y en tinta roja; el cero, atenuado"],
+            ["currency: Currency", "la moneda (\"USD\"): pone el símbolo, o el código detrás si no lo tiene"],
+            ["className?: string", "clases de más (tamaño, peso)"],
           ]}
         >
           <ul className="flex flex-col gap-1 text-xl">
             <li>
-              <Money value="90.30" currency="USD" formatted="$90,30" />
+              <Money value="90.30" currency="USD" />
             </li>
             <li>
-              <Money value="-3.20" currency="USD" formatted="-$3,20" />
+              <Money value="-3.20" currency="USD" />
             </li>
             <li>
-              <Money value="0.00" currency="USD" formatted="$0,00" />
+              <Money value="0.00" currency="USD" />
             </li>
             <li>
-              <Money value="5.00" currency="MXN" formatted="5,00 MXN" />
+              <Money value="5.00" currency="MXN" />
             </li>
           </ul>
           <ul className="flex flex-col items-end gap-1 self-start text-xl">
             <li>
               <span data-testid="ancho-tabular">
-                <Money value="1234.56" currency="USD" formatted="$1.234,56" />
+                <Money value="1234.56" currency="USD" />
               </span>
             </li>
             <li>
               <span data-testid="ancho-tabular">
-                <Money value="6543.21" currency="USD" formatted="$6.543,21" />
+                <Money value="6543.21" currency="USD" />
               </span>
             </li>
           </ul>
@@ -178,19 +178,20 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
         <Spec
           name="Percent"
           props={[
-            ["value: string", "el porcentaje canónico (\"2.9\")"],
-            ["formatted: string", "el texto a pintar"],
+            ["value: Pct", "el porcentaje canónico, como texto (\"2.9\"); se escribe con formatPct"],
+            ["className?: string", "clases de más"],
           ]}
         >
           <p className="text-xl">
-            <Percent value="2.9" formatted="2,9 %" />
+            <Percent value="2.9" />
           </p>
         </Spec>
         <Spec
           name="DateText · DateTimeText"
           props={[
             ["value: string", "la fecha (\"2026-11-13\") o el instante en ISO; va en el atributo datetime"],
-            ["formatted: string", "el texto a pintar"],
+            ["formatted?: string", "provisional: el texto a pintar. Sin él se pinta value. Desaparece cuando el kit use formatDate y formatDateTime"],
+            ["className?: string", "clases de más"],
           ]}
         >
           <p className="flex flex-col gap-1">
@@ -208,13 +209,17 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
           ]}
         >
           <div className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3">
-            <Stat label="Bruto" value={<Money value="1250.00" currency="USD" formatted="$1.250,00" />} />
+            <Stat label="Bruto" value={<Money value="1250.00" currency="USD" />} />
             <Stat
               label="Comisiones"
-              value={<Money value="-121.25" currency="USD" formatted="-$121,25" />}
-              hint={<Percent value="9.7" formatted="9,7 % del bruto" />}
+              value={<Money value="-121.25" currency="USD" />}
+              hint={
+                <>
+                  <Percent value="9.7" /> del bruto
+                </>
+              }
             />
-            <Stat label="Neto" total value={<Money value="1128.75" currency="USD" formatted="$1.128,75" />} />
+            <Stat label="Neto" total value={<Money value="1128.75" currency="USD" />} />
           </div>
         </Spec>
       </Section>
@@ -346,11 +351,11 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
             <CardBody className="flex flex-col gap-3">
               <p className="flex items-baseline justify-between gap-3">
                 <DateText value="2026-11-17" formatted="mar 17 nov 2026" />
-                <Money value="90.30" currency="USD" formatted="$90,30" />
+                <Money value="90.30" currency="USD" />
               </p>
               <p className="flex items-baseline justify-between gap-3">
                 <DateText value="2026-11-18" formatted="mié 18 nov 2026" />
-                <Money value="32.06" currency="USD" formatted="$32,06" />
+                <Money value="32.06" currency="USD" />
               </p>
             </CardBody>
           </Card>
@@ -444,13 +449,13 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
                   <Th scope="row">{row.id}</Th>
                   <Td>{row.company}</Td>
                   <Td numeric>
-                    <Money value={row.gross[0]} currency="USD" formatted={row.gross[1]} />
+                    <Money value={row.gross} currency="USD" />
                   </Td>
                   <Td numeric>
-                    <Money value={row.fees[0]} currency="USD" formatted={row.fees[1]} />
+                    <Money value={row.fees} currency="USD" />
                   </Td>
                   <Td numeric>
-                    <Money value={row.net[0]} currency="USD" formatted={row.net[1]} />
+                    <Money value={row.net} currency="USD" />
                   </Td>
                 </Tr>
               ))}
@@ -459,13 +464,13 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
                   Total
                 </Th>
                 <Td numeric>
-                  <Money value="133.33" currency="USD" formatted="$133,33" />
+                  <Money value="133.33" currency="USD" />
                 </Td>
                 <Td numeric>
-                  <Money value="-14.17" currency="USD" formatted="-$14,17" />
+                  <Money value="-14.17" currency="USD" />
                 </Td>
                 <Td numeric>
-                  <Money value="119.16" currency="USD" formatted="$119,16" />
+                  <Money value="119.16" currency="USD" />
                 </Td>
               </Tr>
             </TBody>
