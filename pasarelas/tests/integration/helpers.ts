@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { createHmac, randomUUID } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+// Rutas relativas (no `@/`): este archivo también lo cargan las pruebas de punta a punta.
+import { compute } from "../../src/lib/pasarelas/breakdown";
+import type { Currency, Rules } from "../../src/lib/pasarelas/types";
 import type { Database, Json } from "@/lib/supabase/types";
 
 /**
@@ -238,6 +241,38 @@ export async function seedBasics(client: Db): Promise<Basics> {
   };
 }
 
+/**
+ * Las reglas que congela un cobro con la configuración de `seedBasics`: Stripe 2,9 % + 0,30, «Pago rápido» (1,5 %
+ * del bruto, el mismo día), el canal al 5 % y el esquema 50/30/20 sobre el neto.
+ */
+export function basicsRules(b: Basics): Rules {
+  return {
+    gateway: {
+      id: b.gatewayId,
+      name: "Stripe",
+      feeVersionId: b.feeVersionId,
+      pct: "2.9",
+      fixed: "0.30",
+      refundsReturnFee: false,
+      disputeFee: "0.00",
+    },
+    extras: [{ id: b.extraId, name: "Pago rápido", pct: "1.5", fixed: "0.00", base: "bruto", payoutDaysOverride: 0 }],
+    platform: { channelId: b.channelId, name: "Inscripciones en línea", pct: "5", fixed: "0.00" },
+    scheme: {
+      schemeId: b.schemeId,
+      versionId: b.schemeVersionId,
+      name: "Reparto 50/30/20",
+      base: "neto",
+      lines: [
+        { beneficiaryId: b.beneficiaryIds.a, name: "Grupo A", pct: "50" },
+        { beneficiaryId: b.beneficiaryIds.b, name: "Grupo B", pct: "30" },
+        { beneficiaryId: b.beneficiaryIds.c, name: "Grupo C", pct: "20" },
+      ],
+      remainder: null,
+    },
+  };
+}
+
 /** Un elemento de `pay_save_transactions`. Las columnas van con su nombre de la base y el dinero como cadena. */
 export type SaveItem = {
   mode: "insert" | "update";
@@ -250,8 +285,15 @@ export type SaveItem = {
 /**
  * El cobro E1 del spec ya calculado, listo para `pay_save_transactions`: 100,00 con Stripe, «Pago rápido» y el
  * canal al 5 % → comisiones 9,70, neto 90,30 y reparto 45,15 · 27,09 · 18,06. `tx` pisa columnas del cobro.
+ *
+ * El desglose es el que calcula el motor con las reglas de `seedBasics` (`basicsRules`), en la moneda del cobro:
+ * la app lo puede leer como cualquier otro. Las columnas que se pisan no lo cambian: quien quiera otro desglose
+ * lo pasa también en `tx.breakdown`.
  */
 export function e1Item(b: Basics, tx: { [column: string]: Json } = {}): SaveItem {
+  const currency = (typeof tx.currency === "string" ? tx.currency : "USD") as Currency;
+  const state = { grossOriginal: "100.00", refunded: "0.00", dispute: null, failed: false };
+  const breakdown = compute(basicsRules(b), state, currency) as unknown as Json;
   return {
     mode: "insert",
     tx: {
@@ -268,7 +310,7 @@ export function e1Item(b: Basics, tx: { [column: string]: Json } = {}): SaveItem
       net_amount: "90.30",
       alloc_base: "neto",
       alloc_base_amount: "90.30",
-      breakdown: { v: 1, currency: "USD", gross: "100.00", feesTotal: "9.70", net: "90.30" },
+      breakdown,
       fee_version_id: b.feeVersionId,
       scheme_id: b.schemeId,
       scheme_version_id: b.schemeVersionId,

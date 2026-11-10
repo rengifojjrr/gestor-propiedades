@@ -8,6 +8,7 @@ import {
   planDeposit,
   planDispute,
   planEdit,
+  planEstimateRefresh,
   planEstimated,
   planFail,
   planRecalc,
@@ -231,6 +232,19 @@ export async function depositTxWithSkips(
   return { count, skipped: { deposited, notPending, other: new Set(ids).size - count - deposited - notPending } };
 }
 
+/**
+ * Marca depositado el día `on` un solo cobro, el del detalle, con la versión que vio la persona (`expected`): si el
+ * cobro cambió desde entonces (otra pestaña abrió una disputa, o puso otra fecha de depósito), conflicto en vez de
+ * pisarlo. Si ya está depositado, cambia la fecha. Lo que el cobro no admite lo dice con `PayStateError`, en vez
+ * de saltarlo como el lote. Devuelve lo mismo que el lote: `count` 0 si la fecha ya era esa.
+ */
+export async function depositOneTx(supabase: Db, id: string, on: ISODate, expected: string): Promise<DepositOutcome> {
+  const write = planDeposit(await load(supabase, id, expected), on);
+  await commit(supabase, write);
+  const count = hasChanges(write) ? 1 : 0;
+  return { count, skipped: { deposited: 0, notPending: 0, other: 1 - count } };
+}
+
 /** Como `depositTxWithSkips`, solo con cuántos se marcaron. Sin `onlyPending`, corrige la fecha de los ya depositados. */
 export async function depositTx(
   supabase: Db,
@@ -259,12 +273,16 @@ export async function setEstimatedTx(
 /** Lo más que trae una página de la API. */
 const API_PAGE = 1000;
 
+/** Qué cobros recalcula `refreshEstimatesTx`: los de una pasarela, los de una empresa, o los de las dos. */
+export type EstimatesScope = { gatewayId?: string; companyId?: string };
+
 /**
- * Vuelve a calcular, con la configuración de ahora (los feriados, los días de cada pasarela), la fecha estimada
- * AUTOMÁTICA de lo que está por caer: no toca las puestas a mano, ni comisiones ni montos. Con `gatewayId`, solo
- * los cobros de esa pasarela. Devuelve cuántas fechas cambiaron; las que ya estaban al día no se escriben.
+ * Vuelve a calcular, con la configuración de ahora (los feriados, los días de cada pasarela y de su cuenta en cada
+ * empresa), la fecha estimada AUTOMÁTICA de lo que está por caer: no toca las puestas a mano, ni comisiones ni
+ * montos. Con `gatewayId` o `companyId`, solo los cobros de esa pasarela o de esa empresa. Devuelve cuántas fechas
+ * cambiaron; las que ya estaban al día no se escriben. El historial dice que las cambió la app.
  */
-export async function refreshEstimatesTx(supabase: Db, opts: { gatewayId?: string } = {}): Promise<number> {
+export async function refreshEstimatesTx(supabase: Db, opts: EstimatesScope = {}): Promise<number> {
   const ids: string[] = [];
   for (;;) {
     let query = supabase
@@ -274,6 +292,7 @@ export async function refreshEstimatesTx(supabase: Db, opts: { gatewayId?: strin
       .in("status", ["registrado", "en_transito"])
       .eq("estimated_is_manual", false);
     if (opts.gatewayId !== undefined) query = query.eq("gateway_id", opts.gatewayId);
+    if (opts.companyId !== undefined) query = query.eq("company_id", opts.companyId);
     const { data } = await query
       .order("id")
       .range(ids.length, ids.length + API_PAGE - 1)
@@ -287,7 +306,7 @@ export async function refreshEstimatesTx(supabase: Db, opts: { gatewayId?: strin
   for (const chunk of chunked(ids, SAVE_BATCH_SIZE)) {
     const writes = (await getSnapshots(supabase, chunk))
       .filter((tx) => isPending(tx) && !tx.estimatedIsManual)
-      .map((tx) => planEstimated(cfg, tx, null))
+      .map((tx) => planEstimateRefresh(cfg, tx))
       .filter(hasChanges);
     await saveTx(supabase, writes);
     changed += writes.length;
@@ -296,11 +315,11 @@ export async function refreshEstimatesTx(supabase: Db, opts: { gatewayId?: strin
 }
 
 /**
- * `refreshEstimatesTx` después de un cambio que ya quedó guardado (un feriado, los días de una pasarela): si no se
- * pudo, el cambio sigue en pie y devuelve `null` —no un «No se pudo guardar» que no sería cierto— y deja el fallo
- * en el registro del servidor, como `runAction` con lo que no se esperaba.
+ * `refreshEstimatesTx` después de un cambio que ya quedó guardado (un feriado, los días de una pasarela o de su
+ * cuenta en una empresa): si no se pudo, el cambio sigue en pie y devuelve `null` —no un «No se pudo guardar» que
+ * no sería cierto— y deja el fallo en el registro del servidor, como `runAction` con lo que no se esperaba.
  */
-export async function refreshEstimatesAfterTx(supabase: Db, opts: { gatewayId?: string } = {}): Promise<number | null> {
+export async function refreshEstimatesAfterTx(supabase: Db, opts: EstimatesScope = {}): Promise<number | null> {
   try {
     return await refreshEstimatesTx(supabase, opts);
   } catch (error) {
@@ -437,4 +456,21 @@ export async function applyRecalcTx(supabase: Db, ids: string[], mode: RecalcMod
   const wanted = batchOf(ids);
   const cfg = await loadPayConfig(supabase);
   return applyToAll(supabase, wanted, (tx) => planRecalc(cfg, tx, mode, today).write);
+}
+
+/**
+ * Recalcula un solo cobro, el del detalle, con la versión que vio la persona (`expected`): si cambió desde que
+ * se vio el antes y el después, conflicto. Devuelve 1 si cambió algo y 0 si ya estaba al día.
+ */
+export async function applyRecalcOneTx(
+  supabase: Db,
+  id: string,
+  mode: RecalcMode,
+  today: ISODate,
+  expected: string,
+): Promise<number> {
+  const [tx, cfg] = await Promise.all([load(supabase, id, expected), loadPayConfig(supabase)]);
+  const { write } = planRecalc(cfg, tx, mode, today);
+  await commit(supabase, write);
+  return hasChanges(write) ? 1 : 0;
 }

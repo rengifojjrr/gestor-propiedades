@@ -1,8 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { addDays, compute, todayNY, type Currency, type Rules } from "../src/lib/pasarelas";
-import type { Json } from "../src/lib/supabase/types";
-import { e1Item, saveTransactions, signInAal1, unwrap, type Basics, type Db } from "../tests/integration/helpers";
+import { addDays, todayNY, type Currency } from "../src/lib/pasarelas";
+import { e1Item, saveTransactions, signInAal1, unwrap, type Db } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
 import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
 
@@ -22,38 +21,10 @@ test.beforeAll(async () => {
   today = todayNY(new Date());
 });
 
-/** Las reglas que congela un cobro con la configuración de `seedBasics`: Stripe, «Pago rápido», canal al 5 %, 50/30/20. */
-function basicsRules(b: Basics): Rules {
-  return {
-    gateway: {
-      id: b.gatewayId,
-      name: "Stripe",
-      feeVersionId: b.feeVersionId,
-      pct: "2.9",
-      fixed: "0.30",
-      refundsReturnFee: false,
-      disputeFee: "0.00",
-    },
-    extras: [{ id: b.extraId, name: "Pago rápido", pct: "1.5", fixed: "0.00", base: "bruto", payoutDaysOverride: 0 }],
-    platform: { channelId: b.channelId, name: "Inscripciones en línea", pct: "5", fixed: "0.00" },
-    scheme: {
-      schemeId: b.schemeId,
-      versionId: b.schemeVersionId,
-      name: "Reparto 50/30/20",
-      base: "neto",
-      lines: [
-        { beneficiaryId: b.beneficiaryIds.a, name: "Grupo A", pct: "50" },
-        { beneficiaryId: b.beneficiaryIds.b, name: "Grupo B", pct: "30" },
-        { beneficiaryId: b.beneficiaryIds.c, name: "Grupo C", pct: "20" },
-      ],
-      remainder: null,
-    },
-  };
-}
-
 /**
  * Registra cobros E1 del spec (100,00 → comisiones 9,70, neto 90,30) por Stripe, cada uno con su referencia,
- * `daysAgo` días antes de hoy (con «Pago rápido» cae el mismo día). Devuelve sus ids, en el mismo orden.
+ * `daysAgo` días antes de hoy (con «Pago rápido» cae el mismo día), con el desglose que calcula el motor
+ * (`e1Item`). Devuelve sus ids, en el mismo orden.
  */
 async function register(
   refs: readonly string[],
@@ -61,18 +32,12 @@ async function register(
 ): Promise<string[]> {
   const currency = opts.currency ?? "USD";
   const on = addDays(today, -opts.daysAgo);
-  const breakdown = compute(
-    basicsRules(user.basics),
-    { grossOriginal: "100.00", refunded: "0.00", dispute: null, failed: false },
-    currency,
-  ) as unknown as Json;
   const saved = await saveTransactions(
     client,
     refs.map((reference) =>
       e1Item(user.basics, {
         reference,
         currency,
-        breakdown,
         occurred_at: `${on}T15:00:00+00:00`,
         occurred_on: on,
         estimated_deposit_on: on,

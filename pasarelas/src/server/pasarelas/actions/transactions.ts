@@ -5,8 +5,10 @@ import { z } from "zod";
 import { nyDate, todayNY } from "@/lib/pasarelas";
 import { runAction } from "../action";
 import {
+  applyRecalcOneTx,
   applyRecalcTx,
   createTx,
+  depositOneTx,
   depositTxWithSkips,
   disputeTx,
   editTx,
@@ -49,6 +51,13 @@ const zDepositDate = zDate.refine((day) => day <= todayNY(new Date()), {
   error: "La fecha del depósito no puede ser futura",
 });
 const zRecalcMode = z.enum(["hoy", "fecha_del_cobro"]);
+/** La versión vista solo vale para un cobro: el detalle. Los lotes no la llevan. */
+const ONE_WITH_VERSION = {
+  error: "La versión vista solo se manda con un cobro",
+  path: ["ids"],
+};
+const oneIfSeen = ({ ids, expectedUpdatedAt }: { ids: string[]; expectedUpdatedAt?: string }): boolean =>
+  expectedUpdatedAt === undefined || ids.length === 1;
 
 const zNewTx = z.object({
   id: zId,
@@ -135,13 +144,19 @@ export async function markInTransit(input: unknown): Promise<ActionResult<{ coun
 /**
  * Marca depositados los cobros el día `on` (no futuro) y dice cuántos se saltaron y por qué. `onlyPending`: el
  * lote (la barra de Cobros, los próximos depósitos del Resumen) solo deposita lo que está por caer; el detalle de
- * un cobro manda `false` para poder cambiar la fecha de un depósito ya hecho.
+ * un cobro manda `false` para poder cambiar la fecha de un depósito ya hecho, y además la versión que vio
+ * (`expectedUpdatedAt`, con un solo id): si el cobro cambió desde entonces, conflicto.
  */
 export async function markDeposited(input: unknown): Promise<ActionResult<DepositOutcome>> {
-  const schema = z.object({ ids: z.array(zId), on: zDepositDate, onlyPending: z.boolean() });
-  return runAction(schema, input, ({ supabase }, { ids, on, onlyPending }) =>
-    depositTxWithSkips(supabase, ids, on, { onlyPending }),
-  );
+  const schema = z
+    .object({ ids: z.array(zId), on: zDepositDate, onlyPending: z.boolean(), expectedUpdatedAt: zInstant.optional() })
+    .refine(oneIfSeen, ONE_WITH_VERSION);
+  return runAction(schema, input, ({ supabase }, { ids, on, onlyPending, expectedUpdatedAt }) => {
+    const [id] = ids;
+    return expectedUpdatedAt !== undefined && id !== undefined
+      ? depositOneTx(supabase, id, on, expectedUpdatedAt)
+      : depositTxWithSkips(supabase, ids, on, { onlyPending });
+  });
 }
 
 export async function revertDeposit(input: unknown): Promise<ActionResult> {
@@ -172,11 +187,24 @@ export async function previewRecalc(input: unknown): Promise<ActionResult<Awaite
   );
 }
 
+/**
+ * Recalcula esos cobros y dice cuántos cambiaron. Desde el detalle de un cobro va además la versión que vio
+ * (`expectedUpdatedAt`, con un solo id): si el cobro cambió desde entonces, conflicto.
+ */
 export async function applyRecalc(input: unknown): Promise<ActionResult<{ count: number }>> {
-  const schema = z.object({ ids: z.array(zId), mode: zRecalcMode });
-  return runAction(schema, input, async ({ supabase }, { ids, mode }) => ({
-    count: await applyRecalcTx(supabase, ids, mode, todayNY(new Date())),
-  }));
+  const schema = z
+    .object({ ids: z.array(zId), mode: zRecalcMode, expectedUpdatedAt: zInstant.optional() })
+    .refine(oneIfSeen, ONE_WITH_VERSION);
+  return runAction(schema, input, async ({ supabase }, { ids, mode, expectedUpdatedAt }) => {
+    const today = todayNY(new Date());
+    const [id] = ids;
+    return {
+      count:
+        expectedUpdatedAt !== undefined && id !== undefined
+          ? await applyRecalcOneTx(supabase, id, mode, today, expectedUpdatedAt)
+          : await applyRecalcTx(supabase, ids, mode, today),
+    };
+  });
 }
 
 export async function trashTransactions(input: unknown): Promise<ActionResult<{ count: number }>> {

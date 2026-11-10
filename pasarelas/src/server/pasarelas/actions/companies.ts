@@ -6,6 +6,7 @@ import { z } from "zod";
 import { ZERO, cmp } from "@/lib/pasarelas";
 import { runAction } from "../action";
 import * as ops from "../ops/companies";
+import { refreshEstimatesAfterTx } from "../ops/transactions";
 import type { ActionResult } from "../result";
 import { zCurrency, zHttpUrl, zId, zMoney, zOptionalText, zPct, zText } from "../zod";
 
@@ -121,15 +122,30 @@ export async function deleteChannel(input: unknown): Promise<ActionResult> {
   return runAction(zById, input, ({ supabase }, { id }) => ops.deleteChannel(supabase, id));
 }
 
-/** Agrega o edita la cuenta de una pasarela en una empresa. Devuelve su id. */
-export async function saveCompanyGateway(input: unknown): Promise<ActionResult<{ id: string }>> {
-  return runAction(zCompanyGateway, input, async ({ supabase }, account) => ({
-    id: await ops.saveCompanyGateway(supabase, account),
-  }));
+/**
+ * Agrega o edita la cuenta de una pasarela en una empresa y devuelve su id. Sus días al depósito mandan sobre los
+ * de la pasarela: la fecha estimada automática de lo que está por caer por esa pasarela en esa empresa se vuelve a
+ * calcular. `refreshed` dice cuántas cambiaron (`null` si no se pudieron recalcular: la cuenta quedó guardada).
+ */
+export async function saveCompanyGateway(
+  input: unknown,
+): Promise<ActionResult<{ id: string; refreshed: number | null }>> {
+  return runAction(zCompanyGateway, input, async ({ supabase }, account) => {
+    const id = await ops.saveCompanyGateway(supabase, account);
+    const scope = { gatewayId: account.gatewayId, companyId: account.companyId };
+    return { id, refreshed: await refreshEstimatesAfterTx(supabase, scope) };
+  });
 }
 
-export async function deleteCompanyGateway(input: unknown): Promise<ActionResult> {
-  return runAction(zById, input, ({ supabase }, { id }) => ops.deleteCompanyGateway(supabase, id));
+/**
+ * Quita la pasarela de la empresa. Si su cuenta tenía días propios, lo que está por caer vuelve a los de la
+ * pasarela: se recalcula la fecha estimada automática (`refreshed`, como al guardarla).
+ */
+export async function deleteCompanyGateway(input: unknown): Promise<ActionResult<{ refreshed: number | null }>> {
+  return runAction(zById, input, async ({ supabase }, { id }) => {
+    await ops.deleteCompanyGateway(supabase, id);
+    return { refreshed: await refreshEstimatesAfterTx(supabase) };
+  });
 }
 
 /**

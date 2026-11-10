@@ -1,12 +1,22 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { PAY_STATE_TEXT, PayRuleError, PayStateError, planCreate, planDeposit, type NewTxInput } from "@/lib/pasarelas";
+import {
+  ESTIMATE_REFRESH_SUMMARY,
+  PAY_STATE_TEXT,
+  PayRuleError,
+  PayStateError,
+  planCreate,
+  planDeposit,
+  type NewTxInput,
+} from "@/lib/pasarelas";
 import { UserError, errorMessage } from "@/server/pasarelas/errors";
 import { addHoliday } from "@/server/pasarelas/ops/holidays";
 import { receiptSignedUrl, registerReceipt, removeReceipt } from "@/server/pasarelas/ops/receipts";
 import {
+  applyRecalcOneTx,
   applyRecalcTx,
   createTx,
+  depositOneTx,
   depositTx,
   depositTxWithSkips,
   disputeTx,
@@ -202,9 +212,8 @@ describe("createTx", () => {
     expect(await createTx(user.client, input)).toEqual({ id: input.id, created: true });
     const before = await rowOf(input.id);
 
-    // El reenvío del mismo formulario no toca nada; la nota no es de lo que define el cobro.
+    // El reenvío del mismo formulario no toca nada.
     expect(await createTx(user.client, input)).toEqual({ id: input.id, created: false });
-    expect(await createTx(user.client, { ...input, note: "Reenviado" })).toEqual({ id: input.id, created: false });
 
     const rows = unwrap(await admin.from("pay_transactions").select("id").eq("id", input.id), "filas");
     expect(rows).toHaveLength(1);
@@ -220,6 +229,13 @@ describe("createTx", () => {
 
     await expectStateError(createTx(user.client, { ...input, grossOriginal: "150.00" }), "ya_registrado");
     await expectStateError(createTx(user.client, { ...input, reference: "ch_demo_corregida" }), "ya_registrado");
+    // También lo de «Más opciones»: el estado inicial, la fecha estimada a mano o la nota corregidos tras un corte.
+    await expectStateError(
+      createTx(user.client, { ...input, status: "depositado", depositedOn: "2026-11-16" }),
+      "ya_registrado",
+    );
+    await expectStateError(createTx(user.client, { ...input, estimatedDepositOn: "2026-11-30" }), "ya_registrado");
+    await expectStateError(createTx(user.client, { ...input, note: "Corregida" }), "ya_registrado");
     // Ni vuelve a calcularlo: lo que hoy ya no se podría registrar también es «otros datos».
     await expectStateError(createTx(user.client, { ...input, extraIds: [randomUUID()] }), "ya_registrado");
 
@@ -776,6 +792,75 @@ describe("lo que vio la persona (expectedUpdatedAt)", () => {
     expect(errorMessage(await caught(revertDepositTx(user.client, id, depositedAt)))).toBe(CONFLICT);
     expect(await rowOf(id)).toMatchObject({ status: "depositado", estimated_deposit_on: "2026-11-25" });
   });
+
+  it("depositar desde una pestaña vieja, tras abrir una disputa en otra, da conflicto: no se deposita", async () => {
+    const id = await register(user, b);
+    const tabA = await seenOf(id);
+    await disputeTx(user.client, id, { action: "abrir", on: "2026-11-14" }, await seenOf(id));
+
+    expect(errorMessage(await caught(depositOneTx(user.client, id, "2026-11-16", tabA)))).toBe(CONFLICT);
+    expect(await rowOf(id)).toMatchObject({ status: "registrado", deposited_on: null, dispute_state: "abierta" });
+    expect(await eventKinds(id)).toEqual(["creado", "disputa_abierta"]);
+  });
+
+  it("cambiar la fecha del depósito desde una pestaña vieja no pisa la fecha real que puso la otra", async () => {
+    const id = await register(user, b);
+    const tabA = await seenOf(id);
+    expect(await depositOneTx(user.client, id, "2026-11-14", await seenOf(id))).toEqual({
+      count: 1,
+      skipped: { deposited: 0, notPending: 0, other: 0 },
+    });
+
+    expect(errorMessage(await caught(depositOneTx(user.client, id, "2026-11-18", tabA)))).toBe(CONFLICT);
+    expect(await rowOf(id)).toMatchObject({ status: "depositado", deposited_on: "2026-11-14" });
+    // Con la versión al día, sí cambia la fecha.
+    await depositOneTx(user.client, id, "2026-11-18", await seenOf(id));
+    expect(await rowOf(id)).toMatchObject({ deposited_on: "2026-11-18" });
+    // La misma fecha otra vez no escribe: no cuenta como marcado.
+    expect(await depositOneTx(user.client, id, "2026-11-18", await seenOf(id))).toEqual({
+      count: 0,
+      skipped: { deposited: 0, notPending: 0, other: 1 },
+    });
+  });
+
+  it("depositar un solo cobro que no lo admite lo dice (no lo salta como el lote)", async () => {
+    const id = await register(user, b);
+    await failTx(user.client, id);
+    await expectStateError(depositOneTx(user.client, id, "2026-11-16", await seenOf(id)), "fallido");
+  });
+
+  it("los lotes siguen sin versión: solo lo que está por caer, aunque la lista se haya visto antes de un cambio", async () => {
+    const pending = await register(user, b);
+    const disputed = await register(user, b);
+    await disputeTx(user.client, disputed, { action: "abrir", on: "2026-11-14" });
+
+    expect(await depositTxWithSkips(user.client, [pending, disputed], "2026-11-16", { onlyPending: true })).toEqual({
+      count: 1,
+      skipped: { deposited: 0, notPending: 1, other: 0 },
+    });
+  });
+
+  it("recalcular desde una pestaña vieja da conflicto; con la versión al día, recalcula", async () => {
+    const id = await register(user, b);
+    const tabA = await seenOf(id);
+    unwrap(
+      await user.client
+        .from("pay_gateway_fee_versions")
+        .insert({ gateway_id: b.gatewayId, pct: "3.5", fixed: "0.30", effective_from: "2026-11-14" })
+        .select("id")
+        .single(),
+      "tarifa nueva",
+    );
+    await editTx(user.client, id, { note: "Cambiada en otra pestaña" }, await seenOf(id));
+
+    expect(errorMessage(await caught(applyRecalcOneTx(user.client, id, "hoy", TODAY, tabA)))).toBe(CONFLICT);
+    expect(await rowOf(id)).toMatchObject({ fees_total: "9.70" });
+
+    expect(await applyRecalcOneTx(user.client, id, "hoy", TODAY, await seenOf(id))).toBe(1);
+    expect(await rowOf(id)).toMatchObject({ fees_total: "10.30" });
+    expect(await applyRecalcOneTx(user.client, id, "hoy", TODAY, await seenOf(id))).toBe(0);
+    expect(await eventKinds(id)).toEqual(["creado", "editado", "recalculado"]);
+  });
 });
 
 // ─── Fechas estimadas con la configuración de ahora ─────────────────────────────────────────────────────────
@@ -807,6 +892,16 @@ describe("refreshEstimatesTx", () => {
       net_amount: before.net_amount,
     });
     expect(await eventKinds(automatic)).toEqual(["creado", "fecha_estimada"]);
+    // El historial dice que la cambió la app, no la persona.
+    const [refreshed] = unwrap(
+      await admin
+        .from("pay_transaction_events")
+        .select("summary")
+        .eq("transaction_id", automatic)
+        .eq("kind", "fecha_estimada"),
+      "evento de la fecha estimada",
+    );
+    expect(refreshed?.summary).toBe(ESTIMATE_REFRESH_SUMMARY);
     expect(await rowOf(manual)).toMatchObject({ estimated_deposit_on: "2026-11-25", estimated_is_manual: true });
     expect(await rowOf(deposited)).toMatchObject({ estimated_deposit_on: MARTES });
     expect(await rowOf(disputed)).toMatchObject({ estimated_deposit_on: MARTES });
@@ -815,11 +910,45 @@ describe("refreshEstimatesTx", () => {
     expect(await refreshEstimatesAfterTx(user.client)).toBe(0);
   });
 
+  it("con la empresa, solo los cobros de esa pasarela en esa empresa (los días de su cuenta en la empresa)", async () => {
+    const user = await createUser();
+    const b = await seedBasics(user.client);
+    const otherCompany = unwrap(
+      await user.client.from("pay_companies").insert({ name: "Tienda Demo" }).select("id").single(),
+      "otra empresa",
+    );
+    const here = await register(user, b, { extraIds: [] });
+    const there = await register(user, b, { extraIds: [], companyId: otherCompany.id, channelId: null });
+    // La cuenta de Stripe en «Escuela Demo» pasa a tardar 1 día hábil: viernes 13 → lunes 16.
+    unwrap(
+      await user.client
+        .from("pay_company_gateways")
+        .update({ payout_days_override: 1 })
+        .eq("id", b.companyGatewayId)
+        .select("id")
+        .single(),
+      "días de la cuenta",
+    );
+
+    expect(await refreshEstimatesTx(user.client, { gatewayId: b.gatewayId, companyId: otherCompany.id })).toBe(0);
+    expect(await refreshEstimatesTx(user.client, { gatewayId: b.gatewayId, companyId: b.companyId })).toBe(1);
+    expect(await rowOf(here)).toMatchObject({ estimated_deposit_on: "2026-11-16" });
+    expect(await rowOf(there)).toMatchObject({ estimated_deposit_on: MARTES });
+  });
+
+  it("los cobros que dejan las pruebas con e1Item se leen y se recalculan como cualquier otro", async () => {
+    const user = await createUser();
+    const b = await seedBasics(user.client);
+    const [saved] = await saveTransactions(user.client, [e1Item(b, { estimated_deposit_on: "2026-11-20" })]);
+    expect(await refreshEstimatesAfterTx(user.client)).toBe(1);
+    expect(await rowOf(saved?.id ?? "")).toMatchObject({ estimated_deposit_on: VIERNES });
+  });
+
   it("refreshEstimatesAfterTx: si no se puede recalcular, devuelve null y lo deja en el registro, sin lanzar", async () => {
     const user = await createUser();
     const b = await seedBasics(user.client);
     // Un cobro guardado a mano con un desglose a medias: no se puede leer como cobro.
-    await saveTransactions(user.client, [e1Item(b)]);
+    await saveTransactions(user.client, [e1Item(b, { breakdown: { v: 1, currency: "USD" } })]);
     const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {
       expect(await refreshEstimatesAfterTx(user.client)).toBeNull();
