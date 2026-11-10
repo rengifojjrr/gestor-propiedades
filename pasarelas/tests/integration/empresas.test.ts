@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { UserError, errorMessage } from "@/server/pasarelas/errors";
 import {
+  companiesWithDefaultScheme,
   deleteChannel,
   deleteCompany,
   deleteCompanyGateway,
@@ -609,5 +610,34 @@ describe("las lecturas", () => {
     };
     expect(claims.exp - claims.iat).toBe(60);
     expect(urls.has(missing)).toBe(false);
+  });
+});
+
+describe("companiesWithDefaultScheme", () => {
+  it("nombra, por orden, las empresas del usuario que tienen ese esquema por defecto; otro usuario no ve ninguna", async () => {
+    const scheme = unwrap(
+      await user.client.rpc("pay_save_scheme", {
+        p: {
+          name: `Esquema Demo ${randomUUID().slice(0, 8)}`,
+          base: "neto",
+          lines: [{ beneficiary_id: b.beneficiaryIds.a, pct: "100" }],
+        },
+      }),
+      "esquema",
+    ) as { scheme_id: string };
+    const suffix = randomUUID().slice(0, 8);
+    const withScheme = (name: string) =>
+      saveCompany(user.client, { name, website: null, currency: "USD", defaultSchemeId: scheme.scheme_id, notes: null });
+    await withScheme(`Tienda Demo ${suffix}`);
+    const inactive = await withScheme(`Estudio Demo ${suffix}`);
+    await setCompanyActive(user.client, inactive, false);
+    await newCompany();
+
+    expect(await companiesWithDefaultScheme(user.client, scheme.scheme_id)).toEqual([
+      `Estudio Demo ${suffix}`,
+      `Tienda Demo ${suffix}`,
+    ]);
+    expect(await companiesWithDefaultScheme(other.client, scheme.scheme_id)).toEqual([]);
+    expect(await companiesWithDefaultScheme(user.client, randomUUID())).toEqual([]);
   });
 });

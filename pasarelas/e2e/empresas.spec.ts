@@ -277,6 +277,56 @@ test.describe.serial("empresas", () => {
     await expect(page.getByText("Cobros 1–2 de 2")).toBeVisible();
   });
 
+  test("desactivar el esquema por defecto de una empresa la nombra antes, y su ficha lo marca «(desactivado)»", async ({
+    page,
+  }) => {
+    await login(page, owner);
+    await page.goto(`/pasarelas/repartos/esquemas/${owner.basics.schemeId}`);
+    await expect(page.getByRole("heading", { level: 1, name: "Reparto 50/30/20" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Desactivar" }).click();
+    const confirm = page.getByRole("alertdialog", { name: "¿Desactivar «Reparto 50/30/20»?" });
+    await expect(confirm).toContainText("Es el esquema por defecto de Escuela Demo.");
+    await expect(confirm).toContainText("los cobros nuevos de esa empresa quedarán sin reparto");
+    await expectCleanScreen(page);
+    await confirm.getByRole("button", { name: "Desactivar" }).click();
+    await expect(confirm).toBeHidden();
+    await expect(page.getByRole("button", { name: "Activar" })).toBeVisible();
+
+    await page.goto(`/pasarelas/empresas/${owner.basics.companyId}`);
+    const ficha = page.getByRole("region", { name: "Ficha" });
+    await expect(ficha).toContainText("Reparto 50/30/20 (desactivado)");
+    await expectCleanScreen(page);
+    // Al editar la ficha, la opción también lo dice.
+    await page.getByRole("button", { name: "Editar ficha" }).click();
+    const dialog = page.getByRole("dialog", { name: "Editar ficha" });
+    await expect(dialog.getByLabel("Esquema de reparto por defecto")).toContainText("Reparto 50/30/20 (desactivado)");
+    await dialog.getByRole("button", { name: "Cerrar" }).click();
+
+    // Activarlo no pregunta.
+    await page.goto(`/pasarelas/repartos/esquemas/${owner.basics.schemeId}`);
+    await page.getByRole("button", { name: "Activar" }).click();
+    await expect(page.getByRole("button", { name: "Desactivar" })).toBeVisible();
+    await page.goto(`/pasarelas/empresas/${owner.basics.companyId}`);
+    await expect(page.getByRole("region", { name: "Ficha" })).not.toContainText("(desactivado)");
+  });
+
+  test("un esquema que ninguna empresa tiene por defecto se desactiva sin preguntar", async ({ page }) => {
+    const client = await signInAal1(owner.email, owner.password);
+    const { data: scheme } = await client
+      .rpc("pay_save_scheme", {
+        p: { name: "Esquema suelto", base: "neto", lines: [{ beneficiary_id: owner.basics.beneficiaryIds.a, pct: "100" }] },
+      })
+      .throwOnError();
+    const schemeId = (scheme as { scheme_id: string }).scheme_id;
+
+    await login(page, owner);
+    await page.goto(`/pasarelas/repartos/esquemas/${schemeId}`);
+    await page.getByRole("button", { name: "Desactivar" }).click();
+    await expect(page.getByRole("button", { name: "Activar" })).toBeVisible();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  });
+
   test("las notas no admiten un número de tarjeta; una empresa con cobros no se borra y una sin cobros sí", async ({
     page,
   }) => {

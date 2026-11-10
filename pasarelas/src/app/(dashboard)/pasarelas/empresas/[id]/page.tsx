@@ -86,7 +86,11 @@ export default async function EmpresaPage({ params, searchParams }: PageProps<"/
           }}
           logoUrl={company.logoPath === null ? null : (logos.get(company.logoPath) ?? null)}
           schemeName={scheme?.name ?? null}
-          schemes={schemes.map(({ id: schemeId, name }) => ({ id: schemeId, name }))}
+          schemeActive={scheme?.active ?? true}
+          schemes={schemes.map(({ id: schemeId, name, active }) => ({
+            id: schemeId,
+            name: active ? name : `${name} (desactivado)`,
+          }))}
         />
         <GatewaysCard
           companyId={company.id}

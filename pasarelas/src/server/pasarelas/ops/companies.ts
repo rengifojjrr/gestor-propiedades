@@ -312,3 +312,17 @@ export async function deleteCompanyGateway(supabase: Db, id: string): Promise<vo
   const { data } = await supabase.from("pay_company_gateways").delete().eq("id", id).select("id").throwOnError();
   expectOne(data, GATEWAY_NOT_FOUND);
 }
+
+/**
+ * Los nombres, por orden, de las empresas que tienen ese esquema por defecto (activas o no). Es una lectura: la
+ * pide la pantalla del esquema antes de desactivarlo, para nombrar a quiénes afecta.
+ */
+export async function companiesWithDefaultScheme(supabase: Db, schemeId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from("pay_companies")
+    .select("name")
+    .eq("default_scheme_id", schemeId)
+    .order("name")
+    .throwOnError();
+  return data.map((row) => row.name);
+}

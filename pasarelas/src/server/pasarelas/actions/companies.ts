@@ -131,3 +131,17 @@ export async function saveCompanyGateway(input: unknown): Promise<ActionResult<{
 export async function deleteCompanyGateway(input: unknown): Promise<ActionResult> {
   return runAction(zById, input, ({ supabase }, { id }) => ops.deleteCompanyGateway(supabase, id));
 }
+
+/**
+ * Las empresas que tienen ese esquema por defecto, por nombre: la pantalla del esquema las nombra antes de
+ * desactivarlo. Solo lee: no revalida nada.
+ */
+export async function companiesWithDefaultScheme(input: unknown): Promise<ActionResult<string[]>> {
+  const schema = z.object({ schemeId: zId });
+  return runAction(
+    schema,
+    input,
+    ({ supabase }, { schemeId }) => ops.companiesWithDefaultScheme(supabase, schemeId),
+    { revalidate: [] },
+  );
+}

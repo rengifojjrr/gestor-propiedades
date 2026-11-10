@@ -17,6 +17,8 @@ export type CompanyCardProps = {
   logoUrl: string | null;
   /** El nombre del esquema por defecto, o `null` si no tiene. */
   schemeName: string | null;
+  /** Si ese esquema está activo: uno desactivado ya no se propone al registrar, y la ficha lo dice. */
+  schemeActive: boolean;
   /** Los esquemas que se pueden elegir al editar. */
   schemes: readonly { id: string; name: string }[];
 };
@@ -38,7 +40,7 @@ async function call(action: () => Promise<ActionResult>): Promise<ActionResult> 
 const shortUrl = (url: string) => url.replace(/^https?:\/\//i, "").replace(/\/$/, "");
 
 /** La ficha de la empresa: logo, web, moneda, esquema y notas; editarla, activarla o desactivarla y borrarla. */
-export function CompanyCard({ company, logoUrl, schemeName, schemes }: CompanyCardProps) {
+export function CompanyCard({ company, logoUrl, schemeName, schemeActive, schemes }: CompanyCardProps) {
   const titleId = useId();
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -91,7 +93,12 @@ export function CompanyCard({ company, logoUrl, schemeName, schemes }: CompanyCa
             </div>
             <div className="min-w-0">
               <dt className="text-sm text-ink-soft">Esquema de reparto por defecto</dt>
-              <dd className={schemeName ? "font-semibold" : "text-ink-soft"}>{schemeName ?? "Sin esquema"}</dd>
+              <dd className={schemeName ? "font-semibold" : "text-ink-soft"}>
+                {schemeName ?? "Sin esquema"}
+                {schemeName && !schemeActive ? (
+                  <span className="font-normal text-ink-soft"> (desactivado)</span>
+                ) : null}
+              </dd>
             </div>
             {company.notes ? (
               <div className="min-w-0 sm:col-span-2">
