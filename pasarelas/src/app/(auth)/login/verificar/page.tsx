@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Button } from "@/components/ui";
 import { NEXT_PARAM, loginPath, safeNextPath } from "@/lib/auth/next-path";
 import { getSession, getVerifiedFactors } from "@/lib/auth/session";
-import { signOut } from "../actions";
+import { SignOutForm } from "../SignOutForm";
 import { VerifyForm } from "./VerifyForm";
 
 export const metadata: Metadata = { title: "Código de verificación" };
@@ -26,11 +26,11 @@ export default async function VerifyPage({ searchParams }: PageProps<"/login/ver
         <p className="text-ink-soft">
           Se cerró desde otro dispositivo o cambió la contraseña. Vuelve a entrar para seguir.
         </p>
-        <form action={signOut}>
+        <SignOutForm>
           <Button type="submit" variant="primary" className="w-full">
             Volver a entrar
           </Button>
-        </form>
+        </SignOutForm>
       </>
     );
   }
@@ -41,12 +41,12 @@ export default async function VerifyPage({ searchParams }: PageProps<"/login/ver
       <h1 className="titulo text-2xl leading-tight">Código de verificación</h1>
       <p className="text-ink-soft">Tu cuenta tiene segundo factor. Escribe el código para terminar de entrar.</p>
       <VerifyForm next={next} />
-      <form action={signOut} className="flex flex-col gap-2 border-t border-rule pt-4">
+      <SignOutForm className="flex flex-col gap-2 border-t border-rule pt-4">
         <p className="text-sm text-ink-soft">¿No tienes tu teléfono a mano o quieres entrar con otra cuenta?</p>
         <Button type="submit" className="self-start">
           Cerrar sesión
         </Button>
-      </form>
+      </SignOutForm>
     </>
   );
 }

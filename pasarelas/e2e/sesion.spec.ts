@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
-import { totp } from "../tests/integration/helpers";
+import { enrollTotp, signInAal1, totp } from "../tests/integration/helpers";
 import { expectNoSeriousAxe, login, loginWithTotp, newUser, type TestUser } from "./helpers";
 
 /**
@@ -37,6 +37,28 @@ async function openSettings(page: Page): Promise<void> {
 async function signOutHere(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Cerrar sesión", exact: true }).click();
   await expect(page).toHaveURL(/\/login$/);
+}
+
+/** Un corte en el que repetir es seguro (entrar, el código, empezar el alta de un dispositivo). */
+const RETRY_TEXT = "Se perdió la conexión. Revisa tu señal y vuelve a intentarlo.";
+/** La duda de un corte: no se sabe si se guardó. Al lado va «Ver cómo quedó». */
+const UNSURE_TEXT = "Se perdió la conexión y no se sabe si se guardó. Revisa cómo quedó antes de repetirlo.";
+/** El título de `global-error.tsx`, que reemplaza la página entera. */
+const GLOBAL_ERROR = "Algo salió mal";
+
+/**
+ * Corta la red a las Server Actions de una pantalla: los POST a `pathname`, y solo a esa ruta (`/login` no corta
+ * `/login/verificar`). Con `arrives`, la llamada llega al servidor y lo que se pierde es la respuesta. Devuelve cómo
+ * volver a tener señal.
+ */
+async function cutActions(page: Page, pathname: string, { arrives = false } = {}): Promise<() => Promise<void>> {
+  const here = (url: URL) => url.pathname === pathname;
+  await page.route(here, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    if (arrives) await route.fetch();
+    return route.abort("internetdisconnected");
+  });
+  return () => page.unroute(here);
 }
 
 test.describe("entrada", () => {
@@ -379,6 +401,68 @@ test.describe("contraseña y sesión", () => {
     await login(other, user);
     await expect(other).toHaveURL(/\/pasarelas$/);
     await otherContext.close();
+  });
+});
+
+/*
+ * Sin señal, la llamada a la acción no llega o su respuesta no vuelve. Se dice en la misma pantalla (no en
+ * `global-error.tsx` ni en el error de Ajustes) y no se pierde lo escrito. Si repetir es seguro, se invita a
+ * repetir; si no se sabe si quedó, se ofrece «Ver cómo quedó».
+ */
+test.describe("cortes de red", () => {
+  test("entrar: se dice en la misma pantalla con el correo escrito, y al volver la señal se entra", async ({ page }) => {
+    const user = await newUser();
+    await page.goto("/login");
+    const reconnect = await cutActions(page, "/login");
+    await page.getByLabel("Correo").fill(user.email);
+    await page.getByLabel("Contraseña").fill(user.password);
+    await page.getByRole("button", { name: "Entrar" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: RETRY_TEXT })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Entrar" })).toBeVisible();
+    await expect(page.getByText(GLOBAL_ERROR)).toHaveCount(0);
+    expect(pathOf(page)).toBe("/login");
+    await expect(page.getByLabel("Correo")).toHaveValue(user.email);
+    await expect(page.getByLabel("Contraseña")).toHaveValue("");
+    await expectNoSeriousAxe(page);
+
+    await reconnect();
+    await page.getByLabel("Contraseña").fill(user.password);
+    await page.getByRole("button", { name: "Entrar" }).click();
+    await expect(page).toHaveURL(/\/pasarelas$/);
+  });
+
+  test("el código: se dice en la misma pantalla; cerrar sesión ofrece «Ver cómo quedó»; al volver la señal se entra", async ({
+    page,
+  }) => {
+    const user = await newUser();
+    const { secret } = await enrollTotp(await signInAal1(user.email, user.password));
+    await page.goto("/login");
+    await page.getByLabel("Correo").fill(user.email);
+    await page.getByLabel("Contraseña").fill(user.password);
+    await page.getByRole("button", { name: "Entrar" }).click();
+    await expect(page).toHaveURL(/\/login\/verificar$/);
+
+    const reconnect = await cutActions(page, "/login/verificar");
+    await page.getByLabel("Código").fill(totp(secret));
+    await page.getByRole("button", { name: "Verificar" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: RETRY_TEXT })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Código de verificación" })).toBeVisible();
+    await expect(page.getByText(GLOBAL_ERROR)).toHaveCount(0);
+    await expectNoSeriousAxe(page);
+
+    await page.getByRole("button", { name: "Cerrar sesión", exact: true }).click();
+    await expect(page.getByRole("alert").filter({ hasText: UNSURE_TEXT })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Ver cómo quedó" })).toBeVisible();
+    expect(pathOf(page)).toBe("/login/verificar");
+    await expectNoSeriousAxe(page);
+
+    // No había llegado: «Ver cómo quedó» enseña la misma pantalla, que sigue pidiendo el código.
+    await reconnect();
+    await page.getByRole("button", { name: "Ver cómo quedó" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Código de verificación" })).toBeVisible();
+    await page.getByLabel("Código").fill(totp(secret));
+    await page.getByRole("button", { name: "Verificar" }).click();
+    await expect(page).toHaveURL(/\/pasarelas$/);
   });
 });
 
