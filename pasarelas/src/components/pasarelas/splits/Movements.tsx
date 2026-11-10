@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import { Badge, Card, CardBody, CardHeader, CardTitle, DateText, Money, Pagination, Percent } from "@/components/ui";
 import { formatDate } from "@/lib/pasarelas/dates";
-import { cmp, formatMoney } from "@/lib/pasarelas/money";
+import { cmp, formatMoney, neg } from "@/lib/pasarelas/money";
 import type { Settlement } from "@/server/pasarelas/dto";
 import type { AllocationMovement } from "@/server/pasarelas/queries/splits";
 import { SettlementActions } from "./SettlementActions";
@@ -147,7 +147,8 @@ export function SettlementMovements({
             <SettlementActions
               id={row.id}
               receiptMime={row.receiptPath === null ? null : row.receiptMime}
-              description={`${kind} de ${formatMoney(row.amount, row.currency)} del ${formatDate(row.paidOn)}`}
+              // «la devolución de $10,00»: ya dice que es una devolución, el monto va sin el signo menos.
+              description={`${kind} de ${formatMoney(refund ? neg(row.amount) : row.amount, row.currency)} del ${formatDate(row.paidOn)}`}
             />
           </li>
         );

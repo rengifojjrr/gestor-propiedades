@@ -1,25 +1,49 @@
+import { randomUUID } from "node:crypto";
 import { crc32, deflateSync } from "node:zlib";
 import { expect, test, type Page } from "@playwright/test";
+import { receiptLabel } from "../src/components/pasarelas/receipts/label";
+import { ZONE, todayNY, wallTimeToInstant } from "../src/lib/pasarelas/dates";
 import { SCHEME_ISSUE_TEXT } from "../src/lib/pasarelas/schemes";
 import { adminClient, e1Item, saveTransactions, signInAal1 } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
 import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
+import { serverData } from "./server-data";
 
 /**
  * Repartos: el libro por beneficiario y moneda (un saldo negativo dice «a favor de la empresa»), armar un esquema
  * 50/30/20 (con 50/30 y sin «Resto» no se guarda, y se dice por qué) y registrar una liquidación de 45,15 al
- * Grupo A con su comprobante. Un usuario nuevo por proyecto (celular y escritorio), con el cobro E1 ya registrado.
+ * Grupo A con su comprobante. Una liquidación guarda el tipo que se ve, y un corte de la respuesta no la duplica
+ * ni borra su comprobante. Al final, los comprobantes de un cobro (las mismas piezas de subida): se nombran por su
+ * tipo y su fecha, nunca por el nombre del archivo. Un usuario nuevo por proyecto (celular y escritorio), con el
+ * cobro E1 ya registrado y otro sin esquema de reparto (para los comprobantes: no mueve el libro).
  */
 
 const admin = adminClient();
 
 let user: TestUser;
+/** Un cobro sin esquema de reparto, calculado como en la app: el de los comprobantes. */
+const receiptTxId = randomUUID();
 
 test.beforeAll(async () => {
   user = await newUser();
   const client = await signInAal1(user.email, user.password);
   // E1: A 45,15 · B 27,09 · C 18,06. Al Grupo B ya se le pagaron 30,00: su saldo queda en −2,91.
   await saveTransactions(client, [e1Item(user.basics, { reference: "pi_e2e_repartos" })]);
+  const today = todayNY(new Date());
+  await serverData().createTx(client, {
+    id: receiptTxId,
+    companyId: user.basics.companyId,
+    channelId: null,
+    gatewayId: user.basics.gatewayId,
+    extraIds: [],
+    schemeId: null,
+    occurredOn: today,
+    occurredAt: wallTimeToInstant(`${today}T12:00`, ZONE),
+    currency: "USD",
+    grossOriginal: "50.00",
+    reference: "pi_e2e_comprobantes",
+    note: null,
+  });
   await client
     .from("pay_settlements")
     .insert({
@@ -227,4 +251,215 @@ test("registrar una liquidación de 45,15 al Grupo A con comprobante: su saldo b
   const viewer = page.getByRole("dialog", { name: "Comprobante" });
   await expect(viewer.getByRole("img", { name: "Comprobante de la liquidación" })).toBeVisible();
   await expectCleanScreen(page);
+});
+
+/** Un beneficiario propio de este proyecto (celular o escritorio), sin movimientos. Devuelve su id. */
+async function freshBeneficiary(name: string): Promise<string> {
+  const { data } = await admin
+    .from("pay_beneficiaries")
+    .insert({ user_id: user.id, name })
+    .select("id")
+    .single()
+    .throwOnError();
+  return data.id;
+}
+
+/** Las liquidaciones de un beneficiario, de la más vieja a la más nueva, como las dejó la base. */
+async function settlementsOf(beneficiaryId: string) {
+  const { data } = await admin
+    .from("pay_settlements")
+    .select("id, amount::text, receipt_path")
+    .eq("beneficiary_id", beneficiaryId)
+    .order("created_at")
+    .throwOnError();
+  return data;
+}
+
+test("el «Tipo» que se ve es el que se guarda, también tras un error y tras guardar; una devolución entra en negativo", async ({
+  page,
+}, testInfo) => {
+  const name = `Socio Demo ${testInfo.project.name}`;
+  const id = await freshBeneficiary(name);
+  await page.goto(`/pasarelas/repartos/beneficiarios/${id}`);
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+  const form = page.getByRole("region", { name: "Registrar liquidación" });
+  const kind = form.getByLabel("Tipo");
+  const amount = form.getByLabel("Monto");
+  const submit = form.getByRole("button", { name: "Registrar liquidación" });
+
+  // Un monto que no vale: se rechaza y el tipo sigue siendo el elegido.
+  await kind.selectOption({ label: "Devolución a la empresa" });
+  await amount.fill("abc");
+  await submit.click();
+  await expect(form.getByText("Monto no válido")).toBeVisible();
+  await expect(kind).toHaveValue("devolucion");
+  await expectCleanScreen(page);
+
+  // Corregido, se guarda como devolución: monto negativo, y el saldo queda a favor del beneficiario.
+  await amount.fill("10,00");
+  await submit.click();
+  await expect(page.getByText("Liquidación registrada")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Saldo" }).getByTestId("saldo-USD")).toHaveText("$10,00");
+  const settlements = page.getByRole("region", { name: "Liquidaciones" });
+  await expect(settlements).toContainText("Devolución");
+  await expect(settlements).toContainText("-$10,00");
+  // El botón de borrar dice «la devolución de $10,00», sin el signo menos.
+  await expect(settlements.getByRole("button", { name: /^Borrar la devolución de \$10,00 del / })).toBeVisible();
+  // Tras guardar, el tipo que se ve sigue siendo el que se va a guardar.
+  await expect(kind).toHaveValue("devolucion");
+  await expectCleanScreen(page);
+
+  // La siguiente, sin tocar el tipo, también es una devolución; y si se cambia a pago, es un pago.
+  await amount.fill("5");
+  await submit.click();
+  await expect(settlements).toContainText("-$5,00");
+  await expect(kind).toHaveValue("devolucion");
+  await kind.selectOption({ label: "Pago al beneficiario" });
+  await amount.fill("2");
+  await submit.click();
+  await expect(settlements).toContainText("$2,00");
+  await expect(kind).toHaveValue("pago");
+  expect((await settlementsOf(id)).map((row) => row.amount)).toEqual(["-10.00", "-5.00", "2.00"]);
+});
+
+test("si la respuesta se corta al registrar, se avisa sin perder el formulario; el reintento no duplica nada", async ({
+  page,
+}, testInfo) => {
+  const name = `Socio Corte ${testInfo.project.name}`;
+  const id = await freshBeneficiary(name);
+  const url = `/pasarelas/repartos/beneficiarios/${id}`;
+  await page.goto(url);
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+  const form = page.getByRole("region", { name: "Registrar liquidación" });
+  await form.getByLabel("Monto").fill("12,34");
+  await form.getByLabel("Elegir archivo").setInputFiles({ name: "pago-demo.png", mimeType: "image/png", buffer: png(400, 200) });
+
+  // La acción llega al servidor y se guarda, pero la respuesta no vuelve al navegador.
+  let cut = 0;
+  await page.route(`**${url}`, async (route) => {
+    const request = route.request();
+    if (request.method() === "POST" && request.headers()["next-action"] !== undefined && cut === 0) {
+      cut += 1;
+      await route.fetch();
+      await route.abort("connectionreset");
+      return;
+    }
+    await route.continue();
+  });
+  await form.getByRole("button", { name: "Registrar liquidación" }).click();
+
+  await expect(form.getByRole("alert")).toHaveText(
+    "No se pudo confirmar si la liquidación quedó registrada. Revisa la lista de liquidaciones antes de volver a registrarla.",
+  );
+  expect(cut).toBe(1);
+  await expect(form.getByLabel("Monto")).toHaveValue("12,34");
+  const [saved] = await settlementsOf(id);
+  expect(saved?.amount).toBe("12.34");
+  // El comprobante no se borró: puede ser (y es) de la liquidación que sí quedó.
+  const folder = `${user.id}/${saved?.id}`;
+  const files = async () => (await admin.storage.from("comprobantes").list(folder)).data?.map((file) => file.name);
+  expect(await files()).toEqual([saved?.receipt_path?.slice(folder.length + 1)]);
+  await expectCleanScreen(page);
+
+  // Reintentar con lo mismo la da por registrada: sigue habiendo una sola, con su único comprobante.
+  await page.unroute(`**${url}`);
+  await form.getByRole("button", { name: "Registrar liquidación" }).click();
+  await expect(page.getByText("Liquidación registrada")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Liquidaciones" })).toContainText("$12,34");
+  expect(await settlementsOf(id)).toEqual([saved]);
+  expect(await files()).toHaveLength(1);
+  await expectCleanScreen(page);
+});
+
+test.describe("los comprobantes de un cobro", () => {
+  /** Un PDF mínimo: va tal cual a Storage (las fotos se recodifican), con un nombre que no debe guardarse. */
+  const pdf = (name: string) => ({ name, mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.7\n%demo\n") });
+
+  /** Los comprobantes del cobro, del más viejo al más nuevo, como los dejó la base. */
+  async function receipts() {
+    const { data } = await admin
+      .from("pay_transaction_receipts")
+      .select("id, path, mime, original_name, created_at")
+      .eq("transaction_id", receiptTxId)
+      .order("created_at")
+      .throwOnError();
+    return data;
+  }
+
+  test("se nombran por su tipo y su fecha, no por el archivo; «Ver» y «Quitar» dicen cuál; un PDF se firma al tocarlo", async ({
+    page,
+  }) => {
+    await page.goto(`/pasarelas/cobros/${receiptTxId}`);
+    const card = page.getByRole("region", { name: "Comprobantes" });
+    await expect(card).toContainText("Sin comprobantes");
+    for (const name of ["Recibo de Grupo A.pdf", "Pago de Grupo B.pdf"]) {
+      await card.getByLabel("Elegir archivo").setInputFiles(pdf(name));
+      await expect(page.getByText("Comprobante agregado.")).toBeVisible();
+      await expect(page.getByText("Comprobante agregado.")).toBeHidden();
+    }
+    const items = card.getByRole("list", { name: "Comprobantes" }).getByRole("listitem");
+    await expect(items).toHaveCount(2);
+
+    // El nombre del archivo no se guarda ni se ve.
+    const rows = await receipts();
+    expect(rows.map((row) => row.original_name)).toEqual([null, null]);
+    await expect(card).not.toContainText("Grupo A");
+    await expect(card).not.toContainText("Grupo B");
+    const labels = rows.map((row) => receiptLabel({ mime: row.mime, createdAt: row.created_at }));
+    await expect(items.nth(0)).toContainText(labels[0] ?? "");
+    await expect(items.nth(0)).toContainText("PDF · 15 B");
+    await expect(items.nth(1).getByRole("button", { name: `Quitar Comprobante 2: ${labels[1]}` })).toBeVisible();
+    await expectCleanScreen(page);
+
+    // La URL firmada del PDF se pide al tocar «Ver», y el PDF se abre en otra pestaña.
+    const signed = page
+      .context()
+      .waitForEvent("request", (request) => request.url().includes("/storage/v1/object/sign/comprobantes/"));
+    const popup = page.waitForEvent("popup");
+    await items
+      .nth(0)
+      .getByRole("button", { name: `Ver Comprobante 1: ${labels[0]} (se abre en otra pestaña)` })
+      .click();
+    expect((await signed).url()).toContain(rows[0]?.path ?? "sin ruta");
+    await (await popup).close();
+  });
+
+  test("si la respuesta se corta al registrarlo, el archivo no se borra y se pide revisar antes de repetir", async ({
+    page,
+  }) => {
+    const url = `/pasarelas/cobros/${receiptTxId}`;
+    await page.goto(url);
+    const before = (await receipts()).length;
+    const card = page.getByRole("region", { name: "Comprobantes" });
+    let cut = 0;
+    await page.route(`**${url}`, async (route) => {
+      const request = route.request();
+      if (request.method() === "POST" && request.headers()["next-action"] !== undefined && cut === 0) {
+        cut += 1;
+        await route.fetch();
+        await route.abort("connectionreset");
+        return;
+      }
+      await route.continue();
+    });
+    await card.getByLabel("Elegir archivo").setInputFiles(pdf("Factura demo.pdf"));
+
+    await expect(card).toContainText(
+      "No se pudo confirmar si el comprobante quedó guardado. Revisa los comprobantes antes de volver a subirlo.",
+    );
+    expect(cut).toBe(1);
+    // Quedó registrado y su archivo sigue en Storage.
+    const rows = await receipts();
+    expect(rows).toHaveLength(before + 1);
+    const last = rows.at(-1)?.path ?? "";
+    const folder = last.slice(0, last.lastIndexOf("/"));
+    const { data: files } = await admin.storage.from("comprobantes").list(folder);
+    expect(files?.map((file) => file.name)).toContain(last.slice(folder.length + 1));
+    await expectCleanScreen(page);
+
+    // Al recargar, se ve.
+    await page.unroute(`**${url}`);
+    await page.reload();
+    await expect(card.getByRole("list", { name: "Comprobantes" }).getByRole("listitem")).toHaveCount(before + 1);
+  });
 });

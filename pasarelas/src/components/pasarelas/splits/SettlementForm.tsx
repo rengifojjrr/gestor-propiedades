@@ -1,12 +1,14 @@
 "use client";
 
-import { useId, useState } from "react";
+import { LoaderCircle } from "lucide-react";
+import { useId, useState, useTransition, type FormEvent } from "react";
 import { ReceiptPicker } from "@/components/pasarelas/receipts/ReceiptPicker";
 import { ReceiptFileError, checkReceiptFile } from "@/components/pasarelas/receipts/check";
 import { downscaleImage } from "@/components/pasarelas/receipts/downscale";
-import { uploadToFolder } from "@/components/pasarelas/receipts/upload";
+import { saveUploaded, uploadToFolder } from "@/components/pasarelas/receipts/upload";
 import {
   Alert,
+  Button,
   Card,
   CardBody,
   CardHeader,
@@ -16,33 +18,29 @@ import {
   MoneyInput,
   notify,
   Select,
-  SubmitButton,
   Textarea,
 } from "@/components/ui";
-import { createClient } from "@/lib/supabase/client";
 import type { Currency, ISODate } from "@/lib/pasarelas/types";
 import { saveSettlement } from "@/server/pasarelas/actions/settlements";
 
-/** El bucket privado de los comprobantes (el mismo que usa la subida). */
-const RECEIPTS_BUCKET = "comprobantes";
 const UPLOAD_TEXT = "No se pudo subir el comprobante. Inténtalo de nuevo.";
+const UNSURE_TEXT =
+  "No se pudo confirmar si la liquidación quedó registrada. Revisa la lista de liquidaciones antes de volver a registrarla.";
 
 type Direction = "pago" | "devolucion";
 type FieldErrors = Record<string, string[] | undefined> | undefined;
-
-/** Borra un comprobante que se subió pero cuya liquidación no se guardó. Si no se puede, queda en su carpeta. */
-async function discard(path: string): Promise<void> {
-  try {
-    await createClient().storage.from(RECEIPTS_BUCKET).remove([path]);
-  } catch {
-    // Ya se enseña el error de la liquidación: no se le enseña a la persona un segundo error.
-  }
-}
+type Receipt = { path: string; mime: string; sizeBytes: number };
 
 /**
  * «Registrar liquidación»: un pago al beneficiario o una devolución suya a la empresa, con su fecha, monto, moneda,
  * medio, comprobante (foto o PDF) y nota. El id de la liquidación se genera antes de subir el comprobante: el
- * archivo va a su carpeta. Si la liquidación no se guarda, el archivo subido se borra.
+ * archivo va a su carpeta.
+ *
+ * - Si el servidor la rechaza, el comprobante subido se borra.
+ * - Si la respuesta no llega (se cortó la conexión), no se sabe si quedó: se conservan el id y el comprobante, y se
+ *   pide revisar la lista. Reintentar manda el mismo id con el mismo archivo ya subido: no la duplica.
+ * - Lo que se ve es lo que se guarda: el formulario no usa `<form action>`, que React vacía al terminar (el «Tipo»
+ *   volvería a «Pago» en pantalla y la liquidación siguiente se guardaría con el tipo anterior).
  */
 export function SettlementForm({
   beneficiaryId,
@@ -54,7 +52,8 @@ export function SettlementForm({
   today: ISODate;
 }) {
   const titleId = useId();
-  // Un id por liquidación: el mismo mientras no se guarde, uno nuevo después.
+  const [pending, startTransition] = useTransition();
+  // Un id por liquidación: el mismo mientras no se sepa que se guardó, uno nuevo después.
   const [settlementId, setSettlementId] = useState(() => crypto.randomUUID());
   const [paidOn, setPaidOn] = useState(today);
   const [direction, setDirection] = useState<Direction>("pago");
@@ -64,6 +63,8 @@ export function SettlementForm({
   const [note, setNote] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  // El archivo ya subido en un intento que no se sabe cómo terminó: se reusa, no se sube otra vez.
+  const [uploaded, setUploaded] = useState<{ file: File; receipt: Receipt } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<FieldErrors>(undefined);
 
@@ -74,29 +75,37 @@ export function SettlementForm({
 
   async function submit() {
     if (fileError !== null) return;
-    let receipt: { path: string; mime: string; sizeBytes: number } | null = null;
+    let receipt: Receipt | null = null;
+    // Un archivo subido en ESTE intento: si el servidor lo rechaza, se borra. Uno de un intento anterior no, porque
+    // puede ser de una liquidación que sí quedó.
+    let fresh: string | null = null;
     if (file !== null) {
-      try {
-        const uploaded = await uploadToFolder(await downscaleImage(file), settlementId);
-        receipt = { path: uploaded.path, mime: uploaded.mime, sizeBytes: uploaded.sizeBytes };
-      } catch (problem) {
-        setError(problem instanceof ReceiptFileError ? problem.message : UPLOAD_TEXT);
-        return;
+      if (uploaded?.file === file) {
+        receipt = uploaded.receipt;
+      } else {
+        try {
+          const { path, mime, sizeBytes } = await uploadToFolder(await downscaleImage(file), settlementId);
+          receipt = { path, mime, sizeBytes };
+          fresh = path;
+        } catch (problem) {
+          setError(problem instanceof ReceiptFileError ? problem.message : UPLOAD_TEXT);
+          return;
+        }
       }
     }
-    const result = await saveSettlement({
-      id: settlementId,
-      beneficiaryId,
-      paidOn,
-      currency,
-      amount,
-      direction,
-      method,
-      note,
-      receipt,
-    });
+    let result: Awaited<ReturnType<typeof saveSettlement>>;
+    try {
+      result = await saveUploaded(fresh, () =>
+        saveSettlement({ id: settlementId, beneficiaryId, paidOn, currency, amount, direction, method, note, receipt }),
+      );
+    } catch {
+      setUploaded(file !== null && receipt !== null ? { file, receipt } : null);
+      setError(UNSURE_TEXT);
+      setErrors(undefined);
+      return;
+    }
     if (!result.ok) {
-      if (receipt !== null) await discard(receipt.path);
+      if (fresh !== null) setUploaded(null);
       setError(result.error);
       setErrors(result.fieldErrors);
       return;
@@ -107,8 +116,14 @@ export function SettlementForm({
     setMethod("");
     setNote("");
     setFile(null);
+    setUploaded(null);
     setError(null);
     setErrors(undefined);
+  }
+
+  function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    startTransition(submit);
   }
 
   return (
@@ -118,7 +133,7 @@ export function SettlementForm({
           <CardTitle id={titleId}>Registrar liquidación</CardTitle>
         </CardHeader>
         <CardBody>
-          <form action={submit} className="flex flex-col gap-4" noValidate>
+          <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
             <Field label="Tipo" error={errors?.direction?.[0]}>
               <Select value={direction} onChange={(event) => setDirection(event.currentTarget.value as Direction)}>
                 <option value="pago">Pago al beneficiario</option>
@@ -157,9 +172,22 @@ export function SettlementForm({
                 {error}
               </Alert>
             ) : null}
-            <SubmitButton className="self-start" disabled={fileError !== null} pendingLabel="Registrando…">
-              Registrar liquidación
-            </SubmitButton>
+            <Button
+              type="submit"
+              variant="primary"
+              className="self-start"
+              disabled={pending || fileError !== null}
+              aria-busy={pending || undefined}
+            >
+              {pending ? (
+                <>
+                  <LoaderCircle aria-hidden className="size-5 animate-spin" />
+                  Registrando…
+                </>
+              ) : (
+                "Registrar liquidación"
+              )}
+            </Button>
           </form>
         </CardBody>
       </section>
