@@ -19,6 +19,8 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_KEY = /^(\d{4})-(0[1-9]|1[0-2])$/;
 /** Lo que entrega un `<input type="datetime-local">`: AAAA-MM-DDTHH:mm. */
 const LOCAL_INPUT = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d$/;
+/** Una hora de pared: AAAA-MM-DDTHH:mm con segundos opcionales (`:ss`). */
+const WALL_TIME = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/;
 /** Un instante en texto trae hora y zona: termina en `Z` o en un desfase (`+00:00`, `-05:00`, `+00`). */
 const HAS_ZONE = /T[\d:.,]+(?:Z|[+-]\d{2}(?::?\d{2})?)$/;
 
@@ -165,18 +167,32 @@ export function todayNY(now: Date): ISODate {
 /**
  * De la hora local de Nueva York de un formulario (`2026-11-13T22:30`) al instante en UTC
  * (`2026-11-14T03:30:00.000Z`). Una hora que no existe por el cambio de horario se resuelve hacia adelante
- * (02:30 → 03:30 EDT) y una que ocurre dos veces toma la primera (EDT).
- *
- * No se le pide a Luxon que lea la hora local: ante una hora ambigua elige según el horario que rija «ahora»
- * (el reloj de la máquina), y el motor tiene que dar siempre el mismo instante. De Luxon solo sale el desfase.
+ * (02:30 → 03:30 EDT) y una que ocurre dos veces toma la primera (EDT). Es `wallTimeToInstant` con la zona de
+ * Nueva York y sin segundos.
  */
 export function localInputToInstant(local: string): string {
   if (!LOCAL_INPUT.test(local) || !isISODate(local.slice(0, 10))) {
     throw new RangeError(`Fecha y hora inválidas (se espera AAAA-MM-DDTHH:mm): ${local}`);
   }
-  // La hora «de pared» leída como si fuera UTC: el instante real es esa hora menos el desfase de Nueva York.
-  const wallMs = Date.parse(`${local}:00Z`);
-  const zone = IANAZone.create(ZONE);
+  return wallTimeToInstant(local, ZONE);
+}
+
+/**
+ * De una hora «de pared» (`AAAA-MM-DDTHH:mm` o `AAAA-MM-DDTHH:mm:ss`) en una zona IANA al instante en UTC. Igual
+ * que en `localInputToInstant`: una hora que no existe por el cambio de horario se resuelve hacia adelante y una
+ * que ocurre dos veces toma la primera.
+ *
+ * No se le pide a Luxon que lea la hora local: ante una hora ambigua elige según el horario que rija «ahora»
+ * (el reloj de la máquina), y el motor tiene que dar siempre el mismo instante. De Luxon solo sale el desfase.
+ */
+export function wallTimeToInstant(wall: string, zoneName: string): string {
+  if (!WALL_TIME.test(wall) || !isISODate(wall.slice(0, 10))) {
+    throw new RangeError(`Fecha y hora inválidas (se espera AAAA-MM-DDTHH:mm[:ss]): ${wall}`);
+  }
+  if (!IANAZone.isValidZone(zoneName)) throw new RangeError(`Zona horaria desconocida: «${zoneName}»`);
+  // La hora «de pared» leída como si fuera UTC: el instante real es esa hora menos el desfase de la zona.
+  const wallMs = Date.parse(`${wall.length === 16 ? `${wall}:00` : wall}Z`);
+  const zone = IANAZone.create(zoneName);
   // Desfases en minutos (EDT = −240, EST = −300) un día antes y un día después: solo difieren junto a un cambio.
   const dayBefore = zone.offset(wallMs - DAY_MS);
   const dayAfter = zone.offset(wallMs + DAY_MS);

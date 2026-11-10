@@ -14,6 +14,7 @@ import {
   nyDate,
   periodRange,
   todayNY,
+  wallTimeToInstant,
   ZONE,
   type PeriodPreset,
 } from "./dates";
@@ -457,5 +458,51 @@ describe("textos en español con tablas propias", () => {
     expect(formatDateTime("2026-07-04T04:05:00Z")).toBe("sáb 4 jul 2026, 00:05");
     expect(formatDateTime("2026-07-04T13:07:00+00:00")).toBe("sáb 4 jul 2026, 09:07");
     expect(() => formatDateTime("2026-11-13 15:30")).toThrow(RangeError);
+  });
+});
+
+describe("wallTimeToInstant: la hora de pared de cualquier zona IANA, con o sin segundos", () => {
+  test("Los Ángeles en invierno y en verano; los segundos se conservan", () => {
+    expect(wallTimeToInstant("2026-11-13T22:30:15", "America/Los_Angeles")).toBe("2026-11-14T06:30:15.000Z");
+    expect(wallTimeToInstant("2026-07-01T12:00", "America/Los_Angeles")).toBe("2026-07-01T19:00:00.000Z");
+  });
+
+  test("otras zonas: UTC y Madrid (que cambia de horario en otras fechas)", () => {
+    expect(wallTimeToInstant("2026-11-13T10:30:00", "UTC")).toBe("2026-11-13T10:30:00.000Z");
+    expect(wallTimeToInstant("2026-07-01T12:00:00", "Europe/Madrid")).toBe("2026-07-01T10:00:00.000Z");
+    expect(wallTimeToInstant("2026-03-29T02:30:00", "Europe/Madrid")).toBe("2026-03-29T01:30:00.000Z");
+  });
+
+  test("los dos cambios de horario de 2026 en Los Ángeles: hacia adelante y la primera vez", () => {
+    // 8 de marzo: 02:00–02:59 no existen (02:30 → 03:30 PDT). 1 de noviembre: 01:00–01:59 ocurren dos veces (PDT).
+    expect(wallTimeToInstant("2026-03-08T02:30:00", "America/Los_Angeles")).toBe("2026-03-08T10:30:00.000Z");
+    expect(wallTimeToInstant("2026-11-01T01:30:00", "America/Los_Angeles")).toBe("2026-11-01T08:30:00.000Z");
+    expect(wallTimeToInstant("2026-11-01T02:00:00", "America/Los_Angeles")).toBe("2026-11-01T10:00:00.000Z");
+  });
+
+  test("con Nueva York da lo mismo que localInputToInstant", () => {
+    for (const local of ["2026-03-08T02:30", "2026-11-01T01:30", "2026-11-13T22:30", "2026-07-01T12:05"]) {
+      expect(wallTimeToInstant(local, ZONE)).toBe(localInputToInstant(local));
+    }
+  });
+
+  describe("no depende del reloj de la máquina", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    test.each(["2026-07-01T12:00:00Z", "2026-12-01T12:00:00Z"])("con el reloj en %s", (now) => {
+      vi.useFakeTimers({ now: new Date(now) });
+      expect(wallTimeToInstant("2026-11-01T01:30:00", "America/Los_Angeles")).toBe("2026-11-01T08:30:00.000Z");
+      expect(wallTimeToInstant("2026-03-08T02:30:00", "America/Los_Angeles")).toBe("2026-03-08T10:30:00.000Z");
+    });
+  });
+
+  test("una hora mal formada o una zona que no existe es un error", () => {
+    for (const x of ["", "2026-11-13", "2026-11-13 10:30", "2026-11-13T10:30Z", "2026-11-13T10:30:60", "2026-02-30T10:30"]) {
+      expect(() => wallTimeToInstant(x, "UTC")).toThrow(RangeError);
+    }
+    expect(() => wallTimeToInstant("2026-11-13T10:30", "Marte/Olympus")).toThrow(RangeError);
+    expect(() => wallTimeToInstant("2026-11-13T10:30", "")).toThrow(RangeError);
   });
 });
