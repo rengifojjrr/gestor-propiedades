@@ -196,6 +196,49 @@ test.describe("componentes", () => {
     await expect(page.getByRole("button", { name: "Guardar cobro" })).toBeEnabled();
   });
 
+  test("formulario con acción: tras el reinicio de React, Select, casilla e interruptor siguen enseñando el estado", async ({
+    page,
+  }) => {
+    await openKit(page);
+    const form = page.getByRole("form", { name: "Reinicio de un formulario con acción" });
+    const account = form.getByRole("combobox", { name: "Cuenta destino" });
+    const returnsFee = form.getByRole("checkbox", { name: "Devuelve la comisión" });
+    const active = form.getByRole("switch", { name: "Canal activo" });
+    const yesNo = (on: boolean) => (on ? "sí" : "no");
+
+    // Primera vuelta: todo distinto de como llegó la página. Segunda: distinto de la primera, para ver que lo que
+    // queda tras el reinicio sigue al último valor y no al de un envío anterior.
+    const rounds = [
+      { label: "Banco Demo ··1234", value: "cuenta-1234", fee: true, on: false },
+      { label: "Banco Demo ··5678", value: "cuenta-5678", fee: false, on: true },
+    ];
+    for (const { label, value, fee, on } of rounds) {
+      await account.selectOption({ label });
+      await returnsFee.setChecked(fee);
+      await active.setChecked(on);
+      const summary = `${label} · devuelve la comisión: ${yesNo(fee)} · canal activo: ${yesNo(on)}`;
+      await expect(form.getByTestId("estado-reinicio")).toHaveText(`Estado: ${summary}`);
+
+      await form.getByRole("button", { name: "Guardar canal" }).click();
+      await expect(form.getByTestId("enviado-reinicio")).toHaveText(`Enviado: ${summary}`);
+      // El botón vuelve a su texto cuando termina la acción: en esa misma vuelta React reinicia el formulario.
+      await expect(form.getByRole("button", { name: "Guardar canal" })).toBeEnabled();
+
+      await expect(form.getByTestId("estado-reinicio")).toHaveText(`Estado: ${summary}`);
+      await expect(account).toHaveValue(value);
+      await expect(returnsFee).toBeChecked({ checked: fee });
+      await expect(active).toBeChecked({ checked: on });
+    }
+  });
+
+  test("casilla: el ref que llega por props (función u objeto) llega al <input>", async ({ page }) => {
+    await openKit(page);
+    const fields = page.getByRole("region", { name: "Campos" });
+    for (const name of ["Todos los cobros de esta página", "Todas las empresas"]) {
+      await expect(fields.getByRole("checkbox", { name })).toHaveJSProperty("indeterminate", true);
+    }
+  });
+
   test("campos: etiqueta, ayuda y error quedan enlazados al control", async ({ page }) => {
     await openKit(page);
     const withError = page.getByRole("textbox", { name: "Referencia" });

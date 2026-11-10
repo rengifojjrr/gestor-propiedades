@@ -4,6 +4,7 @@ import { ChevronDown } from "lucide-react";
 import type { ComponentProps } from "react";
 import { cn } from "./cn";
 import { useFieldControl } from "./Field";
+import { useSelectResetBaseline } from "./form-reset";
 
 /** 16 px de letra como mínimo: con menos, iOS hace zoom al enfocar. */
 const CONTROL =
@@ -27,12 +28,16 @@ export function Textarea({ className, rows = 3, ...props }: TextareaProps) {
 
 export type SelectProps = ComponentProps<"select">;
 
-/** Lista desplegable nativa (en el celular abre el selector del sistema). Los `<option>` van como hijos. */
-export function Select({ className, children, ...props }: SelectProps) {
+/**
+ * Lista desplegable nativa (en el celular abre el selector del sistema). Los `<option>` van como hijos.
+ * Controlada (`value`), sigue enseñando su valor después de que React reinicie el `<form action>` que la contiene.
+ */
+export function Select({ className, children, ref, ...props }: SelectProps) {
   const field = useFieldControl(props);
+  const baselineRef = useSelectResetBaseline(props.value, ref);
   return (
     <div className="relative">
-      <select className={cn(CONTROL, "appearance-none pr-10", className)} {...props} {...field}>
+      <select ref={baselineRef} className={cn(CONTROL, "appearance-none pr-10", className)} {...props} {...field}>
         {children}
       </select>
       <ChevronDown

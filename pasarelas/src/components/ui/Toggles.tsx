@@ -1,6 +1,9 @@
+"use client";
+
 import { useId, type ComponentProps, type ReactNode } from "react";
 import { cn } from "./cn";
 import { FieldError } from "./FieldError";
+import { useCheckedResetBaseline } from "./form-reset";
 
 type ToggleProps = Omit<ComponentProps<"input">, "type" | "role" | "children"> & {
   /** El texto junto al control: es su nombre accesible. */
@@ -52,7 +55,8 @@ export type CheckboxProps = ToggleProps;
 
 /**
  * Casilla con su etiqueta: toda la fila (≥ 44 px) se puede tocar. Sirve para aceptar o elegir entre varias.
- * Con `error`, el mensaje va debajo de la fila. `className` se aplica al contenedor.
+ * Con `error`, el mensaje va debajo de la fila. `className` se aplica al contenedor. Controlada (`checked`), sigue
+ * enseñando su valor después de que React reinicie el `<form action>` que la contiene.
  */
 export function Checkbox({
   label,
@@ -62,13 +66,16 @@ export function Checkbox({
   "aria-labelledby": labelledBy,
   "aria-describedby": describedBy,
   "aria-invalid": invalid,
+  ref,
   ...props
 }: CheckboxProps) {
   const id = useId();
+  const baselineRef = useCheckedResetBaseline(props.checked, ref);
   return (
     <div className={cn("flex min-w-0 flex-col", className)}>
       <label className={ROW}>
         <input
+          ref={baselineRef}
           type="checkbox"
           className="size-5 shrink-0 accent-brand"
           {...props}
@@ -86,7 +93,8 @@ export type SwitchProps = ToggleProps;
 /**
  * Interruptor (encendido / apagado) para algo que rige de inmediato o que es una opción del formulario.
  * Es un `<input type="checkbox" role="switch">`: viaja en el formulario como cualquier casilla.
- * Con `error`, el mensaje va debajo de la fila. `className` se aplica al contenedor.
+ * Con `error`, el mensaje va debajo de la fila. `className` se aplica al contenedor. Controlado (`checked`), sigue
+ * enseñando su valor después de que React reinicie el `<form action>` que lo contiene.
  */
 export function Switch({
   label,
@@ -96,15 +104,18 @@ export function Switch({
   "aria-labelledby": labelledBy,
   "aria-describedby": describedBy,
   "aria-invalid": invalid,
+  ref,
   ...props
 }: SwitchProps) {
   const id = useId();
+  const baselineRef = useCheckedResetBaseline(props.checked, ref);
   return (
     <div className={cn("flex min-w-0 flex-col", className)}>
       <label className={cn(ROW, "justify-between")}>
         <ToggleText id={id} label={label} hint={hint} />
         <span className="relative inline-flex shrink-0">
           <input
+            ref={baselineRef}
             type="checkbox"
             role="switch"
             className="peer absolute inset-0 size-full cursor-pointer opacity-0 disabled:cursor-not-allowed"

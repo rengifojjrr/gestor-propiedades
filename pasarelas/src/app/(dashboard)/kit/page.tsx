@@ -41,7 +41,7 @@ import {
   UrlSearch,
   UrlSelect,
 } from "@/components/ui";
-import { ConfirmDemo, DialogDemo, NotifyDemo, SubmitDemo } from "./KitDemos";
+import { ConfirmDemo, DialogDemo, FormResetDemo, IndeterminateDemo, NotifyDemo, SubmitDemo } from "./KitDemos";
 import { Section, Spec } from "./Specimen";
 
 export const metadata: Metadata = { title: "Kit de interfaz" };
@@ -350,6 +350,7 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
               ["label: ReactNode", "el texto junto a la casilla"],
               ["hint?: ReactNode", "aclaración bajo la etiqueta"],
               ["error?: string", "mensaje de error bajo la fila; marca la casilla con aria-invalid"],
+              ["ref?", "llega al <input> (función u objeto), p. ej. para dejarla a medias con indeterminate"],
             ]}
           >
             <Checkbox name="refundsReturnFee" label="La pasarela devuelve la comisión al reembolsar" />
@@ -359,6 +360,15 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
               hint="Se borran también sus comprobantes."
               error="Marca la casilla para continuar."
             />
+            <IndeterminateDemo />
+          </Spec>
+          <Spec
+            name="Select · Checkbox · Switch en un <form action>"
+            props={[
+              ["value · checked", "controlados: lo que se ve sigue al estado también después de que React reinicie el formulario"],
+            ]}
+          >
+            <FormResetDemo />
           </Spec>
         </div>
       </Section>
