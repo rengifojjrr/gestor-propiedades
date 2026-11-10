@@ -1,0 +1,11 @@
+id,Created date (UTC),Amount,Amount Refunded,Currency,Captured,Converted Amount,Converted Amount Refunded,Converted Currency,Fee,Status,Description,Customer Email,Customer Description
+ch_demo_0001,2026-11-13 15:30:00,100.00,0.00,usd,true,100.00,0.00,usd,3.20,Paid,Pedido demo 1,cliente1@example.com,Cliente Demo 1
+ch_demo_0002,2026-11-14 03:30:00,"1,234.56",40.00,usd,true,"1,234.56",40.00,usd,36.10,Partially refunded,Pedido demo 2,cliente2@example.com,Cliente Demo 2
+ch_demo_0003,2026-11-14 10:00:00,50.00,0.00,usd,false,50.00,0.00,usd,0.00,Failed,Pedido demo 3,cliente3@example.com,Cliente Demo 3
+ch_demo_0004,2026-11-14 11:00:00,60.00,0.00,usd,false,60.00,0.00,usd,0.00,Pending,Pedido demo 4,cliente4@example.com,Cliente Demo 4
+ch_demo_0005,2026-11-14 12:00:00,70.00,0.00,usd,false,70.00,0.00,usd,0.00,Uncaptured,Pedido demo 5,cliente5@example.com,Cliente Demo 5
+ch_demo_0006,2026-11-14 13:00:00,25.00,25.00,usd,true,25.00,25.00,usd,1.03,Refunded,Pedido demo 6,cliente6@example.com,Cliente Demo 6
+ch_demo_0007,2026-11-14 14:00:00,80.00,0.00,usd,false,80.00,0.00,usd,0.00,Canceled,Pedido demo 7,cliente7@example.com,Cliente Demo 7
+ch_demo_0001,2026-11-13 15:30:00,100.00,0.00,usd,true,100.00,0.00,usd,3.20,Paid,Pedido demo 1,cliente1@example.com,Cliente Demo 1
+ch_demo_0008,13/11/2026 10:00,10.00,0.00,usd,true,10.00,0.00,usd,0.59,Paid,Pedido demo 8,cliente8@example.com,Cliente Demo 8
+ch_demo_0009,2026-11-15 09:00:00,"12,34,5",0.00,usd,true,12.35,0.00,usd,0.66,Paid,Pedido demo 9,cliente9@example.com,Cliente Demo 9

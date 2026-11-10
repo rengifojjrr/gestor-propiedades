@@ -1,0 +1,13 @@
+balance_transaction_id,created_utc,available_on_utc,currency,gross,fee,net,reporting_category,description,customer_email,customer_name
+txn_demo_0001,2026-03-08 07:30:00,2026-03-10 00:00:00,usd,100.00,3.20,96.80,charge,Pago demo 1,cliente1@example.com,Cliente Demo 1
+txn_demo_0002,2026-11-01 05:30:00,2026-11-03 00:00:00,usd,1234.56,36.10,1198.46,charge,Pago demo 2,cliente2@example.com,Cliente Demo 2
+txn_demo_0003,2026-11-02 14:00:00,2026-11-02 14:00:00,usd,-40.00,0.00,-40.00,refund,Reembolso demo,cliente1@example.com,Cliente Demo 1
+txn_demo_0004,2026-11-03 09:00:00,2026-11-03 09:00:00,usd,-500.00,0.00,-500.00,payout,Depósito demo,,
+txn_demo_0005,2026-11-03 10:00:00,2026-11-03 10:00:00,usd,-15.00,0.00,-15.00,fee,Comisión demo,,
+txn_demo_0006,2026-11-03 11:00:00,2026-11-03 11:00:00,usd,-2.00,0.00,-2.00,adjustment,Ajuste demo,,
+txn_demo_0007,2026-11-03 12:00:00,2026-11-03 12:00:00,usd,-25.00,15.00,-40.00,dispute,Disputa demo,cliente2@example.com,Cliente Demo 2
+txn_demo_0008,2026-11-03 13:00:00,2026-11-03 13:00:00,usd,-10.00,0.00,-10.00,risk_reserved_funds,Reserva demo,,
+txn_demo_0009,2026-11-03 14:00:00,2026-11-03 14:00:00,usd,500.00,0.00,500.00,payout_reversal,Depósito devuelto demo,,
+txn_demo_0001,2026-03-08 07:30:00,2026-03-10 00:00:00,usd,100.00,3.20,96.80,charge,Pago demo 1,cliente1@example.com,Cliente Demo 1
+txn_demo_0010,2026-11-04 10:00:00,2026-11-06 00:00:00,us dollars,20.00,0.88,19.12,charge,Pago demo 3,cliente3@example.com,Cliente Demo 3
+txn_demo_0011,,2026-11-06 00:00:00,usd,30.00,1.17,28.83,charge,Pago demo 4,cliente4@example.com,Cliente Demo 4
