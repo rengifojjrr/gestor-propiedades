@@ -1,9 +1,11 @@
 "use client";
 
 import { useActionState } from "react";
-import { Alert, Button, Dialog, Field, Input, Select, SubmitButton, Textarea, notify } from "@/components/ui";
+import { Button, Dialog, Field, Input, Select, SubmitButton, Textarea, notify } from "@/components/ui";
 import type { BeneficiaryKind } from "@/lib/pasarelas/types";
 import { saveBeneficiary } from "@/server/pasarelas/actions/splits";
+import { DialogActionError } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { KIND_LABEL } from "./labels";
 
 /** Lo que se edita de un beneficiario, como texto de formulario. */
@@ -19,7 +21,8 @@ export const EMPTY_BENEFICIARY: BeneficiaryFormValues = { name: "", kind: "perso
 type FormState = {
   /** Lo último que se envió: React vacía los campos al terminar la acción y vuelven con esto. */
   values: BeneficiaryFormValues;
-  error: string | null;
+  /** Si se cortó la red (`unsure`), no se sabe si se guardó: el aviso ofrece «Ver cómo quedó». */
+  error: ActionFailure | null;
   fieldErrors: Record<string, string[] | undefined>;
 };
 
@@ -48,13 +51,14 @@ function BeneficiaryForm({
         accountAlias: text(data, "accountAlias"),
         notes: text(data, "notes"),
       };
-      const result = await saveBeneficiary({ id, ...values });
+      // Con `callAction`, un corte no sube a `error.tsx`: el diálogo sigue abierto con lo escrito y la duda.
+      const result = await callAction(() => saveBeneficiary({ id, ...values }));
       if (result.ok) {
         notify.success("Beneficiario guardado.");
         onClose();
         return { values, error: null, fieldErrors: {} };
       }
-      return { values, error: result.error, fieldErrors: result.fieldErrors ?? {} };
+      return { values, error: failureOf(result), fieldErrors: result.fieldErrors ?? {} };
     },
     { values: initial, error: null, fieldErrors: {} },
   );
@@ -85,11 +89,7 @@ function BeneficiaryForm({
       <Field label="Notas" optional error={fieldError("notes")}>
         <Textarea name="notes" defaultValue={state.values.notes} maxLength={500} />
       </Field>
-      {state.error ? (
-        <Alert tone="danger" announce>
-          {state.error}
-        </Alert>
-      ) : null}
+      <DialogActionError failure={state.error} />
       <div className="flex flex-wrap justify-end gap-2">
         <Button onClick={onClose}>Cancelar</Button>
         <SubmitButton>Guardar beneficiario</SubmitButton>

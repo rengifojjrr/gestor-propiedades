@@ -13,13 +13,17 @@ import { serverData } from "./server-data";
 /**
  * Repartos: el libro por beneficiario y moneda (un saldo negativo dice «a favor de la empresa»), armar un esquema
  * 50/30/20 (con 50/30 y sin «Resto» no se guarda, y se dice por qué) y registrar una liquidación de 45,15 al
- * Grupo A con su comprobante. Una liquidación guarda el tipo que se ve, y un corte de la respuesta no la duplica
+ * Grupo A con su comprobante. Un corte de red al guardar un beneficiario o al desactivarlo se dice ahí mismo, con
+ * «Ver cómo quedó», sin perder lo escrito; borrar uno sin historia lleva a Repartos. Una liquidación guarda el tipo que se ve, y un corte de la respuesta no la duplica
  * ni borra su comprobante. Al final, los comprobantes de un cobro (las mismas piezas de subida): se nombran por su
  * tipo y su fecha, nunca por el nombre del archivo. Un usuario nuevo por proyecto (celular y escritorio), con el
  * cobro E1 ya registrado y otro sin esquema de reparto (para los comprobantes: no mueve el libro).
  */
 
 const admin = adminClient();
+
+/** Lo que dice la app cuando la llamada a una acción no vuelve: no se sabe si se guardó. */
+const UNSURE_TEXT = "Se perdió la conexión y no se sabe si se guardó. Revisa cómo quedó antes de repetirlo.";
 
 let user: TestUser;
 /** Un cobro sin esquema de reparto, calculado como en la app: el de los comprobantes. */
@@ -206,6 +210,68 @@ test("si Desactivar falla desde la cabecera se dice ahí mismo, y el diálogo de
   await expect(dialog).toContainText("Si ya no le repartes, desactívalo");
   await expect(dialog).not.toContainText("Ese beneficiario ya no existe.");
   await expect(alert).toBeHidden();
+});
+
+test("guardar un beneficiario nuevo: si se corta la conexión, el diálogo sigue abierto con lo escrito y ofrece «Ver cómo quedó»", async ({
+  page,
+}, testInfo) => {
+  const name = `Socio Sin Red ${testInfo.project.name}`;
+  await page.goto("/pasarelas/repartos");
+  await expect(page.getByRole("heading", { level: 1, name: "Repartos" })).toBeVisible();
+  await page.getByRole("button", { name: "Agregar beneficiario" }).click();
+  const dialog = page.getByRole("dialog", { name: "Nuevo beneficiario" });
+  await dialog.getByLabel("Nombre").fill(name);
+  await dialog.getByLabel("Alias de la cuenta").fill("Cuenta de Socio Demo");
+
+  // Solo se corta el POST de la acción: la pantalla y sus recursos siguen llegando.
+  const screen = "**/pasarelas/repartos";
+  await page.route(screen, (route) =>
+    route.request().method() === "POST" ? route.abort("internetdisconnected") : route.continue(),
+  );
+  await dialog.getByRole("button", { name: "Guardar beneficiario" }).click();
+  await expect(dialog.getByRole("alert")).toHaveText(UNSURE_TEXT);
+  await expect(dialog.getByRole("button", { name: "Ver cómo quedó" })).toBeVisible();
+  await expect(dialog.getByLabel("Nombre")).toHaveValue(name);
+  await expect(dialog.getByLabel("Alias de la cuenta")).toHaveValue("Cuenta de Socio Demo");
+  await expectCleanScreen(page);
+  await page.unroute(screen);
+});
+
+test("desactivar un beneficiario desde su ficha: si se corta la conexión, se dice ahí mismo con «Ver cómo quedó»", async ({
+  page,
+}, testInfo) => {
+  const name = `Socio Desconectado ${testInfo.project.name}`;
+  const id = await freshBeneficiary(name);
+  const url = `/pasarelas/repartos/beneficiarios/${id}`;
+  await page.goto(url);
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+
+  await page.route(`**${url}`, (route) =>
+    route.request().method() === "POST" ? route.abort("internetdisconnected") : route.continue(),
+  );
+  await page.getByRole("button", { name: "Desactivar" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: UNSURE_TEXT })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ver cómo quedó" })).toBeVisible();
+  // La ficha sigue en pantalla: el fallo no subió a la pantalla de error.
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Registrar liquidación" })).toBeVisible();
+  await expectCleanScreen(page);
+  await page.unroute(`**${url}`);
+});
+
+test("borrar un beneficiario sin historia lleva a Repartos y ya no aparece", async ({ page }, testInfo) => {
+  const name = `Socio Para Borrar ${testInfo.project.name}`;
+  const id = await freshBeneficiary(name);
+  await page.goto(`/pasarelas/repartos/beneficiarios/${id}`);
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+
+  await page.getByRole("button", { name: "Borrar" }).click();
+  await page.getByRole("alertdialog", { name: `¿Borrar «${name}»?` }).getByRole("button", { name: "Borrar" }).click();
+  await expect(page).toHaveURL((target) => target.pathname === "/pasarelas/repartos");
+  await expect(page.getByRole("heading", { level: 1, name: "Repartos" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Beneficiarios" }).getByRole("link", { name })).toHaveCount(0);
+  const { data } = await admin.from("pay_beneficiaries").select("id").eq("id", id).throwOnError();
+  expect(data).toEqual([]);
 });
 
 test("registrar una liquidación de 45,15 al Grupo A con comprobante: su saldo baja a cero", async ({ page }) => {

@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Alert, Button, Dialog, notify } from "@/components/ui";
+import { Button, Dialog, notify } from "@/components/ui";
 import { deleteBeneficiary, setBeneficiaryActive } from "@/server/pasarelas/actions/splits";
+import { ActionError, DialogActionError } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { BeneficiaryFormDialog, type BeneficiaryFormValues } from "./BeneficiaryFormDialog";
 
 /**
@@ -10,7 +12,8 @@ import { BeneficiaryFormDialog, type BeneficiaryFormValues } from "./Beneficiary
  * repartos, liquidaciones o en un esquema no se borra (lo dice la base y se enseña aquí mismo).
  *
  * Cada lugar enseña sus propios fallos: lo que falla desde la cabecera se pinta bajo los botones, y lo que falla
- * dentro del diálogo de borrar, en el diálogo. Así ninguno queda tragado ni aparece después en el otro.
+ * dentro del diálogo de borrar, en el diálogo. Así ninguno queda tragado ni aparece después en el otro. Si se
+ * corta la red, con «Ver cómo quedó»; cerrar el diálogo con esa duda vuelve a pintar la ficha.
  */
 export function BeneficiaryActions({
   id,
@@ -23,17 +26,17 @@ export function BeneficiaryActions({
 }) {
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionFailure | null>(null);
+  const [deleteError, setDeleteError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
 
   /** Activa o desactiva; `report` dice dónde se enseña el fallo (la cabecera o el diálogo de borrar). */
-  const setActive = (next: boolean, report: (message: string | null) => void) => {
+  const setActive = (next: boolean, report: (failure: ActionFailure | null) => void) => {
     report(null);
     startTransition(async () => {
-      const result = await setBeneficiaryActive({ id, active: next });
+      const result = await callAction(() => setBeneficiaryActive({ id, active: next }));
       if (!result.ok) {
-        report(result.error);
+        report(failureOf(result));
         return;
       }
       setDeleting(false);
@@ -44,9 +47,9 @@ export function BeneficiaryActions({
   const remove = () => {
     setDeleteError(null);
     startTransition(async () => {
-      // Si sale bien, la acción lleva a Repartos: esta ficha ya no existe.
-      const result = await deleteBeneficiary({ id });
-      if (!result.ok) setDeleteError(result.error);
+      // Si sale bien, la acción lleva a Repartos (`callAction` deja pasar la redirección): esta ficha ya no existe.
+      const result = await callAction(() => deleteBeneficiary({ id }));
+      if (!result.ok) setDeleteError(failureOf(result));
     });
   };
 
@@ -72,11 +75,7 @@ export function BeneficiaryActions({
       <Button variant="ghost" onClick={openDelete} disabled={pending}>
         Borrar
       </Button>
-      {error ? (
-        <Alert tone="danger" announce className="basis-full">
-          {error}
-        </Alert>
-      ) : null}
+      <ActionError failure={error} className="basis-full" />
 
       <BeneficiaryFormDialog open={editing} onClose={() => setEditing(false)} id={id} initial={values} />
 
@@ -102,11 +101,8 @@ export function BeneficiaryActions({
           </>
         }
       >
-        {deleteError ? (
-          <Alert tone="danger" announce>
-            {deleteError}
-          </Alert>
-        ) : active ? (
+        <DialogActionError failure={deleteError} />
+        {deleteError === null && active ? (
           <p className="text-sm text-ink-soft">
             Si ya no le repartes, desactívalo: deja de ofrecerse en esquemas nuevos y conserva su historia.
           </p>
