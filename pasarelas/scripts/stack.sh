@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Stack local de Supabase para Pasarelas (Postgres, Auth, API, Storage y correo de pruebas), con Docker.
 #
-#   bash scripts/stack.sh start    levanta Docker si está caído y el stack; escribe .env.local si falta
+#   bash scripts/stack.sh start    levanta Docker si está caído y el stack; escribe .env.local si falta o si le
+#                                  falta la clave publicable
 #   bash scripts/stack.sh stop     detiene el stack (los datos locales se conservan)
 #   bash scripts/stack.sh reset    vuelve a crear la base local aplicando supabase/migrations (BORRA los datos locales)
 #   bash scripts/stack.sh status   muestra el estado
-#   bash scripts/stack.sh env      escribe .env.local con la URL y las claves del stack local en marcha
+#   bash scripts/stack.sh env      escribe en .env.local la URL y las claves del stack local en marcha (conserva
+#                                  las demás variables que ya hubiera)
 #   bash scripts/stack.sh types    regenera src/lib/supabase/database.types.ts desde la base local
 #
 # Solo toca la base LOCAL. Nunca se conecta a un proyecto remoto.
@@ -16,6 +18,9 @@ cd "$(dirname "$0")/.."
 # Servicios que la app no usa: no se levantan (arranque más rápido y menos memoria).
 EXCLUIDOS="studio,logflare,vector,realtime,edge-runtime,imgproxy,supavisor"
 SUPABASE="npx --no-install supabase"
+# Los dos comentarios que acompañan a las variables que este guion escribe en .env.local.
+COMENTARIO_GENERADO="# Generado por scripts/stack.sh a partir del stack LOCAL. No se versiona."
+COMENTARIO_SECRETA="# Solo para pruebas de integración, punta a punta y la semilla. La app nunca la usa."
 
 asegurar_docker() {
   if docker info >/dev/null 2>&1; then
@@ -44,8 +49,9 @@ en_marcha() {
 }
 
 escribir_env() {
-  local salida url publicable secreta
-  salida="$($SUPABASE status -o env 2>/dev/null)"
+  local salida url publicable secreta resto=""
+  # Con el stack caído «status» falla: no se deja que `set -e` corte aquí en silencio; el aviso sale abajo.
+  salida="$($SUPABASE status -o env 2>/dev/null || true)"
   url="$(printf '%s\n' "$salida" | sed -n 's/^API_URL="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' | head -1)"
   publicable="$(printf '%s\n' "$salida" | sed -n 's/^PUBLISHABLE_KEY="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' | head -1)"
   secreta="$(printf '%s\n' "$salida" | sed -n 's/^SECRET_KEY="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' | head -1)"
@@ -53,13 +59,26 @@ escribir_env() {
     echo "No pude leer la URL y las claves del stack local (¿está en marcha?)." >&2
     exit 1
   fi
+  # Lo demás que ya hubiera en .env.local (p. ej. SEED_EMAIL y SEED_PASSWORD) se conserva: solo se reemplazan
+  # las tres variables que se escriben aquí, con sus dos comentarios.
+  if [ -f .env.local ]; then
+    resto="$(grep -v \
+      -e '^NEXT_PUBLIC_SUPABASE_URL=' \
+      -e '^NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=' \
+      -e '^SUPABASE_SECRET_KEY=' \
+      .env.local | grep -v -x -F -e "$COMENTARIO_GENERADO" -e "$COMENTARIO_SECRETA" || true)"
+  fi
   {
-    echo "# Generado por scripts/stack.sh a partir del stack LOCAL. No se versiona."
+    echo "$COMENTARIO_GENERADO"
     echo "NEXT_PUBLIC_SUPABASE_URL=$url"
     echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$publicable"
-    echo "# Solo para pruebas de integración, punta a punta y la semilla. La app nunca la usa."
+    echo "$COMENTARIO_SECRETA"
     echo "SUPABASE_SECRET_KEY=$secreta"
-  } >.env.local
+    if [ -n "$resto" ]; then
+      printf '%s\n' "$resto"
+    fi
+  } >.env.local.tmp
+  mv .env.local.tmp .env.local
   echo ".env.local escrito (stack local: $url)"
 }
 
@@ -81,7 +100,9 @@ iniciar() {
       sleep 20
     done
   fi
-  if [ ! -f .env.local ]; then
+  # .env.local se escribe si falta o si no trae la clave publicable (falta la línea o está vacía). Si ya la
+  # trae no se toca: para refrescarlo a propósito está `env`.
+  if ! grep -q '^NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=.' .env.local 2>/dev/null; then
     escribir_env
   fi
 }
