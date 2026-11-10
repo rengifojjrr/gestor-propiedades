@@ -10,7 +10,8 @@ import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
  * la base lo creado y repetir el archivo: lo repetido y lo de la papelera se dicen antes de importar. Después, un
  * archivo que no se reconoce: se mapea a mano, avisa que el formato es otro que el recordado y, si la red se corta al
  * importar, lo dice. Luego, el informe con source_id frente a un cobro registrado a mano: «posible repetido», y el
- * mismo archivo corregido y elegido otra vez (se vuelve a leer). Por último, un archivo sin cobros (no se queda «buscando») y una vista previa que falla y se reintenta.
+ * mismo archivo corregido y elegido otra vez (se vuelve a leer). Por último, un archivo sin cobros (no se queda
+ * «buscando») y una vista previa que falla y se reintenta.
  * Un usuario nuevo por archivo (y por proyecto: celular y escritorio).
  */
 

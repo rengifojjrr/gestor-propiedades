@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Button, Dialog, Field, Input, Select, SubmitButton, Textarea, notify } from "@/components/ui";
 import type { BeneficiaryKind } from "@/lib/pasarelas/types";
 import { saveBeneficiary } from "@/server/pasarelas/actions/splits";
@@ -63,6 +63,9 @@ function BeneficiaryForm({
     { values: initial, error: null, fieldErrors: {} },
   );
   const fieldError = (name: keyof BeneficiaryFormValues) => state.fieldErrors[name]?.[0];
+  // Controlado: al terminar la acción React reinicia el formulario, y un `<select>` sin controlar volvería al tipo
+  // con que se abrió aunque se hubiera elegido otro. El `Select` del kit mantiene el valor controlado.
+  const [kind, setKind] = useState<BeneficiaryKind>(initial.kind);
 
   return (
     <form action={formAction} className="flex flex-col gap-4" noValidate>
@@ -70,7 +73,7 @@ function BeneficiaryForm({
         <Input name="name" defaultValue={state.values.name} maxLength={80} autoComplete="off" required />
       </Field>
       <Field label="Tipo" error={fieldError("kind")}>
-        <Select name="kind" defaultValue={state.values.kind}>
+        <Select name="kind" value={kind} onChange={(event) => setKind(event.currentTarget.value as BeneficiaryKind)}>
           {KINDS.map((kind) => (
             <option key={kind} value={kind}>
               {KIND_LABEL[kind]}

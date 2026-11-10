@@ -221,6 +221,7 @@ test("guardar un beneficiario nuevo: si se corta la conexión, el diálogo sigue
   await page.getByRole("button", { name: "Agregar beneficiario" }).click();
   const dialog = page.getByRole("dialog", { name: "Nuevo beneficiario" });
   await dialog.getByLabel("Nombre").fill(name);
+  await dialog.getByLabel("Tipo").selectOption({ label: "Cartera" });
   await dialog.getByLabel("Alias de la cuenta").fill("Cuenta de Socio Demo");
 
   // Solo se corta el POST de la acción: la pantalla y sus recursos siguen llegando.
@@ -232,9 +233,41 @@ test("guardar un beneficiario nuevo: si se corta la conexión, el diálogo sigue
   await expect(dialog.getByRole("alert")).toHaveText(UNSURE_TEXT);
   await expect(dialog.getByRole("button", { name: "Ver cómo quedó" })).toBeVisible();
   await expect(dialog.getByLabel("Nombre")).toHaveValue(name);
+  await expect(dialog.getByLabel("Tipo")).toHaveValue("cartera");
   await expect(dialog.getByLabel("Alias de la cuenta")).toHaveValue("Cuenta de Socio Demo");
   await expectCleanScreen(page);
   await page.unroute(screen);
+});
+
+test("guardar un beneficiario con un nombre que ya existe: el «Tipo» elegido sigue elegido tras el error", async ({
+  page,
+}, testInfo) => {
+  // React 19 reinicia el formulario al terminar la acción: un `<select>` sin controlar volvería al tipo de partida.
+  const name = `Socio Repetido ${testInfo.project.name}`;
+  await freshBeneficiary(name);
+  await page.goto("/pasarelas/repartos");
+  await page.getByRole("button", { name: "Agregar beneficiario" }).click();
+  const dialog = page.getByRole("dialog", { name: "Nuevo beneficiario" });
+  await dialog.getByLabel("Nombre").fill(name);
+  await dialog.getByLabel("Tipo").selectOption({ label: "Empresa" });
+  await dialog.getByRole("button", { name: "Guardar beneficiario" }).click();
+  await expect(dialog.getByText("Ya hay un beneficiario con ese nombre.")).toBeVisible();
+  await expect(dialog.getByLabel("Tipo")).toHaveValue("empresa");
+  await expect(dialog.getByLabel("Nombre")).toHaveValue(name);
+  await expectCleanScreen(page);
+
+  // Con otro nombre se guarda con el tipo que se ve.
+  await dialog.getByLabel("Nombre").fill(`${name} 2`);
+  await dialog.getByRole("button", { name: "Guardar beneficiario" }).click();
+  await expect(dialog).toBeHidden();
+  const { data } = await admin
+    .from("pay_beneficiaries")
+    .select("kind")
+    .eq("user_id", user.id)
+    .eq("name", `${name} 2`)
+    .single()
+    .throwOnError();
+  expect(data.kind).toBe("empresa");
 });
 
 test("desactivar un beneficiario desde su ficha: si se corta la conexión, se dice ahí mismo con «Ver cómo quedó»", async ({
