@@ -81,7 +81,10 @@ const stamp = (page: Page, text: string): Locator => page.locator("[data-stamp]"
 
 /** Despliega «Más acciones» del detalle, si lo hay y está plegado. */
 async function openMoreActions(page: Page): Promise<void> {
-  const more = page.getByRole("region", { name: "Acciones" }).getByRole("button", { name: "Más acciones" });
+  const actions = page.getByRole("region", { name: "Acciones" });
+  // Primero la región entera: mientras la página carga no hay botones que contar.
+  await expect(actions).toBeVisible();
+  const more = actions.getByRole("button", { name: "Más acciones" });
   if ((await more.count()) === 0 || (await more.getAttribute("aria-expanded")) === "true") return;
   // Se habilita al hidratarse la página: antes, tocarlo no haría nada.
   await expect(more).toBeEnabled();
