@@ -38,9 +38,15 @@ export async function removeReceiptAction(input: unknown): Promise<ActionResult>
   return runAction(z.object({ id: zId }), input, ({ supabase }, { id }) => removeReceipt(supabase, id));
 }
 
-/** Una URL firmada de 60 segundos para ver el comprobante. Se pide al abrirlo; no se guarda. */
+/**
+ * Una URL firmada de 60 segundos para ver el comprobante. Se pide al abrirlo; no se guarda. Solo lee: no revalida
+ * nada, para que abrir un comprobante no vuelva a pintar la pantalla entera en el servidor.
+ */
 export async function receiptUrlAction(input: unknown): Promise<ActionResult<{ url: string }>> {
-  return runAction(z.object({ id: zId }), input, async ({ supabase }, { id }) => ({
-    url: await receiptSignedUrl(supabase, id),
-  }));
+  return runAction(
+    z.object({ id: zId }),
+    input,
+    async ({ supabase }, { id }) => ({ url: await receiptSignedUrl(supabase, id) }),
+    { revalidate: [] },
+  );
 }

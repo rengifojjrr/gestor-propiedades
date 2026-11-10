@@ -129,11 +129,17 @@ export async function setEstimatedDate(input: unknown): Promise<ActionResult> {
   return runAction(schema, input, ({ supabase }, { id, date }) => setEstimatedTx(supabase, id, date));
 }
 
-/** Qué cambiaría al recalcular esos cobros, sin escribir nada. «Hoy» es la fecha de Nueva York. */
+/**
+ * Qué cambiaría al recalcular esos cobros, sin escribir nada. «Hoy» es la fecha de Nueva York. Solo lee: no
+ * revalida nada.
+ */
 export async function previewRecalc(input: unknown): Promise<ActionResult<Awaited<ReturnType<typeof previewRecalcTx>>>> {
   const schema = z.object({ ids: z.array(zId), mode: zRecalcMode });
-  return runAction(schema, input, ({ supabase }, { ids, mode }) =>
-    previewRecalcTx(supabase, ids, mode, todayNY(new Date())),
+  return runAction(
+    schema,
+    input,
+    ({ supabase }, { ids, mode }) => previewRecalcTx(supabase, ids, mode, todayNY(new Date())),
+    { revalidate: [] },
   );
 }
 
