@@ -2,6 +2,7 @@
 
 import { ChevronDown } from "lucide-react";
 import type { ComponentProps } from "react";
+import { useFormStatus } from "react-dom";
 import { cn } from "./cn";
 import { useFieldControl } from "./Field";
 import { useSelectResetBaseline } from "./form-reset";
@@ -10,12 +11,24 @@ import { useSelectResetBaseline } from "./form-reset";
 const CONTROL =
   "block min-h-11 w-full min-w-0 rounded-control border border-rule-strong bg-surface px-3 py-2 text-base text-ink disabled:cursor-not-allowed disabled:opacity-55 aria-invalid:border-2 aria-invalid:border-danger";
 
+/**
+ * Mientras corre la acción del `<form action>` que contiene al campo, no se escribe en él. Al terminar, React
+ * reinicia el formulario: un campo sin controlar vuelve a lo ENVIADO, y lo escrito mientras tanto se perdería sin
+ * aviso. Es de solo lectura y no desactivado, para que el foco no se pierda ni el valor salga del formulario.
+ * Fuera de un `<form action>` (con `onSubmit`, o sin formulario) no cambia nada.
+ */
+function useReadOnlyWhileSaving(readOnly: boolean | undefined): boolean | undefined {
+  const { pending } = useFormStatus();
+  return readOnly || pending || undefined;
+}
+
 export type InputProps = ComponentProps<"input">;
 
 /** Campo de texto (o de fecha, correo…). Dentro de un `Field` queda enlazado a su etiqueta y a su error. */
 export function Input({ className, ...props }: InputProps) {
   const field = useFieldControl(props);
-  return <input className={cn(CONTROL, className)} {...props} {...field} />;
+  const readOnly = useReadOnlyWhileSaving(props.readOnly);
+  return <input className={cn(CONTROL, className)} {...props} {...field} readOnly={readOnly} />;
 }
 
 export type TextareaProps = ComponentProps<"textarea">;
@@ -23,7 +36,8 @@ export type TextareaProps = ComponentProps<"textarea">;
 /** Texto de varias líneas. */
 export function Textarea({ className, rows = 3, ...props }: TextareaProps) {
   const field = useFieldControl(props);
-  return <textarea rows={rows} className={cn(CONTROL, className)} {...props} {...field} />;
+  const readOnly = useReadOnlyWhileSaving(props.readOnly);
+  return <textarea rows={rows} className={cn(CONTROL, className)} {...props} {...field} readOnly={readOnly} />;
 }
 
 export type SelectProps = ComponentProps<"select">;
@@ -59,6 +73,7 @@ export type MoneyInputProps = Omit<ComponentProps<"input">, "type" | "inputMode"
  */
 export function MoneyInput({ currency, className, placeholder = "0,00", ...props }: MoneyInputProps) {
   const field = useFieldControl(props);
+  const readOnly = useReadOnlyWhileSaving(props.readOnly);
   return (
     <div className="relative">
       {currency ? (
@@ -74,6 +89,7 @@ export function MoneyInput({ currency, className, placeholder = "0,00", ...props
         className={cn(CONTROL, "cifra text-right", currency && "pl-14", className)}
         {...props}
         {...field}
+        readOnly={readOnly}
       />
     </div>
   );
@@ -84,6 +100,7 @@ export type PctInputProps = Omit<ComponentProps<"input">, "type" | "inputMode">;
 /** Campo para escribir un porcentaje (`2,9`); el signo «%» va fijo a la derecha. Entrega el texto tal cual. */
 export function PctInput({ className, placeholder = "0", ...props }: PctInputProps) {
   const field = useFieldControl(props);
+  const readOnly = useReadOnlyWhileSaving(props.readOnly);
   return (
     <div className="relative">
       <input
@@ -94,6 +111,7 @@ export function PctInput({ className, placeholder = "0", ...props }: PctInputPro
         className={cn(CONTROL, "cifra pr-9 text-right", className)}
         {...props}
         {...field}
+        readOnly={readOnly}
       />
       <span aria-hidden className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-ink-soft">
         %

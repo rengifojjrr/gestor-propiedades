@@ -221,6 +221,41 @@ test("crear una cuenta: si se corta la conexión, el diálogo sigue abierto con 
   await expect(page.getByRole("region", { name: alias })).toBeVisible();
 });
 
+test("crear una cuenta: mientras se guarda, los campos no se pueden editar (al terminar, React los reinicia)", async ({
+  page,
+}, testInfo) => {
+  // Lo escrito mientras la acción corre se perdería: al terminar, el formulario vuelve a lo enviado.
+  const alias = `Cuenta En Pausa ${testInfo.project.name}`;
+  await page.goto("/pasarelas/cuentas");
+  await page.getByRole("button", { name: "Agregar cuenta" }).click();
+  const dialog = page.getByRole("dialog", { name: "Nueva cuenta destino" });
+  await dialog.getByLabel("Alias").fill(alias);
+  // La acción se queda esperando hasta que la prueba la suelte.
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/pasarelas/cuentas*", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    await released;
+    await route.continue();
+  });
+  await dialog.getByRole("button", { name: "Guardar cuenta" }).click();
+  await expect(dialog.getByRole("button", { name: "Guardando…" })).toBeDisabled();
+  for (const label of ["Alias", "Banco o billetera", "Últimos 4", "Moneda", "Notas"]) {
+    await expect(dialog.getByLabel(label)).not.toBeEditable();
+  }
+  await expect(dialog.getByLabel("Alias")).toHaveValue(alias);
+
+  release();
+  await expect(dialog).toBeHidden();
+  await page.unroute("**/pasarelas/cuentas*");
+  await expect(page.getByRole("region", { name: alias })).toBeVisible();
+  // El diálogo de nuevo: los campos se escriben como siempre.
+  await page.getByRole("button", { name: "Agregar cuenta" }).click();
+  await expect(page.getByRole("dialog", { name: "Nueva cuenta destino" }).getByLabel("Alias")).toBeEditable();
+});
+
 test("feriados: un fallo al quitar uno se dice en su diálogo", async ({ page }) => {
   const { data: created } = await admin
     .from("pay_holidays")
