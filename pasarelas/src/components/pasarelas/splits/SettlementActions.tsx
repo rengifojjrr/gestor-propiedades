@@ -6,16 +6,11 @@ import { useState, useTransition } from "react";
 import { Alert, Button, ConfirmDialog, Dialog, notify } from "@/components/ui";
 import { deleteSettlement, settlementReceiptUrl } from "@/server/pasarelas/actions/settlements";
 import { callAction } from "../callAction";
+import { OPEN_FAILED_TEXT, openSignedPdf } from "../receipts/openPdf";
+import { noRefresh, refreshQuietly } from "../receipts/refresh";
 
-const OPEN_FAILED_TEXT = "No se pudo abrir el comprobante. Revisa la conexión y vuelve a intentarlo.";
 const DELETE_UNSURE_TEXT =
   "No se pudo confirmar si la liquidación se borró por un fallo de conexión. Mira cómo quedó antes de repetirlo.";
-
-/**
- * Sin refresco automático tras un fallo de red: con mala señal, refrescar recargaría la página entera y se perdería
- * el aviso. «Ver cómo quedó» refresca cuando la persona lo pide.
- */
-const noRefresh = () => undefined;
 
 /**
  * Ver el comprobante de una liquidación y borrar la liquidación, que se lleva su comprobante. La URL firmada (vale
@@ -54,25 +49,10 @@ export function SettlementActions({
     });
   }
 
-  /**
-   * Un PDF se abre en otra pestaña con una URL firmada pedida en ese momento. La pestaña se abre en el mismo toque,
-   * porque abierta tras esperar al servidor el navegador la bloquearía, y después se lleva al PDF. Si el navegador
-   * no la dejó abrir, el PDF se abre en esta.
-   */
+  /** Un PDF se abre en otra pestaña con una URL firmada pedida en ese momento (ver `openSignedPdf`). */
   function openPdf() {
     setError(null);
-    const tab = window.open("", "_blank");
-    if (tab !== null) tab.opener = null;
-    startTransition(async () => {
-      const result = await signedUrl();
-      if (!result.ok) {
-        tab?.close();
-        setError(result.error);
-        return;
-      }
-      if (tab !== null) tab.location.href = result.data.url;
-      else window.location.assign(result.data.url);
-    });
+    startTransition(() => openSignedPdf(signedUrl, setError));
   }
 
   function remove() {
@@ -89,11 +69,7 @@ export function SettlementActions({
 
   function seeHowItWent() {
     setError(null);
-    try {
-      router.refresh();
-    } catch {
-      // Si tampoco llega, la persona puede volver a intentarlo.
-    }
+    refreshQuietly(() => router.refresh());
   }
 
   return (

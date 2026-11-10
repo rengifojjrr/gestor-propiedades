@@ -6,6 +6,8 @@ import { useId, useState, useTransition } from "react";
 import { ReceiptPicker } from "@/components/pasarelas/receipts/ReceiptPicker";
 import { checkReceiptFile } from "@/components/pasarelas/receipts/check";
 import { receiptFormat, receiptLabel, receiptSize } from "@/components/pasarelas/receipts/label";
+import { OPEN_FAILED_TEXT, openSignedPdf } from "@/components/pasarelas/receipts/openPdf";
+import { noRefresh, refreshQuietly } from "@/components/pasarelas/receipts/refresh";
 import { RECEIPT_UNSURE_TEXT, uploadReceipt } from "@/components/pasarelas/receipts/upload";
 import {
   Alert,
@@ -23,15 +25,8 @@ import type { TxReceipt } from "@/server/pasarelas/dto";
 import type { ActionResult } from "@/server/pasarelas/result";
 import { callAction } from "../callAction";
 
-const OPEN_FAILED_TEXT = "No se pudo abrir el comprobante. Revisa la conexión y vuelve a intentarlo.";
 const REMOVE_UNSURE_TEXT =
   "No se pudo confirmar si el comprobante se quitó por un fallo de conexión. Mira cómo quedó antes de repetirlo.";
-
-/**
- * Sin refresco automático tras un fallo de red: con mala señal, refrescar recargaría la página entera y se perdería
- * el aviso. «Ver cómo quedó» refresca cuando la persona lo pide.
- */
-const noRefresh = () => undefined;
 
 /**
  * Cómo se nombra un comprobante para el lector de pantalla y en el visor: su lugar en la lista, su tipo y su fecha.
@@ -40,13 +35,8 @@ const noRefresh = () => undefined;
 const nameOf = (receipt: TxReceipt, index: number): string => `Comprobante ${index + 1}: ${receiptLabel(receipt)}`;
 
 /** Una URL firmada recién pedida, o el mensaje si no se pudo (también si la llamada no volvió). Nunca lanza. */
-async function signedUrl(id: string): Promise<ActionResult<{ url: string }>> {
-  try {
-    return await receiptUrlAction({ id });
-  } catch {
-    return { ok: false, error: OPEN_FAILED_TEXT };
-  }
-}
+const signedUrl = (id: string): Promise<ActionResult<{ url: string }>> =>
+  callAction(() => receiptUrlAction({ id }), noRefresh, OPEN_FAILED_TEXT);
 
 export type ReceiptsCardProps = {
   transactionId: string;
@@ -94,25 +84,10 @@ export function ReceiptsCard({ transactionId, receipts, editable }: ReceiptsCard
     });
   }
 
-  /**
-   * Un PDF se abre en otra pestaña con una URL firmada pedida en ese momento (una pedida antes ya podría haber
-   * caducado). La pestaña se abre en el mismo toque, porque abierta tras esperar al servidor el navegador la
-   * bloquearía, y después se lleva al PDF. Si el navegador no la dejó abrir, el PDF se abre en esta.
-   */
+  /** Un PDF se abre en otra pestaña con una URL firmada pedida en ese momento (ver `openSignedPdf`). */
   function openPdf(receipt: TxReceipt) {
     setError(null);
-    const tab = window.open("", "_blank");
-    if (tab !== null) tab.opener = null;
-    startTransition(async () => {
-      const result = await signedUrl(receipt.id);
-      if (!result.ok) {
-        tab?.close();
-        setError(result.error);
-        return;
-      }
-      if (tab !== null) tab.location.href = result.data.url;
-      else window.location.assign(result.data.url);
-    });
+    startTransition(() => openSignedPdf(() => signedUrl(receipt.id), setError));
   }
 
   async function add(file: File | null) {
@@ -158,11 +133,7 @@ export function ReceiptsCard({ transactionId, receipts, editable }: ReceiptsCard
   function seeHowItWent() {
     setUnsure(null);
     setPickerKey((key) => key + 1);
-    try {
-      router.refresh();
-    } catch {
-      // Si tampoco llega, la persona puede volver a intentarlo.
-    }
+    refreshQuietly(() => router.refresh());
   }
 
   return (
