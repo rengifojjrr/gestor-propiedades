@@ -17,7 +17,8 @@ import {
   SubmitButton,
 } from "@/components/ui";
 import { createGateway } from "@/server/pasarelas/actions/gateways";
-import { EMPTY_EXTRA, EMPTY_GATEWAY, NETWORK_TEXT, firstError, type ExtraDraft, type FieldErrors } from "./drafts";
+import { callAction } from "../callAction";
+import { EMPTY_EXTRA, EMPTY_GATEWAY, firstError, type ExtraDraft, type FieldErrors } from "./drafts";
 import { ExtraFieldsInputs } from "./ExtraFieldsInputs";
 import { GatewayFieldsInputs } from "./GatewayFieldsInputs";
 
@@ -40,19 +41,16 @@ export function NewGatewayForm() {
     setExtras((rows) => rows.map((row) => (row.key === key ? { ...next, key } : row)));
 
   async function submit() {
-    let result;
-    try {
-      result = await createGateway({
+    // Si se corta, se dice aquí sin perder lo escrito (si no, la pantalla entera pasaría a su error). Sin «Ver cómo
+    // quedó»: esta pantalla no enseña lo creado; la pasarela, si quedó, está en la lista.
+    const result = await callAction(() =>
+      createGateway({
         ...gateway,
         pct,
         fixed,
         extras: extras.map(({ key: _key, ...extra }) => extra),
-      });
-    } catch {
-      // Sin conexión: se dice aquí, sin perder lo escrito (si no, la pantalla entera pasaría a su error).
-      setError(NETWORK_TEXT);
-      return;
-    }
+      }),
+    );
     if (!result.ok) {
       setError(result.error);
       setErrors(result.fieldErrors);

@@ -3,7 +3,6 @@
 import { Trash2 } from "lucide-react";
 import { useId, useState, useTransition } from "react";
 import {
-  Alert,
   Badge,
   Button,
   Card,
@@ -22,7 +21,9 @@ import {
 import { formatDate } from "@/lib/pasarelas/dates";
 import type { FeeVersionCfg, ISODate } from "@/lib/pasarelas/types";
 import { addFeeVersion, deleteFeeVersion } from "@/server/pasarelas/actions/gateways";
-import { firstError, NETWORK_TEXT, type FieldErrors } from "./drafts";
+import { ActionError } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
+import { firstError, type FieldErrors } from "./drafts";
 import { FeeText } from "./FeeText";
 
 /** La fecha con la que se guarda la primera tarifa: rige «desde el inicio». */
@@ -53,23 +54,17 @@ export function FeeVersionsCard({
   const [fixed, setFixed] = useState("");
   const [from, setFrom] = useState(defaultFrom);
   const [note, setNote] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionFailure | null>(null);
   const [errors, setErrors] = useState<FieldErrors>(undefined);
   const [removing, setRemoving] = useState<FeeVersionCfg | null>(null);
-  const [listError, setListError] = useState<string | null>(null);
+  const [listError, setListError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
 
   async function add() {
-    let result;
-    try {
-      result = await addFeeVersion({ gatewayId, pct, fixed, effectiveFrom: from, note });
-    } catch {
-      // Sin conexión: se dice aquí, sin perder lo escrito (si no, la ficha entera pasaría a su error).
-      setError(NETWORK_TEXT);
-      return;
-    }
+    // Si se corta, se dice aquí sin perder lo escrito (si no, la ficha entera pasaría a su error).
+    const result = await callAction(() => addFeeVersion({ gatewayId, pct, fixed, effectiveFrom: from, note }));
     if (!result.ok) {
-      setError(result.error);
+      setError(failureOf(result));
       setErrors(result.fieldErrors);
       return;
     }
@@ -84,10 +79,10 @@ export function FeeVersionsCard({
 
   function remove(version: FeeVersionCfg) {
     startTransition(async () => {
-      const result = await deleteFeeVersion({ id: version.id });
+      const result = await callAction(() => deleteFeeVersion({ id: version.id }));
       setRemoving(null);
       if (!result.ok) {
-        setListError(result.error);
+        setListError(failureOf(result));
         return;
       }
       setListError(null);
@@ -140,11 +135,7 @@ export function FeeVersionsCard({
               </li>
             ))}
           </ul>
-          {listError ? (
-            <Alert tone="danger" announce>
-              {listError}
-            </Alert>
-          ) : null}
+          <ActionError failure={listError} />
 
           <form action={add} className="flex flex-col gap-4 border-t border-rule pt-4" noValidate>
             <h3 className="titulo text-base">Agregar tarifa</h3>
@@ -166,11 +157,7 @@ export function FeeVersionsCard({
             <Field label="Nota" optional error={firstError(errors, "note")}>
               <Input value={note} onChange={(event) => setNote(event.currentTarget.value)} maxLength={200} />
             </Field>
-            {error ? (
-              <Alert tone="danger" announce>
-                {error}
-              </Alert>
-            ) : null}
+            <ActionError failure={error} />
             <SubmitButton variant="secondary" className="self-start">
               Agregar tarifa
             </SubmitButton>

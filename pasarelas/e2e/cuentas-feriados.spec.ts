@@ -1,8 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
-import { todayNY } from "../src/lib/pasarelas/dates";
+import { randomUUID } from "node:crypto";
+import { ZONE, todayNY, wallTimeToInstant } from "../src/lib/pasarelas/dates";
 import { adminClient, e1Item, saveTransactions, signInAal1 } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
 import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
+import { serverData } from "./server-data";
 
 /**
  * Cuentas destino y feriados: crear una cuenta (el alias no admite un número de cuenta y los últimos 4 no pasan de
@@ -12,6 +14,9 @@ import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
 
 let user: TestUser;
 const admin = adminClient();
+
+/** Lo que dice la app cuando la llamada a una acción no vuelve: no se sabe si se guardó. */
+const UNSURE_TEXT = "Se perdió la conexión y no se sabe si se guardó. Revisa cómo quedó antes de repetirlo.";
 
 test.beforeAll(async () => {
   user = await newUser();
@@ -226,6 +231,65 @@ test("feriados: cargar los bancarios de 2028 los agrega una sola vez", async ({ 
   await confirm.getByRole("button", { name: "Quitar" }).click();
   await expect(list.getByRole("listitem")).toHaveCount(11);
   await expectCleanScreen(page);
+});
+
+test("feriados: agregar o quitar uno dice cuántas fechas estimadas de lo que está por caer cambiaron", async ({
+  page,
+}) => {
+  // Un cobro por caer del viernes 16 de marzo de 2029 con Stripe sin opciones: 2 días hábiles, el martes 20.
+  const client = await signInAal1(user.email, user.password);
+  const id = randomUUID();
+  await serverData().createTx(client, {
+    id,
+    companyId: user.basics.companyId,
+    channelId: null,
+    gatewayId: user.basics.gatewayId,
+    extraIds: [],
+    schemeId: null,
+    occurredOn: "2029-03-16",
+    occurredAt: wallTimeToInstant("2029-03-16T12:00", ZONE),
+    currency: "USD",
+    grossOriginal: "100.00",
+    reference: `pi_e2e_feriado_${randomUUID().slice(0, 8)}`,
+    note: null,
+  });
+  const estimated = async () => (await serverData().getSnapshots(client, [id]))[0]?.estimatedDepositOn;
+  expect(await estimated()).toBe("2029-03-20");
+
+  await page.goto("/pasarelas/feriados?anio=2029");
+  await page.getByLabel("Fecha").fill("2029-03-19");
+  await page.getByLabel("Nombre").fill("Cierre demo del lunes");
+  await page.getByRole("button", { name: "Agregar feriado" }).click();
+  await expect(
+    page.getByText("Feriado agregado. Se actualizó la fecha estimada de 1 cobro por caer.", { exact: true }),
+  ).toBeVisible();
+  expect(await estimated()).toBe("2029-03-21");
+  await expectCleanScreen(page);
+
+  await page.getByRole("button", { name: "Quitar Cierre demo del lunes" }).click();
+  await page.getByRole("alertdialog", { name: "¿Quitar este feriado?" }).getByRole("button", { name: "Quitar" }).click();
+  await expect(
+    page.getByText("Feriado quitado. Se actualizó la fecha estimada de 1 cobro por caer.", { exact: true }),
+  ).toBeVisible();
+  expect(await estimated()).toBe("2029-03-20");
+});
+
+test("feriados: si se corta la conexión al cargar los bancarios, se dice ahí mismo, con «Ver cómo quedó»", async ({
+  page,
+}) => {
+  await page.goto("/pasarelas/feriados?anio=2030");
+  await page.route("**/pasarelas/feriados*", (route) =>
+    route.request().method() === "POST" ? route.abort("internetdisconnected") : route.continue(),
+  );
+  await page.getByRole("button", { name: "Cargar feriados bancarios de EE. UU. de 2030" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: UNSURE_TEXT })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ver cómo quedó" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Feriados de 2030" })).toBeVisible();
+  await expectCleanScreen(page);
+
+  await page.unroute("**/pasarelas/feriados*");
+  await page.getByRole("button", { name: "Ver cómo quedó" }).click();
+  await expect(page.getByText("No hay feriados en 2030")).toBeVisible();
 });
 
 test("feriados: sin año en la URL se ve el año en curso, y se pasa de un año a otro", async ({ page }) => {

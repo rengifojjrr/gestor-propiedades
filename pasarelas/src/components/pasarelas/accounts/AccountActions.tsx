@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Alert, Button, Dialog, notify } from "@/components/ui";
+import { Button, Dialog, notify } from "@/components/ui";
 import { deleteBankAccount, setBankAccountActive } from "@/server/pasarelas/actions/accounts";
+import { ActionError, DialogActionError } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { AccountFormDialog, type AccountFormValues } from "./AccountFormDialog";
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -41,7 +43,8 @@ type Open = "editar" | "desactivar" | "borrar" | null;
  * Editar, activar o desactivar y borrar una cuenta. Borrar pregunta antes y ofrece desactivarla. Desactivar una
  * cuenta que usan cuentas de pasarela pregunta antes y avisa de que los cobros nuevos la seguirán usando.
  *
- * Lo que falla dentro de un diálogo se dice en el diálogo: un aviso pasajero quedaría detrás de él.
+ * Lo que falla dentro de un diálogo se dice en el diálogo: un aviso pasajero quedaría detrás de él. Lo que falla
+ * fuera (activar o desactivar sin preguntar), debajo de los botones. Si se corta, con «Ver cómo quedó».
  */
 export function AccountActions({
   id,
@@ -57,21 +60,24 @@ export function AccountActions({
   gatewayCount: number;
 }) {
   const [open, setOpen] = useState<Open>(null);
-  const [dialogError, setDialogError] = useState<string | null>(null);
+  const [dialogError, setDialogError] = useState<ActionFailure | null>(null);
+  const [error, setError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
 
   const show = (next: Open) => {
     setDialogError(null);
+    setError(null);
     setOpen(next);
   };
 
-  /** Activa o desactiva. Desde un diálogo (`inDialog`), el fallo se dice en él; si no, con un aviso pasajero. */
+  /** Activa o desactiva. Desde un diálogo (`inDialog`), el fallo se dice en él; si no, debajo de los botones. */
   const setActive = (next: boolean, inDialog: boolean) =>
     startTransition(async () => {
-      const result = await setBankAccountActive({ id, active: next });
+      setError(null);
+      const result = await callAction(() => setBankAccountActive({ id, active: next }));
       if (!result.ok) {
-        if (inDialog) setDialogError(result.error);
-        else notify.error(result.error);
+        if (inDialog) setDialogError(failureOf(result));
+        else setError(failureOf(result));
         return;
       }
       setOpen(null);
@@ -81,9 +87,9 @@ export function AccountActions({
   const remove = () =>
     startTransition(async () => {
       setDialogError(null);
-      const result = await deleteBankAccount({ id });
+      const result = await callAction(() => deleteBankAccount({ id }));
       if (!result.ok) {
-        setDialogError(result.error);
+        setDialogError(failureOf(result));
         return;
       }
       setOpen(null);
@@ -94,12 +100,6 @@ export function AccountActions({
     if (active && gatewayCount > 0) show("desactivar");
     else setActive(!active, false);
   };
-
-  const error = dialogError ? (
-    <Alert tone="danger" announce>
-      {dialogError}
-    </Alert>
-  ) : null;
 
   return (
     <div className="flex flex-wrap gap-2">
@@ -112,6 +112,7 @@ export function AccountActions({
       <Button variant="ghost" onClick={() => show("borrar")} disabled={pending}>
         Borrar
       </Button>
+      <ActionError failure={error} className="basis-full" />
 
       <AccountFormDialog open={open === "editar"} onClose={() => setOpen(null)} id={id} initial={values} />
 
@@ -132,7 +133,7 @@ export function AccountActions({
           </>
         }
       >
-        {error}
+        <DialogActionError failure={dialogError} />
       </Dialog>
 
       <Dialog
@@ -157,13 +158,13 @@ export function AccountActions({
           </>
         }
       >
-        {error ??
-          (active ? (
-            <p className="text-sm text-ink-soft">
-              Si ya no la usas, desactívala: deja de ofrecerse al elegir cuenta y lo registrado la conserva.
-              {gatewayCount > 0 ? ` ${stillUsedText(gatewayCount)}` : null}
-            </p>
-          ) : null)}
+        <DialogActionError failure={dialogError} />
+        {dialogError === null && active ? (
+          <p className="text-sm text-ink-soft">
+            Si ya no la usas, desactívala: deja de ofrecerse al elegir cuenta y lo registrado la conserva.
+            {gatewayCount > 0 ? ` ${stillUsedText(gatewayCount)}` : null}
+          </p>
+        ) : null}
       </Dialog>
     </div>
   );

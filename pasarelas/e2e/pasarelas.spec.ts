@@ -46,9 +46,8 @@ async function gatewayLine(id: string): Promise<string | undefined> {
   return tx?.breakdown.lines.find((line) => line.kind === "pasarela")?.amount;
 }
 
-/** Lo que dice un formulario cuando la llamada no llegó: no se sabe si se guardó. */
-const NETWORK_TEXT =
-  "Se perdió la conexión y no se sabe si se guardó. Revísalo antes de repetirlo: lo escrito sigue aquí.";
+/** Lo que dice la app cuando la llamada a una acción no llegó o no volvió: no se sabe si se guardó. */
+const NETWORK_TEXT = "Se perdió la conexión y no se sabe si se guardó. Revisa cómo quedó antes de repetirlo.";
 
 /** Corta la conexión de las acciones (los POST) que se manden a `url`, hasta que se devuelva. */
 async function cutActions(page: Page, url: string): Promise<() => Promise<void>> {
@@ -208,14 +207,36 @@ test("opciones con su interruptor y su diálogo, y los datos de la pasarela", as
   await expect(dialog).toBeHidden();
   await expect(page.getByRole("group", { name: "Seguro Demo" })).toContainText("0 % + 1,00");
 
-  // Los datos se editan en su tarjeta.
+  // Los datos se editan en su tarjeta. Con otros días cambia la fecha estimada de lo que está por caer, y lo dice.
+  await charge(todayNY(new Date()));
   const data = page.getByRole("region", { name: "Datos" });
   await data.getByLabel("Días al depósito").fill("3");
   await data.getByRole("button", { name: "Guardar cambios" }).click();
+  await expect(
+    page.getByText(/^Cambios guardados\. Se actualizó la fecha estimada de \d+ cobros? por caer\.$/),
+  ).toBeVisible();
   await expect(page.getByRole("region", { name: "Tiempo real de depósito" })).toContainText("3 días hábiles");
   await page.reload();
   await expect(page.getByRole("region", { name: "Datos" }).getByLabel("Días al depósito")).toHaveValue("3");
   await checkScreen(page);
+});
+
+test("si se corta la conexión al desactivar la pasarela se dice en la ficha, con «Ver cómo quedó»", async ({ page }) => {
+  await login(page, user);
+  await page.goto(`/pasarelas/pasarelas/${user.basics.gatewayId}`);
+  const toggle = page.getByRole("button", { name: /^(Desactivar|Activar)$/ });
+  const before = await toggle.textContent();
+
+  const restore = await cutActions(page, `**/pasarelas/pasarelas/${user.basics.gatewayId}`);
+  await toggle.click();
+  await expect(page.getByRole("alert").filter({ hasText: NETWORK_TEXT })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Stripe" })).toBeVisible();
+  await checkScreen(page);
+
+  // No llegó: al verlo, la pasarela sigue como estaba.
+  await restore();
+  await page.getByRole("button", { name: "Ver cómo quedó" }).click();
+  await expect(toggle).toHaveText(before ?? "");
 });
 
 test("si se corta la conexión al crear una pasarela se dice en el formulario, y lo escrito sigue ahí", async ({ page }) => {

@@ -32,6 +32,15 @@ export function ActionError({ failure, align = "start", className }: ActionError
 }
 
 /**
+ * `ActionError` dentro de un diálogo (como hijo suyo, que solo existe mientras está abierto): si se cierra con la
+ * duda de un corte en pantalla, vuelve a pintar la pantalla de detrás (`useRefreshOnClose`).
+ */
+export function DialogActionError(props: ActionErrorProps) {
+  useRefreshOnClose(props.failure);
+  return <ActionError {...props} />;
+}
+
+/**
  * Para el contenido de un diálogo (que solo existe mientras está abierto): si se cierra con la duda de un corte
  * en pantalla, vuelve a pintar la pantalla de detrás, para que enseñe si el cambio se guardó.
  */

@@ -27,13 +27,6 @@ export type ExtraDraft = {
 /** Los problemas de cada campo que devuelve una acción (`fieldErrors`). */
 export type FieldErrors = Record<string, string[] | undefined> | undefined;
 
-/**
- * Lo que dice un formulario cuando la llamada a su acción no llegó o no volvió (sin conexión). La petición pudo
- * llegar y perderse solo la respuesta: por eso no invita a repetir a ciegas.
- */
-export const NETWORK_TEXT =
-  "Se perdió la conexión y no se sabe si se guardó. Revísalo antes de repetirlo: lo escrito sigue aquí.";
-
 /** El primer problema de un campo, para enseñarlo junto a él. */
 export const firstError = (errors: FieldErrors, key: string): string | undefined => errors?.[key]?.[0];
 

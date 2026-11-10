@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { crc32, deflateSync } from "node:zlib";
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { ZONE, todayNY, wallTimeToInstant } from "../src/lib/pasarelas/dates";
+import { ZONE, addDays, todayNY, wallTimeToInstant } from "../src/lib/pasarelas/dates";
 import { signInAal1, unwrap, type Db } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
 import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
@@ -638,6 +638,24 @@ test.describe.serial("detalle del cobro", () => {
     await expect(page.getByText("Mitad de la cuota")).toBeVisible();
     await expect(history(page).getByRole("listitem").first()).toContainText("Editado: monto, nota");
     await expectCleanScreen(page);
+  });
+
+  test("editar un cobro ya depositado no deja poner su fecha después del día del depósito", async ({ page }) => {
+    const id = await charge(`EDITAR-DEP-${randomUUID().slice(0, 8)}`);
+    const today = todayNY(new Date());
+    await serverData().depositTx(client, [id], today);
+    await login(page, user);
+    await page.goto(`/pasarelas/cobros/${id}/editar`);
+    const when = page.getByLabel("Fecha y hora");
+    await expect(when).toHaveAttribute("max", `${today}T23:59`);
+
+    await when.fill(`${addDays(today, 1)}T12:00`);
+    await page.getByRole("button", { name: "Guardar cambios" }).click();
+    await expect(page.getByText("La fecha del depósito no puede ser anterior a la del cobro.")).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/pasarelas/cobros/${id}/editar$`));
+    await expectCleanScreen(page);
+    const [saved] = await serverData().getSnapshots(client, [id]);
+    expect(saved?.occurredOn).toBe(today);
   });
 
   test("vaciar la papelera borra todos sus cobros", async ({ page }) => {

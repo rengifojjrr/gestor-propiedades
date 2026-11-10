@@ -2,26 +2,34 @@
 
 import { Trash2 } from "lucide-react";
 import { useState, useTransition } from "react";
-import { Alert, Button, DateText, Dialog, IconButton, notify } from "@/components/ui";
+import { Button, DateText, Dialog, IconButton, notify } from "@/components/ui";
 import type { ISODate } from "@/lib/pasarelas/types";
 import { deleteHoliday } from "@/server/pasarelas/actions/holidays";
+import { DialogActionError } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
+import { savedWithRefresh } from "../tx/plural";
 
-/** Quitar un feriado, preguntando antes. Si falla, se dice en el diálogo: un aviso pasajero quedaría detrás. */
+/**
+ * Quitar un feriado, preguntando antes. Si falla (o se corta), se dice en el diálogo: un aviso pasajero quedaría
+ * detrás. Al quitarlo dice cuántas fechas estimadas de lo que está por caer cambiaron.
+ */
 export function DeleteHolidayButton({ id, day, name }: { id: string; day: ISODate; name: string }) {
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
 
   const remove = () =>
     startTransition(async () => {
       setError(null);
-      const result = await deleteHoliday({ id });
+      const result = await callAction(() => deleteHoliday({ id }));
       if (!result.ok) {
-        setError(result.error);
+        setError(failureOf(result));
         return;
       }
       setOpen(false);
-      notify.success("Feriado quitado.");
+      const said = savedWithRefresh("Feriado quitado.", result.data.refreshed);
+      notify.success(said.success);
+      if (said.error !== null) notify.error(said.error);
     });
 
   const close = () => setOpen(false);
@@ -60,11 +68,7 @@ export function DeleteHolidayButton({ id, day, name }: { id: string; day: ISODat
           </>
         }
       >
-        {error ? (
-          <Alert tone="danger" announce>
-            {error}
-          </Alert>
-        ) : null}
+        <DialogActionError failure={error} />
       </Dialog>
     </>
   );

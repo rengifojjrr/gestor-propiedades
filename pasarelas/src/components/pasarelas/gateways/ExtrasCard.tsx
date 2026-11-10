@@ -3,7 +3,6 @@
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useId, useOptimistic, useState, useTransition } from "react";
 import {
-  Alert,
   Badge,
   Button,
   Card,
@@ -25,10 +24,11 @@ import {
   EMPTY_EXTRA,
   extraDraft,
   extraInput,
-  NETWORK_TEXT,
   type ExtraDraft,
   type FieldErrors,
 } from "./drafts";
+import { ActionError, DialogActionError } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { ExtraFieldsInputs } from "./ExtraFieldsInputs";
 import { FeeText } from "./FeeText";
 
@@ -51,13 +51,18 @@ function ExtraItem({
 }) {
   const nameId = useId();
   const [defaultOn, setDefaultOn] = useOptimistic(extra.defaultOn);
+  const [error, setError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
 
+  /** Rige al tocarlo. Si falla (o se corta), vuelve a como estaba y se dice debajo. */
   function toggle(next: boolean) {
     startTransition(async () => {
+      setError(null);
       setDefaultOn(next);
-      const result = await saveExtra({ ...extraInput(extra), id: extra.id, gatewayId, defaultOn: next });
-      if (!result.ok) notify.error(result.error);
+      const result = await callAction(() =>
+        saveExtra({ ...extraInput(extra), id: extra.id, gatewayId, defaultOn: next }),
+      );
+      if (!result.ok) setError(failureOf(result));
     });
   }
 
@@ -82,6 +87,7 @@ function ExtraItem({
           disabled={pending}
           onChange={(event) => toggle(event.currentTarget.checked)}
         />
+        <ActionError failure={error} />
         <div className="flex flex-wrap gap-2">
           <Button variant="ghost" onClick={onEdit} aria-label={`Editar ${extra.name}`}>
             <Pencil aria-hidden className="size-5" />
@@ -111,9 +117,9 @@ export function ExtrasCard({
   const titleId = useId();
   const [editing, setEditing] = useState<Editing | null>(null);
   const [errors, setErrors] = useState<FieldErrors>(undefined);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<ActionFailure | null>(null);
   const [removing, setRemoving] = useState<ExtraCfg | null>(null);
-  const [listError, setListError] = useState<string | null>(null);
+  const [listError, setListError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
 
   function open(next: Editing) {
@@ -124,16 +130,12 @@ export function ExtrasCard({
 
   async function save() {
     if (editing === null) return;
-    let result;
-    try {
-      result = await saveExtra({ ...editing.draft, id: editing.id, gatewayId, active: editing.active });
-    } catch {
-      // Sin conexión: se dice en el diálogo, que sigue abierto con lo escrito (si no, la ficha entera caería).
-      setFormError(NETWORK_TEXT);
-      return;
-    }
+    // Si se corta, se dice en el diálogo, que sigue abierto con lo escrito (si no, la ficha entera caería).
+    const result = await callAction(() =>
+      saveExtra({ ...editing.draft, id: editing.id, gatewayId, active: editing.active }),
+    );
     if (!result.ok) {
-      setFormError(result.error);
+      setFormError(failureOf(result));
       setErrors(result.fieldErrors);
       return;
     }
@@ -143,10 +145,10 @@ export function ExtrasCard({
 
   function remove(extra: ExtraCfg) {
     startTransition(async () => {
-      const result = await deleteExtra({ id: extra.id });
+      const result = await callAction(() => deleteExtra({ id: extra.id }));
       setRemoving(null);
       if (!result.ok) {
-        setListError(result.error);
+        setListError(failureOf(result));
         return;
       }
       setListError(null);
@@ -187,11 +189,7 @@ export function ExtrasCard({
               ))}
             </ul>
           )}
-          {listError ? (
-            <Alert tone="danger" announce>
-              {listError}
-            </Alert>
-          ) : null}
+          <ActionError failure={listError} />
         </CardBody>
       </section>
 
@@ -216,11 +214,7 @@ export function ExtrasCard({
                 onChange={(event) => setEditing({ ...editing, active: event.currentTarget.checked })}
               />
             ) : null}
-            {formError ? (
-              <Alert tone="danger" announce>
-                {formError}
-              </Alert>
-            ) : null}
+            <DialogActionError failure={formError} />
             <SubmitButton className="self-end">{editing.id ? "Guardar opción" : "Agregar opción"}</SubmitButton>
           </form>
         ) : null}

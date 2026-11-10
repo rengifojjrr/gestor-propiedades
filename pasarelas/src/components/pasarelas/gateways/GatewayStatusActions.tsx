@@ -2,8 +2,10 @@
 
 import { Power, Trash2 } from "lucide-react";
 import { useState, useTransition } from "react";
-import { Alert, Button, ConfirmDialog, notify } from "@/components/ui";
+import { Button, ConfirmDialog, notify } from "@/components/ui";
 import { deleteGateway, setGatewayActive } from "@/server/pasarelas/actions/gateways";
+import { ActionError } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
 
 /**
  * Activar o desactivar la pasarela, y borrarla. Una pasarela con cobros no se borra (la base no deja): se
@@ -12,13 +14,13 @@ import { deleteGateway, setGatewayActive } from "@/server/pasarelas/actions/gate
 export function GatewayStatusActions({ id, name, active }: { id: string; name: string; active: boolean }) {
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionFailure | null>(null);
 
   function toggle() {
     startTransition(async () => {
-      const result = await setGatewayActive({ id, active: !active });
+      const result = await callAction(() => setGatewayActive({ id, active: !active }));
       if (!result.ok) {
-        setError(result.error);
+        setError(failureOf(result));
         return;
       }
       setError(null);
@@ -29,9 +31,9 @@ export function GatewayStatusActions({ id, name, active }: { id: string; name: s
   function remove() {
     startTransition(async () => {
       // Si sale bien, la acción lleva a la lista: esta ficha ya no existe.
-      const result = await deleteGateway({ id });
+      const result = await callAction(() => deleteGateway({ id }));
       setConfirming(false);
-      if (!result.ok) setError(result.error);
+      if (!result.ok) setError(failureOf(result));
     });
   }
 
@@ -51,11 +53,7 @@ export function GatewayStatusActions({ id, name, active }: { id: string; name: s
         <Trash2 aria-hidden className="size-5" />
         Borrar pasarela
       </Button>
-      {error ? (
-        <Alert tone="danger" announce className="basis-full">
-          {error}
-        </Alert>
-      ) : null}
+      <ActionError failure={error} className="basis-full" />
       <ConfirmDialog
         open={confirming}
         onClose={() => setConfirming(false)}
