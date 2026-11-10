@@ -1,14 +1,35 @@
-import { createElement, type ReactElement } from "react";
+import { createElement, lazy, type ComponentType, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { prerender } from "react-dom/static";
 import { describe, expect, it } from "vitest";
 import { Field, type FieldProps } from "./Field";
 import { Input, MoneyInput, PctInput, Select, Textarea } from "./Inputs";
 
 type ControlProps = { id?: string; "aria-describedby"?: string };
 
+/** Un `Field` con lo que lleve dentro. Los hijos van aparte, como los pasa JSX; por eso el tipo se afirma. */
+function field(children: ReactNode, props: Omit<FieldProps, "label" | "children"> = {}): ReactElement {
+  return createElement(Field, { label: "Referencia", ...props } as FieldProps, children);
+}
+
 /** Un `Field` con su control dentro, ya convertido en HTML. */
-function render(control: ReactElement, field: Omit<FieldProps, "label" | "children"> = {}): string {
-  return renderToStaticMarkup(createElement(Field, { label: "Referencia", ...field, children: control }));
+function render(control: ReactNode, props: Omit<FieldProps, "label" | "children"> = {}): string {
+  return renderToStaticMarkup(field(control, props));
+}
+
+/**
+ * El mismo control, pero todavía sin resolver: así recibe el `Field` (que es de cliente) al hijo que le pasa un
+ * Server Component mientras el servidor arma la página.
+ */
+function unresolved(control: ReactElement): ReactNode {
+  const pending: unknown = lazy(async () => ({ default: control as unknown as ComponentType }));
+  return pending as ReactNode;
+}
+
+/** Lo mismo que `render`, pero esperando a lo que esté sin resolver (como hace el servidor). */
+async function renderWhenReady(element: ReactElement): Promise<string> {
+  const { prelude } = await prerender(element);
+  return new Response(prelude).text();
 }
 
 /** El valor de un atributo de la primera etiqueta `<tag>` (o null si no lo lleva). */
@@ -75,5 +96,25 @@ describe.each(CONTROLS)("Field con %s", (_name, tag, control) => {
   it("un aria-describedby propio se conserva tal cual cuando el Field no tiene ayuda ni error", () => {
     const markup = render(control({ "aria-describedby": "nota-externa" }));
     expect(attr(markup, tag, "aria-describedby")).toBe("nota-externa");
+  });
+});
+
+describe("Field", () => {
+  it("un control que llega sin resolver también manda su id: la etiqueta apunta a él", async () => {
+    const control = createElement(Input, { id: "referencia-del-cobro" });
+    const markup = await renderWhenReady(field(unresolved(control)));
+    expect(attr(markup, "input", "id")).toBe("referencia-del-cobro");
+    expect(attr(markup, "label", "for")).toBe("referencia-del-cobro");
+  });
+
+  it("con más de un hijo no adivina cuál es el control: la etiqueta apunta al id que pone el Field", () => {
+    const markup = render([
+      createElement(Input, { key: "control" }),
+      createElement("p", { key: "nota", id: "nota-al-pie" }, "Sin espacios."),
+    ]);
+    const id = attr(markup, "input", "id");
+    expect(id).not.toBeNull();
+    expect(id).not.toBe("nota-al-pie");
+    expect(attr(markup, "label", "for")).toBe(id);
   });
 });

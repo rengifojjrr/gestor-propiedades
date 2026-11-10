@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, isValidElement, use, useId, type ReactNode } from "react";
+import { Children, createContext, isValidElement, use, useId, type ReactNode } from "react";
 import { cn } from "./cn";
 import { FieldError } from "./FieldError";
 
@@ -29,6 +29,16 @@ export function useFieldControl(own: ControlProps): ControlProps {
   };
 }
 
+/**
+ * El `id` que el control hijo trae por su cuenta, si lo trae. Se mira con `Children.toArray` y no en
+ * `children.props` a secas: el hijo que pasa un Server Component puede llegar aquí todavía sin resolver, y
+ * leerlo directo daría una etiqueta en el servidor y otra en el navegador. Con más de un hijo no se adivina.
+ */
+function ownIdOf(children: ReactNode): string | undefined {
+  const [control, ...others] = Children.toArray(children);
+  return others.length === 0 && isValidElement<ControlProps>(control) ? control.props.id : undefined;
+}
+
 export type FieldProps = {
   /** La etiqueta visible del control. */
   label: ReactNode;
@@ -49,9 +59,8 @@ export type FieldProps = {
 /** Un campo de formulario: etiqueta + control + ayuda + error, enlazados entre sí. */
 export function Field({ label, hint, error, optional, children, className }: FieldProps) {
   const fieldId = useId();
-  // El `id` propio del control se lee de sus props: la etiqueta tiene que apuntar al mismo que él va a llevar.
-  const ownId = isValidElement<ControlProps>(children) ? children.props.id : undefined;
-  const id = ownId ?? fieldId;
+  // La etiqueta tiene que apuntar al mismo `id` que el control va a llevar: el suyo, si trae uno.
+  const id = ownIdOf(children) ?? fieldId;
   const hintId = `${fieldId}-ayuda`;
   const errorId = `${fieldId}-error`;
   const describedBy = [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(" ") || undefined;
