@@ -145,8 +145,13 @@ y se filtra son los seis de siempre, derivados por el motor en este orden: `fall
 abierta) → `reembolsado` (reembolso total) → `depositado` → `en tránsito` → `registrado`; el reembolso parcial se ve
 como una etiqueta adicional.
 
-**«Por caer»** suma el neto de los cobros `registrado` y `en_transito` (un cobro recién registrado también está por
-caer). **«Depositado»** suma el neto de los `depositado`. Los `fallido` y los de la papelera no cuentan en nada.
+**«Por caer»** suma el neto de los cobros que **se ven** como `registrado` o `en tránsito` (un cobro recién
+registrado también está por caer). Uno con la disputa abierta, o reembolsado por completo, no está por caer aunque
+nunca se haya depositado: la pasarela retiene ese dinero o ya lo devolvió. El reembolso parcial sí sigue por caer,
+con su neto ya rebajado. Es **una sola definición** (`isPending` del motor) para la tarjeta, el filtro de la lista,
+los próximos depósitos y lo atrasado, y la misma en la vista `pay_bank_account_totals`. **«Depositado»** suma el
+neto de los `depositado` (ciclo del dinero), tengan o no reembolso o disputa. Los `fallido` y los de la papelera no
+cuentan en nada.
 
 ### 4.2 Lo que la base hace cumplir
 
@@ -276,7 +281,7 @@ bancarios de EE. UU. de cualquier año, y con ella se siembran 2026 y 2027 la pr
 abren el viernes anterior (4 de julio de 2026), y cuando cae en domingo cierran el lunes siguiente. El Resumen avisa
 si falta sembrar el año en curso o el siguiente.
 
-**Atrasado** = fecha estimada pasada, sin depositar, no fallido y con bruto vigente > 0.
+**Atrasado** = por caer (§4.1) y con la fecha estimada ya pasada.
 **Tiempo real** por pasarela y por cuenta destino = promedio y mediana de días de calendario entre la fecha del
 cobro y la del depósito real.
 

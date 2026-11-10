@@ -768,6 +768,57 @@ quita los metadatos; el nombre en Storage es `{uuid}.{ext}` y el original se gua
 - [ ] Implementar. `npm run typecheck`, `npm run lint`, `npm test`, `npm run test:int` y el e2e en verde; en la
       tabla de `npm run build` la página de prueba sale `ƒ (Dynamic)`.
 
+### Task 26: «Por caer» con una sola definición
+
+Al integrar la tarea 9 quedaron tres definiciones distintas de «por caer»: la tarjeta (`isPending`: cualquier cobro
+`registrado` o `en_transito`), la lista de próximos depósitos (además, bruto vigente > 0) y lo atrasado (ídem). Un
+cobro con la disputa abierta entraba en el grupo «marcar depositado» aunque la pasarela retiene ese dinero, y uno
+reembolsado por completo se quedaba «por caer» para siempre con su neto negativo. Queda **una** definición, la del
+spec §4.1 ya corregido: está por caer lo que **se ve** como `registrado` o `en tránsito`.
+
+**Archivos:** modificar `src/lib/pasarelas/status.ts`, `src/lib/pasarelas/stats.ts` y sus pruebas;
+`src/server/pasarelas/queries/transactions.ts` y `queries/config.ts` y sus pruebas;
+`supabase/migrations/20261110120000_las_pasarelas_de_pago.sql` (solo la vista `pay_bank_account_totals`);
+`tests/integration/{totales.test.ts,funciones.test.ts}`.
+
+**Produce:**
+
+```ts
+// status.ts
+export function isPending(t: Pick<LeanTx, 'status' | 'disputeState' | 'refunded' | 'grossOriginal'>): boolean;
+//   = displayStatus(t) es 'registrado' o 'en_transito'
+export function isOverdue(t: Pick<LeanTx, 'status' | 'disputeState' | 'refunded' | 'grossOriginal' | 'estimatedDepositOn'>,
+  today: ISODate): boolean;   // = isPending(t) y fecha estimada anterior a hoy
+```
+
+Reglas:
+- `stats.ts`: `summarize` (tarjeta «por caer») y `upcomingDeposits` usan `isPending` y nada más: se quita la
+  condición aparte del bruto vigente (ya va implícita). Sin ramas muertas: la cobertura sigue en 100 %.
+- `queries/transactions.ts` (`applyStatus`): `por_caer` = `status` en (`registrado`, `en_transito`), disputa no
+  abierta (la columna puede ser nula) y `gross_amount > 0`; `atrasado` = lo mismo y `estimated_deposit_on < today`.
+  El comentario de la función debe decir lo que hace.
+- **Paginación que no se corta en silencio**: en `leanTx`, `listTx` y `readAll` de `queries/config.ts`, si la
+  respuesta llega sin `count` se lanza un error en vez de dar por leídas todas las filas (`count ?? 0` cortaba los
+  totales en la primera página).
+- Vista `pay_bank_account_totals`: `pending_count` y `pending_net` con el mismo filtro (`status in ('registrado',
+  'en_transito') and gross_amount > 0 and dispute_state is distinct from 'abierta'`). La migración se edita en su
+  sitio (todavía no se aplicó a ninguna base remota) y, **sin `db:reset`**, la vista se reemplaza en la base local
+  con `create or replace view` (mismas columnas) para que las pruebas la vean.
+
+- [ ] **Pruebas primero:**
+  - `status.test.ts`: por caer con reembolso parcial → sí; con reembolso total → no; con disputa abierta → no; con
+    disputa ganada → sí; con disputa perdida → no; depositado y fallido → no. Atrasado: los mismos casos con la
+    fecha estimada pasada, hoy y futura, y sin fecha.
+  - `stats.test.ts`: un grupo con un cobro por caer normal, uno con reembolso parcial, uno en disputa abierta y uno
+    reembolsado del todo (los cuatro `registrado`): `pendingNet` y `pendingCount` cuentan solo los dos primeros, y
+    `upcomingDeposits` trae esos mismos dos.
+  - `queries/transactions.test.ts` y `totales.test.ts`: para filas generadas con todos los estados, el filtro
+    `por_caer` devuelve exactamente las que cumplen `isPending`, y `atrasado` las que cumplen `isOverdue`; el total
+    del filtro `por_caer` coincide con `pendingNet` de `summarize`. Una lectura sin `count` lanza.
+  - `funciones.test.ts`: con un cobro por caer (90,30), otro en disputa abierta y otro reembolsado del todo en la
+    misma cuenta, `pay_bank_account_totals` da `pending_count 1` y `pending_net 90.30`.
+- [ ] Implementar. `npm run typecheck`, `npm run lint`, `npm run coverage` (100 %) y `npm run test:int` en verde.
+
 ---
 
 ## Fase 1 · Pantallas
