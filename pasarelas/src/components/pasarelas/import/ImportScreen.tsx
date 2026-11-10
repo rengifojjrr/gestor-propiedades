@@ -33,14 +33,14 @@ import {
   formatConflict,
   IMPORT_BATCH_SIZE,
   mergePreviews,
-  planReview,
   proposeMapping,
+  reviewState,
   type ImportChoices,
-  type MergedPreview,
+  type PreviewAnswer,
   type Proposal,
 } from "./plan";
 import { readCsv, type CsvFile } from "./readCsv";
-import { ReviewCard, type ReviewState } from "./ReviewCard";
+import { ReviewCard } from "./ReviewCard";
 import { SettingsCard, type ImportSettings } from "./SettingsCard";
 
 type Counts = { created: number; duplicates: number; trashed: number };
@@ -88,7 +88,7 @@ type PreviewRequest = {
 };
 
 /** La vista previa de todas las filas, de a un lote (solo lee). */
-async function loadPreview(request: PreviewRequest): Promise<{ preview: MergedPreview } | { error: string }> {
+async function loadPreview(request: PreviewRequest): Promise<PreviewAnswer> {
   try {
     const parts: ImportPreview[] = [];
     for (const rows of chunk(request.rows, IMPORT_BATCH_SIZE)) {
@@ -135,9 +135,9 @@ export function ImportScreen({
   const [alreadyDeposited, setAlreadyDeposited] = useState(false);
   const [includePossible, setIncludePossible] = useState(false);
   const [conflictOk, setConflictOk] = useState(false);
-  const [loaded, setLoaded] = useState<
-    ({ request: PreviewRequest } & ({ preview: MergedPreview } | { error: string })) | null
-  >(null);
+  // La respuesta a la última vista previa pedida, con lo que se pidió y en qué intento (para «Reintentar»).
+  const [loaded, setLoaded] = useState<({ request: PreviewRequest; attempt: number } & PreviewAnswer) | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
@@ -206,7 +206,8 @@ export function ImportScreen({
     [file, mapping, proposal, problems],
   );
 
-  // Lo que ya está registrado y cuándo cae cada cobro: se vuelve a preguntar si cambian las filas o lo elegido.
+  // Lo que ya está registrado y cuándo cae cada cobro: se vuelve a preguntar si cambian las filas o lo elegido, o al
+  // reintentar después de un error.
   const { companyId, gatewayId, channelId, extraIds } = settings;
   const request = useMemo<PreviewRequest | null>(
     () =>
@@ -219,23 +220,19 @@ export function ImportScreen({
     if (request === null) return;
     let current = true;
     void loadPreview(request).then((answer) => {
-      if (current) setLoaded({ request, ...answer });
+      if (current) setLoaded({ request, attempt, ...answer });
     });
     return () => {
       current = false;
     };
-  }, [request]);
+  }, [request, attempt]);
 
-  const answer = loaded !== null && loaded.request === request ? loaded : null;
-  const review = useMemo<ReviewState>(() => {
-    if (answer === null || request === null) return { state: "cargando" };
-    if ("error" in answer) return { state: "error", message: answer.error };
-    return {
-      state: "listo",
-      preview: answer.preview,
-      plan: planReview(request.rows, answer.preview, { includePossible }),
-    };
-  }, [answer, request, includePossible]);
+  // Solo vale la respuesta a lo que se pide ahora y en este intento: al reintentar, vuelve a «buscando».
+  const answer = loaded !== null && loaded.request === request && loaded.attempt === attempt ? loaded : null;
+  const review = useMemo(
+    () => reviewState(request?.rows ?? [], answer, { includePossible }),
+    [answer, request, includePossible],
+  );
   const plan = review.state === "listo" ? review.plan : null;
 
   const referenceNotice =
@@ -290,11 +287,13 @@ export function ImportScreen({
     ? "Importando…"
     : result === null || result.ok.length === 0
       ? "No hay cobros para importar"
-      : plan === null
-        ? "Revisando…"
-        : plan.deposit.creating === 0
-          ? "No hay cobros nuevos para importar"
-          : `Importar ${plural(plan.deposit.creating, "cobro", "cobros")}`;
+      : review.state === "error"
+        ? "No se pudo revisar el archivo"
+        : plan === null
+          ? "Revisando…"
+          : plan.deposit.creating === 0
+            ? "No hay cobros nuevos para importar"
+            : `Importar ${plural(plan.deposit.creating, "cobro", "cobros")}`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -417,6 +416,7 @@ export function ImportScreen({
           onAlreadyDeposited={setAlreadyDeposited}
           includePossible={includePossible}
           onIncludePossible={setIncludePossible}
+          onRetry={() => setAttempt((count) => count + 1)}
           disabled={importing}
         >
           <div className="flex flex-col gap-3 border-t border-rule pt-4">

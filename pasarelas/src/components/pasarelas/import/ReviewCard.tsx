@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import {
   Alert,
+  Button,
   ButtonLink,
   Card,
   CardBody,
@@ -21,7 +22,7 @@ import {
   Tr,
 } from "@/components/ui";
 import type { ImportRow, ImportSkip } from "@/lib/pasarelas/import";
-import { groupSkips, schemeText, type MergedPreview, type ReviewPlan } from "./plan";
+import { groupSkips, schemeText, type ReviewPlan, type ReviewState } from "./plan";
 
 /** Cuántas filas convertidas se enseñan de muestra. */
 const SAMPLE_SIZE = 5;
@@ -39,12 +40,6 @@ function linesText(lines: number[]): string {
 
 const linesOf = (rows: readonly ImportRow[]): number[] => rows.map((row) => row.line);
 
-/** Lo que el servidor dijo del lote: buscando todavía, un error, o la vista previa con lo que se haría. */
-export type ReviewState =
-  | { state: "cargando" }
-  | { state: "error"; message: string }
-  | { state: "listo"; plan: ReviewPlan; preview: MergedPreview };
-
 /**
  * «Así lo entendí»: lo que se importaría, lo que ya está (repetido, en la papelera o registrado a mano con otra
  * referencia), lo que se deja fuera (y por qué) y lo que no se pudo leer, con una muestra de las primeras filas ya
@@ -61,6 +56,7 @@ export function ReviewCard({
   onAlreadyDeposited,
   includePossible,
   onIncludePossible,
+  onRetry,
   disabled,
   children,
 }: {
@@ -74,6 +70,8 @@ export function ReviewCard({
   onAlreadyDeposited: (on: boolean) => void;
   includePossible: boolean;
   onIncludePossible: (on: boolean) => void;
+  /** Vuelve a pedir la vista previa cuando falló. */
+  onRetry: () => void;
   disabled: boolean;
   /** Las demás opciones y el botón para importar. */
   children: ReactNode;
@@ -82,6 +80,8 @@ export function ReviewCard({
   const groups = groupSkips(skipped);
   const ready = review.state === "listo" ? review : null;
   const check = ready?.plan.check;
+  // Sin filas convertibles no hay nada que buscar: cero nuevos y cero repetidos, no «…».
+  const none = review.state === "sin_filas";
 
   return (
     <Card>
@@ -93,26 +93,31 @@ export function ReviewCard({
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <Stat
               label="Nuevos"
-              value={check ? check.fresh.length : "…"}
-              hint={check ? (check.fresh.length === 1 ? "cobro" : "cobros") : "buscando"}
+              value={check ? check.fresh.length : none ? 0 : "…"}
+              hint={check ? (check.fresh.length === 1 ? "cobro" : "cobros") : none ? "cobros" : "buscando"}
             />
             <Stat
               label="Repetidos"
-              value={check ? check.repeated.length + check.trashed.length : "…"}
+              value={check ? check.repeated.length + check.trashed.length : none ? 0 : "…"}
               hint="ya están"
             />
             <Stat label="Omitidos" value={skipped.length} hint="no son cobros" />
             <Stat label="Con error" value={errors.length} hint="no se leen" />
           </div>
 
-          {ok.length > 0 && review.state === "cargando" ? (
+          {review.state === "cargando" ? (
             <p role="status" className="text-sm text-ink-soft">
               Buscando lo que ya está registrado en {gatewayName}…
             </p>
           ) : null}
           {review.state === "error" ? (
             <Alert tone="danger" announce title="No se pudo revisar lo que ya está registrado">
-              {review.message}
+              <div className="flex flex-col items-start gap-2">
+                <p>{review.message}</p>
+                <Button onClick={onRetry} disabled={disabled}>
+                  Reintentar
+                </Button>
+              </div>
             </Alert>
           ) : null}
           {referenceNotice !== null ? (

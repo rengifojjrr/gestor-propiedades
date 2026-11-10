@@ -171,6 +171,34 @@ export function planReview(
   };
 }
 
+/** Lo que respondió el servidor a la vista previa de todas las filas: la vista previa, o por qué falló. */
+export type PreviewAnswer = { preview: MergedPreview } | { error: string };
+
+/**
+ * En qué va «Así lo entendí»: sin filas que buscar (nada que preguntar al servidor), buscando todavía, un error
+ * (que se puede reintentar), o la vista previa con lo que se haría.
+ */
+export type ReviewState =
+  | { state: "sin_filas" }
+  | { state: "cargando" }
+  | { state: "error"; message: string }
+  | { state: "listo"; plan: ReviewPlan; preview: MergedPreview };
+
+/**
+ * El estado de la revisión de unas filas con la respuesta que llegó para ellas (`null`: todavía ninguna). Sin filas
+ * convertibles no se pregunta nada: no se queda «buscando».
+ */
+export function reviewState(
+  rows: readonly ImportRow[],
+  answer: PreviewAnswer | null,
+  options: { includePossible: boolean },
+): ReviewState {
+  if (rows.length === 0) return { state: "sin_filas" };
+  if (answer === null) return { state: "cargando" };
+  if ("error" in answer) return { state: "error", message: answer.error };
+  return { state: "listo", preview: answer.preview, plan: planReview(rows, answer.preview, options) };
+}
+
 /** Qué esquema de reparto se aplicará a lo importado, dicho para la persona. */
 export function schemeText(scheme: ImportScheme, companyName: string): string {
   switch (scheme.kind) {

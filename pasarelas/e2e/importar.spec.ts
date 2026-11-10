@@ -8,13 +8,15 @@ import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
  * entendí» (repetidos, atrasados, esquema), importar con la comisión del archivo y como ya depositados, comprobar en
  * la base lo creado y repetir el archivo: lo repetido y lo de la papelera se dicen antes de importar. Después, un
  * archivo que no se reconoce: se mapea a mano, avisa que el formato es otro que el recordado y, si la red se corta al
- * importar, lo dice. Por último, el informe con source_id frente a un cobro registrado a mano: «posible repetido».
+ * importar, lo dice. Luego, el informe con source_id frente a un cobro registrado a mano: «posible repetido». Por
+ * último, un archivo sin cobros (no se queda «buscando») y una vista previa que falla y se reintenta.
  * Un usuario nuevo por archivo (y por proyecto: celular y escritorio).
  */
 
 const FIXTURE = "tests/fixtures/stripe-saldo.csv";
 const OTHER_FIXTURE = "tests/fixtures/otro.csv";
 const SOURCE_FIXTURE = "tests/fixtures/stripe-saldo-fuente.csv";
+const EMPTY_FIXTURE = "tests/fixtures/stripe-saldo-sin-cobros.csv";
 
 let user: TestUser;
 
@@ -266,4 +268,41 @@ test("el informe con source_id frente a un cobro registrado a mano: «posible re
   expect(references).not.toContain("ch_demo_0001");
   expect(references).toContain(null);
   expect(manual!.inserted).toBe(true);
+});
+
+test("si la revisión falla se puede reintentar; un archivo sin cobros no se queda buscando", async ({ page }) => {
+  await page.goto("/pasarelas/importar");
+  await expect(page.getByRole("heading", { level: 1, name: "Importar CSV" })).toBeVisible();
+
+  // Sin cobros que convertir (un reembolso y un retiro): cero nuevos y cero repetidos, nada «buscando».
+  await page.getByLabel("Archivo CSV").setInputFiles(EMPTY_FIXTURE);
+  const empty = page.getByRole("region", { name: "Así lo entendí" });
+  await expect(empty.getByText("Omitidos", { exact: true }).locator("..")).toContainText("2");
+  await expect(empty.getByText("Nuevos", { exact: true }).locator("..")).toContainText("0");
+  await expect(empty.getByText("Repetidos", { exact: true }).locator("..")).toContainText("0");
+  await expect(empty).not.toContainText("buscando");
+  await expect(empty).not.toContainText("Buscando");
+  await expect(empty.getByRole("button", { name: "No hay cobros para importar" })).toBeDisabled();
+  await expectCleanScreen(page);
+  await page.getByLabel("Archivo CSV").setInputFiles([]);
+
+  // La vista previa no llega (red cortada): lo dice, el botón no dice «Revisando…» y se puede reintentar.
+  const cut = "**/pasarelas/importar";
+  await page.route(cut, (route) => (route.request().method() === "POST" ? route.abort() : route.continue()));
+  await page.getByLabel("Archivo CSV").setInputFiles(FIXTURE);
+  const review = page.getByRole("region", { name: "Así lo entendí" });
+  const failed = review.getByRole("alert").filter({ hasText: "No se pudo revisar lo que ya está registrado" });
+  await expect(failed).toContainText("Se perdió la conexión con el servidor.");
+  await expect(review.getByRole("button", { name: "No se pudo revisar el archivo" })).toBeDisabled();
+  await expect(review.getByText("Revisando…")).toHaveCount(0);
+  await expectCleanScreen(page);
+
+  // Vuelve la red: «Reintentar» pide otra vez la vista previa (los dos cobros ya se importaron en la primera prueba).
+  await page.unroute(cut);
+  await failed.getByRole("button", { name: "Reintentar" }).click();
+  await expect(failed).toBeHidden();
+  await expect(review.getByText("Repetidos", { exact: true }).locator("..")).toContainText("2");
+  await expect(review.getByText("Nuevos", { exact: true }).locator("..")).toContainText("0");
+  await expect(review.getByRole("button", { name: "No hay cobros nuevos para importar" })).toBeDisabled();
+  await expectCleanScreen(page);
 });

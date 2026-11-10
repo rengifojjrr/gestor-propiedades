@@ -12,6 +12,7 @@ import {
   mergePreviews,
   planReview,
   proposeMapping,
+  reviewState,
   schemeText,
 } from "./plan";
 
@@ -221,6 +222,28 @@ describe("planReview", () => {
     expect(plan.send).toEqual(rows);
     expect(plan.heldBack).toBe(0);
     expect(plan.deposit).toEqual({ creating: 3, overdue: 1, dueByToday: 2 });
+  });
+});
+
+describe("reviewState", () => {
+  const rows = [row(2, "ch_1")];
+  const preview = mergePreviews([part({ estimates: [{ line: 2, estimatedDepositOn: "2026-11-12" }] })]);
+
+  it("sin filas convertibles no hay nada que buscar: no se queda «buscando», aunque no haya respuesta", () => {
+    expect(reviewState([], null, { includePossible: false })).toEqual({ state: "sin_filas" });
+    expect(reviewState([], { error: "x" }, { includePossible: false })).toEqual({ state: "sin_filas" });
+  });
+
+  it("con filas: buscando hasta que llega la respuesta, el error tal cual, o el plan", () => {
+    expect(reviewState(rows, null, { includePossible: false })).toEqual({ state: "cargando" });
+    expect(reviewState(rows, { error: "Se perdió la conexión con el servidor." }, { includePossible: false })).toEqual(
+      { state: "error", message: "Se perdió la conexión con el servidor." },
+    );
+    expect(reviewState(rows, { preview }, { includePossible: false })).toEqual({
+      state: "listo",
+      preview,
+      plan: planReview(rows, preview, { includePossible: false }),
+    });
   });
 });
 
