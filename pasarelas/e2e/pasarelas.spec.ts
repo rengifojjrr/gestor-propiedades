@@ -258,3 +258,44 @@ test("si se corta la conexión al guardar los datos de una pasarela se dice en s
   await expect(data.getByLabel("Días al depósito")).toHaveValue("5");
   await checkScreen(page);
 });
+
+test("si se corta la conexión al agregar una tarifa se dice en su formulario, y lo escrito sigue ahí", async ({ page }) => {
+  await login(page, user);
+  await page.goto(`/pasarelas/pasarelas/${user.basics.gatewayId}`);
+  const fees = page.getByRole("region", { name: "Tarifas" });
+  await fees.getByLabel("Comisión", { exact: true }).fill("4,2");
+  await fees.getByLabel("Cuota fija", { exact: true }).fill("0,45");
+  await fees.getByLabel("Vigente desde").fill("2031-03-15");
+  await fees.getByLabel("Nota").fill("Aumento Demo");
+
+  await cutActions(page, `**/pasarelas/pasarelas/${user.basics.gatewayId}`);
+  await fees.getByRole("button", { name: "Agregar tarifa" }).click();
+  await expect(fees.getByRole("alert")).toHaveText(NETWORK_TEXT);
+  await expect(page.getByRole("heading", { level: 1, name: "Stripe" })).toBeVisible();
+  await expect(fees.getByLabel("Comisión", { exact: true })).toHaveValue("4,2");
+  await expect(fees.getByLabel("Cuota fija", { exact: true })).toHaveValue("0,45");
+  await expect(fees.getByLabel("Vigente desde")).toHaveValue("2031-03-15");
+  await expect(fees.getByLabel("Nota")).toHaveValue("Aumento Demo");
+  await checkScreen(page);
+});
+
+test("si se corta la conexión al guardar una opción se dice en su diálogo, y lo escrito sigue ahí", async ({ page }) => {
+  await login(page, user);
+  await page.goto(`/pasarelas/pasarelas/${user.basics.gatewayId}`);
+  await page.getByRole("region", { name: "Opciones" }).getByRole("button", { name: "Agregar opción" }).click();
+  const dialog = page.getByRole("dialog", { name: "Agregar opción" });
+  await dialog.getByLabel("Nombre de la opción").fill("Envío Express Demo");
+  await dialog.getByLabel("Porcentaje").fill("2,25");
+  await dialog.getByLabel("Cuota fija").fill("0,75");
+  await dialog.getByLabel("Se calcula").selectOption("despues_de_comision");
+
+  await cutActions(page, `**/pasarelas/pasarelas/${user.basics.gatewayId}`);
+  await dialog.getByRole("button", { name: "Agregar opción" }).click();
+  await expect(dialog.getByRole("alert")).toHaveText(NETWORK_TEXT);
+  await expect(page.getByRole("heading", { level: 1, name: "Stripe" })).toBeVisible();
+  await expect(dialog.getByLabel("Nombre de la opción")).toHaveValue("Envío Express Demo");
+  await expect(dialog.getByLabel("Porcentaje")).toHaveValue("2,25");
+  await expect(dialog.getByLabel("Cuota fija")).toHaveValue("0,75");
+  await expect(dialog.getByLabel("Se calcula")).toHaveValue("despues_de_comision");
+  await checkScreen(page);
+});

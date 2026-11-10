@@ -22,7 +22,7 @@ import {
 import { formatDate } from "@/lib/pasarelas/dates";
 import type { FeeVersionCfg, ISODate } from "@/lib/pasarelas/types";
 import { addFeeVersion, deleteFeeVersion } from "@/server/pasarelas/actions/gateways";
-import { firstError, type FieldErrors } from "./drafts";
+import { firstError, NETWORK_TEXT, type FieldErrors } from "./drafts";
 import { FeeText } from "./FeeText";
 
 /** La fecha con la que se guarda la primera tarifa: rige «desde el inicio». */
@@ -60,7 +60,14 @@ export function FeeVersionsCard({
   const [pending, startTransition] = useTransition();
 
   async function add() {
-    const result = await addFeeVersion({ gatewayId, pct, fixed, effectiveFrom: from, note });
+    let result;
+    try {
+      result = await addFeeVersion({ gatewayId, pct, fixed, effectiveFrom: from, note });
+    } catch {
+      // Sin conexión: se dice aquí, sin perder lo escrito (si no, la ficha entera pasaría a su error).
+      setError(NETWORK_TEXT);
+      return;
+    }
     if (!result.ok) {
       setError(result.error);
       setErrors(result.fieldErrors);

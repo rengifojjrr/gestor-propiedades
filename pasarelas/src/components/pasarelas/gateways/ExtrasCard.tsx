@@ -20,7 +20,15 @@ import {
 import type { DayType, ExtraCfg } from "@/lib/pasarelas/types";
 import { deleteExtra, saveExtra } from "@/server/pasarelas/actions/gateways";
 import { payoutText } from "./days";
-import { BASE_LABEL, EMPTY_EXTRA, extraDraft, extraInput, type ExtraDraft, type FieldErrors } from "./drafts";
+import {
+  BASE_LABEL,
+  EMPTY_EXTRA,
+  extraDraft,
+  extraInput,
+  NETWORK_TEXT,
+  type ExtraDraft,
+  type FieldErrors,
+} from "./drafts";
 import { ExtraFieldsInputs } from "./ExtraFieldsInputs";
 import { FeeText } from "./FeeText";
 
@@ -116,7 +124,14 @@ export function ExtrasCard({
 
   async function save() {
     if (editing === null) return;
-    const result = await saveExtra({ ...editing.draft, id: editing.id, gatewayId, active: editing.active });
+    let result;
+    try {
+      result = await saveExtra({ ...editing.draft, id: editing.id, gatewayId, active: editing.active });
+    } catch {
+      // Sin conexión: se dice en el diálogo, que sigue abierto con lo escrito (si no, la ficha entera caería).
+      setFormError(NETWORK_TEXT);
+      return;
+    }
     if (!result.ok) {
       setFormError(result.error);
       setErrors(result.fieldErrors);
