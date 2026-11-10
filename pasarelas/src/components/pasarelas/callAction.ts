@@ -29,12 +29,7 @@ export async function callAction<T>(
   action: () => Promise<ActionResult<T>>,
   unsure: string = UNSURE_TEXT,
 ): Promise<CallResult<T>> {
-  try {
-    return await action();
-  } catch (error) {
-    unstable_rethrow(error);
-    return { ok: false, error: unsure, unsure: true };
-  }
+  return callActionOr(action, (): UnsureResult => ({ ok: false, error: unsure, unsure: true }));
 }
 
 /** ¿Es la duda de un corte (no se sabe si se guardó)? */

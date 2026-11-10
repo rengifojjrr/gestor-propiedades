@@ -523,6 +523,7 @@ test.describe("cortes de red", () => {
       await page.getByRole("button", { name: "Verificar y activar" }).click();
       await expect(page.getByRole("alert").filter({ hasText: UNSURE_TEXT })).toBeVisible();
       await expect(page.getByRole("listitem").filter({ hasText: "Autenticador" })).toHaveCount(0);
+      await expectNoSeriousAxe(page);
 
       await reconnect();
       await page.getByRole("button", { name: close, exact: true }).click();
