@@ -231,6 +231,7 @@ export type TxSnapshot = LeanTx & {
 
 export type EventKind =
   | 'creado' | 'importado' | 'editado' | 'reembolso' | 'disputa_abierta' | 'disputa_ganada' | 'disputa_perdida'
+  | 'disputa_anulada'
   | 'recalculado' | 'en_transito' | 'depositado' | 'deposito_revertido' | 'fallido' | 'reabierto'
   | 'fecha_estimada' | 'a_papelera' | 'restaurado' | 'comprobante_agregado' | 'comprobante_quitado';
 
