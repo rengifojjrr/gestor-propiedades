@@ -2,16 +2,17 @@
 
 import { ChevronDown, LoaderCircle, RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ReceiptPicker } from "@/components/pasarelas/receipts/ReceiptPicker";
 import { checkReceiptFile } from "@/components/pasarelas/receipts/check";
 import { uploadReceipt } from "@/components/pasarelas/receipts/upload";
-import { Alert, Button, Field, Input, MoneyInput, PageHeader, Select, Textarea, notify } from "@/components/ui";
+import { Alert, Button, Field, Input, Money, MoneyInput, PageHeader, Select, Textarea, notify } from "@/components/ui";
 import { notifyAction } from "@/components/ui/notify";
 import { instantToLocalInput, localInputToInstant } from "@/lib/pasarelas/dates";
+import { parseMoney } from "@/lib/pasarelas/money";
 import { defaultExtraIds } from "@/lib/pasarelas/rules";
 import { LIFECYCLE_LABEL } from "@/lib/pasarelas/status";
-import type { PayConfig } from "@/lib/pasarelas/types";
+import type { Currency, Money as MoneyText, PayConfig } from "@/lib/pasarelas/types";
 import { createTransaction } from "@/server/pasarelas/actions/transactions";
 import { ExtrasToggles } from "./ExtrasToggles";
 import { LivePreview } from "./LivePreview";
@@ -49,8 +50,19 @@ const OFFLINE_TEXT = "No se pudo guardar el cobro. Revisa tu conexión e intént
 
 type FieldErrors = Record<string, string | undefined>;
 
-/** Un comprobante que no se pudo subir a un cobro que sí quedó guardado. */
-type PendingReceipt = { file: File; transactionId: string; error: string };
+/**
+ * Un comprobante que no se pudo subir a un cobro que sí quedó guardado. Lleva lo justo para que la persona sepa de
+ * qué cobro es (monto y referencia), porque puede haber varios pendientes mientras sigue registrando.
+ */
+type PendingReceipt = {
+  file: File;
+  transactionId: string;
+  error: string;
+  gross: MoneyText | null;
+  currency: Currency;
+  reference: string;
+  retrying: boolean;
+};
 
 /**
  * «Registrar cobro» en un solo paso, en el orden del spec: empresa → canal → pasarela (con sus opciones) → monto y
@@ -107,8 +119,18 @@ export function RegisterForm({ cfg, initialId, now, last }: RegisterFormProps) {
   const savingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const [pendingReceipt, setPendingReceipt] = useState<PendingReceipt | null>(null);
-  const [retrying, setRetrying] = useState(false);
+  // Uno por cobro: guardar otro cobro no borra ni reemplaza el reintento de uno anterior.
+  const [pendingReceipts, setPendingReceipts] = useState<PendingReceipt[]>([]);
+  // El último cobro cuyo comprobante falló: su aviso se trae a la vista (en el celular «Guardar» queda al pie).
+  const [lastFailedId, setLastFailedId] = useState<string | null>(null);
+  const pendingRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (lastFailedId === null) return;
+    pendingRef.current
+      ?.querySelector(`[data-transaction-id="${lastFailedId}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [lastFailedId]);
 
   const channels = cfg.channels.filter((channel) => channel.active && channel.companyId === companyId);
   const gateway = gateways.find((candidate) => candidate.id === gatewayId);
@@ -234,7 +256,19 @@ export function RegisterForm({ cfg, initialId, now, last }: RegisterFormProps) {
       const transactionId = result.data.id;
       if (file !== null) {
         const upload = await uploadReceipt(file, transactionId);
-        setPendingReceipt(upload.ok ? null : { file, transactionId, error: upload.error });
+        if (!upload.ok) {
+          const pending: PendingReceipt = {
+            file,
+            transactionId,
+            error: upload.error,
+            gross: parseMoney(amount),
+            currency,
+            reference: reference.trim(),
+            retrying: false,
+          };
+          setPendingReceipts((list) => [...list.filter((item) => item.transactionId !== transactionId), pending]);
+          setLastFailedId(transactionId);
+        }
       }
       notifyAction("Cobro guardado.", {
         label: "Ver cobro",
@@ -249,17 +283,23 @@ export function RegisterForm({ cfg, initialId, now, last }: RegisterFormProps) {
     }
   }
 
+  /** Cambia solo el pendiente de ese cobro; los demás quedan como estaban. */
+  function updatePending(transactionId: string, change: Partial<PendingReceipt>) {
+    setPendingReceipts((list) =>
+      list.map((item) => (item.transactionId === transactionId ? { ...item, ...change } : item)),
+    );
+  }
+
   /** Vuelve a intentar solo la subida del comprobante, al mismo cobro. */
-  async function retryReceipt() {
-    if (pendingReceipt === null) return;
-    setRetrying(true);
-    const upload = await uploadReceipt(pendingReceipt.file, pendingReceipt.transactionId);
-    setRetrying(false);
+  async function retryReceipt(pending: PendingReceipt) {
+    if (pending.retrying) return;
+    updatePending(pending.transactionId, { retrying: true });
+    const upload = await uploadReceipt(pending.file, pending.transactionId);
     if (upload.ok) {
-      setPendingReceipt(null);
+      setPendingReceipts((list) => list.filter((item) => item.transactionId !== pending.transactionId));
       notify.success("Comprobante agregado.");
     } else {
-      setPendingReceipt({ ...pendingReceipt, error: upload.error });
+      updatePending(pending.transactionId, { retrying: false, error: upload.error });
     }
   }
 
@@ -277,18 +317,6 @@ export function RegisterForm({ cfg, initialId, now, last }: RegisterFormProps) {
           ) : null
         }
       />
-
-      {pendingReceipt !== null ? (
-        <Alert tone="danger" announce title="El cobro quedó guardado, pero el comprobante no se subió." className="mb-6">
-          <div className="flex flex-col items-start gap-2">
-            <p>{pendingReceipt.error}</p>
-            <Button disabled={retrying} aria-busy={retrying || undefined} onClick={() => void retryReceipt()}>
-              {retrying ? <LoaderCircle aria-hidden className="size-5 animate-spin" /> : null}
-              Reintentar comprobante
-            </Button>
-          </div>
-        </Alert>
-      ) : null}
 
       <form
         noValidate
@@ -465,6 +493,45 @@ export function RegisterForm({ cfg, initialId, now, last }: RegisterFormProps) {
               manualEstimate,
             }}
           />
+          {/* Junto a «Guardar»: en el celular es lo que está a la vista al terminar de guardar. */}
+          {pendingReceipts.length > 0 ? (
+            <div ref={pendingRef} className="flex flex-col gap-3">
+              {pendingReceipts.map((pending) => (
+                <div key={pending.transactionId} data-transaction-id={pending.transactionId} className="scroll-mb-4">
+                  <Alert tone="danger" announce title="El cobro quedó guardado, pero el comprobante no se subió.">
+                    <div className="flex flex-col items-start gap-2">
+                      <p>
+                        Cobro
+                        {pending.gross === null ? null : (
+                          <>
+                            {" de "}
+                            <Money value={pending.gross} currency={pending.currency} />
+                          </>
+                        )}
+                        {pending.reference === "" ? null : (
+                          <>
+                            {", referencia "}
+                            <span className="break-all">{pending.reference}</span>
+                          </>
+                        )}
+                        {". Archivo: "}
+                        <span className="break-all">{pending.file.name}</span>
+                      </p>
+                      <p>{pending.error}</p>
+                      <Button
+                        disabled={pending.retrying}
+                        aria-busy={pending.retrying || undefined}
+                        onClick={() => void retryReceipt(pending)}
+                      >
+                        {pending.retrying ? <LoaderCircle aria-hidden className="size-5 animate-spin" /> : null}
+                        Reintentar comprobante
+                      </Button>
+                    </div>
+                  </Alert>
+                </div>
+              ))}
+            </div>
+          ) : null}
           {error !== null ? (
             <Alert tone="danger" announce>
               {error}
