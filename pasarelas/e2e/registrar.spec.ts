@@ -97,6 +97,8 @@ test.describe.serial("registrar cobro", () => {
    * el navegador avisa por consola «Failed to load resource», y ese aviso es lo que la prueba provoca.
    */
   let expectedLoadFailures: string[] = [];
+  /** El texto de un error que la prueba en curso provoca a propósito: lo que se registre con él es lo esperado. */
+  let provokedError: string | null = null;
 
   test.beforeAll(async () => {
     owner = await newUser();
@@ -106,11 +108,13 @@ test.describe.serial("registrar cobro", () => {
   test.beforeEach(({ page }) => {
     pageErrors = [];
     expectedLoadFailures = [];
+    provokedError = null;
     page.on("pageerror", (error) => pageErrors.push(error.message));
     page.on("console", (message) => {
       if (message.type() !== "error") return;
       const text = message.text();
       const url = message.location().url;
+      if (provokedError !== null && text.includes(provokedError)) return;
       const failedLoad = text.startsWith("Failed to load resource");
       const expected =
         failedLoad &&
@@ -451,6 +455,29 @@ test.describe.serial("registrar cobro", () => {
     const after = await savedWith(ownerDb, reference);
     expect(after).toHaveLength(1);
     expect(after[0]).toMatchObject({ id: saved?.id, receipts_count: 1 });
+  });
+
+  test("si el formulario no se puede mostrar, dice qué hacer: reintentar o mirar en Cobros", async ({ page }) => {
+    // El formulario no puede crear el id del cobro en el navegador: falla al montarse y se ve `error.tsx`.
+    const failure = "prueba: el formulario no se puede montar";
+    provokedError = failure;
+    await login(page, owner);
+    await page.addInitScript((message) => {
+      crypto.randomUUID = () => {
+        throw new Error(message);
+      };
+    }, failure);
+    await page.goto("/pasarelas/registrar");
+
+    const main = page.getByRole("main");
+    await expect(main.getByText("No se pudo mostrar el formulario.")).toBeVisible();
+    await expect(main).toContainText("Vuelve a intentarlo en un momento.");
+    await expect(main).toContainText("Si estabas guardando un cobro y llegó a guardarse, aparecerá en Cobros");
+    // Es un formulario de alta: no hay «datos guardados» que tranquilizar.
+    await expect(main).not.toContainText("Tus datos están guardados");
+    await expect(main.getByRole("button", { name: "Reintentar" })).toBeVisible();
+    await expect(main.getByRole("link", { name: "Ver Cobros" })).toHaveAttribute("href", "/pasarelas/cobros");
+    await expectCleanScreen(page);
   });
 
   test("si falta configuración, la vista previa dice qué falta y a dónde ir a arreglarlo", async ({ page }) => {

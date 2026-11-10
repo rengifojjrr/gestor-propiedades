@@ -1,9 +1,12 @@
 "use client"; // los límites de error son componentes de cliente
 
 import { useEffect } from "react";
-import { Alert, Button, PageHeader } from "@/components/ui";
+import { Alert, Button, ButtonLink, PageHeader } from "@/components/ui";
 
-/** Si «Registrar cobro» no pudo cargar: lo dice y deja reintentar. Nada se guardó a medias. */
+/**
+ * Si «Registrar cobro» falló al mostrarse: lo dice, deja reintentar y, como pudo fallar justo al guardar, dice dónde
+ * mirar si el cobro llegó a guardarse (Cobros), para no registrarlo dos veces.
+ */
 export default function RegistrarError({ error, retry }: { error: unknown; retry: () => void }) {
   useEffect(() => {
     console.error(error);
@@ -13,12 +16,16 @@ export default function RegistrarError({ error, retry }: { error: unknown; retry
     <>
       <PageHeader title="Registrar cobro" />
       <div className="flex flex-col items-start gap-4">
-        <Alert tone="danger" title="No se pudo cargar el formulario.">
-          Tus datos están guardados. Vuelve a intentarlo en un momento.
+        <Alert tone="danger" title="No se pudo mostrar el formulario.">
+          Vuelve a intentarlo en un momento. Si estabas guardando un cobro y llegó a guardarse, aparecerá en Cobros:
+          míralo ahí antes de registrarlo otra vez.
         </Alert>
-        <Button variant="primary" onClick={() => retry()}>
-          Reintentar
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="primary" onClick={() => retry()}>
+            Reintentar
+          </Button>
+          <ButtonLink href="/pasarelas/cobros">Ver Cobros</ButtonLink>
+        </div>
       </div>
     </>
   );
