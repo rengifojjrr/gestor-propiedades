@@ -1,5 +1,5 @@
 import { ReceiptText } from "lucide-react";
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
 import {
   ButtonLink,
   Card,
@@ -36,6 +36,35 @@ export type CompanySummaryProps = {
 /** Un porcentaje que puede no existir (una parte de un total en cero). */
 function OptionalPercent({ value }: { value: string | null }) {
   return value === null ? <span className="text-ink-soft">—</span> : <Percent value={value} />;
+}
+
+/** Una fila de una tabla, para pintarla como tarjeta: su nombre y sus cifras con la etiqueta de cada una. */
+type FigureRow = { key: string; title: string; figures: { label: string; value: ReactNode }[] };
+
+/**
+ * En el celular, las filas de una tabla como tarjetas: con tres columnas de montos, la tabla no cabe en 390 px y
+ * las cifras de la derecha quedarían fuera de la vista. La zona lleva el mismo nombre que la tabla.
+ */
+function FigureCards({ label, rows }: { label: string; rows: FigureRow[] }) {
+  return (
+    <section aria-label={label} className="md:hidden">
+      <ul className="flex flex-col gap-2">
+        {rows.map((row) => (
+          <li key={row.key} className="flex flex-col gap-1 rounded-control bg-sunken p-3">
+            <p className="font-semibold">{row.title}</p>
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1">
+              {row.figures.map((figure) => (
+                <div key={figure.label} className="contents">
+                  <dt className="text-ink-soft">{figure.label}</dt>
+                  <dd className="cifra text-right">{figure.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 /** Lo de UNA moneda: la frase de lo facturado, las cifras del período y sus tablas por mes y por pasarela. */
@@ -83,61 +112,93 @@ function CurrencyBlock({
           </div>
           <div className="flex flex-col gap-2">
             <h3 className="font-semibold">Por mes{suffix}</h3>
-            <Table label={`Por mes${suffix}`}>
-              <THead>
-                <Tr>
-                  <Th>Mes</Th>
-                  <Th numeric>Bruto</Th>
-                  <Th numeric>Comisiones</Th>
-                  <Th numeric>Neto</Th>
-                </Tr>
-              </THead>
-              <TBody>
-                {summary.byMonth.map((month) => (
-                  <Tr key={month.month}>
-                    <Th scope="row" className="whitespace-nowrap">{monthLabel(month.month)}</Th>
-                    <Td numeric>
-                      <Money value={month.gross} currency={currency} />
-                    </Td>
-                    <Td numeric>
-                      <Money value={month.fees} currency={currency} />
-                    </Td>
-                    <Td numeric>
-                      <Money value={month.net} currency={currency} />
-                    </Td>
+            <FigureCards
+              label={`Por mes${suffix}`}
+              rows={summary.byMonth.map((month) => ({
+                key: month.month,
+                title: monthLabel(month.month),
+                figures: [
+                  { label: "Bruto", value: <Money value={month.gross} currency={currency} /> },
+                  { label: "Comisiones", value: <Money value={month.fees} currency={currency} /> },
+                  { label: "Neto", value: <Money value={month.net} currency={currency} /> },
+                ],
+              }))}
+            />
+            <div className="hidden md:block">
+              <Table label={`Por mes${suffix}`}>
+                <THead>
+                  <Tr>
+                    <Th>Mes</Th>
+                    <Th numeric>Bruto</Th>
+                    <Th numeric>Comisiones</Th>
+                    <Th numeric>Neto</Th>
                   </Tr>
-                ))}
-              </TBody>
-            </Table>
+                </THead>
+                <TBody>
+                  {summary.byMonth.map((month) => (
+                    <Tr key={month.month}>
+                      <Th scope="row" className="whitespace-nowrap">
+                        {monthLabel(month.month)}
+                      </Th>
+                      <Td numeric>
+                        <Money value={month.gross} currency={currency} />
+                      </Td>
+                      <Td numeric>
+                        <Money value={month.fees} currency={currency} />
+                      </Td>
+                      <Td numeric>
+                        <Money value={month.net} currency={currency} />
+                      </Td>
+                    </Tr>
+                  ))}
+                </TBody>
+              </Table>
+            </div>
           </div>
           <div className="flex flex-col gap-2">
             <h3 className="font-semibold">Por pasarela{suffix}</h3>
-            <Table label={`Por pasarela${suffix}`}>
-              <THead>
-                <Tr>
-                  <Th>Pasarela</Th>
-                  <Th numeric>Bruto</Th>
-                  <Th numeric>Parte</Th>
-                  <Th numeric>Costo efectivo</Th>
-                </Tr>
-              </THead>
-              <TBody>
-                {summary.byGateway.map((gateway) => (
-                  <Tr key={gateway.gatewayId}>
-                    <Th scope="row" className="whitespace-nowrap">{gatewayNames.get(gateway.gatewayId) ?? "Pasarela"}</Th>
-                    <Td numeric>
-                      <Money value={gateway.gross} currency={currency} />
-                    </Td>
-                    <Td numeric>
-                      <OptionalPercent value={gateway.sharePct} />
-                    </Td>
-                    <Td numeric>
-                      <OptionalPercent value={gateway.effectiveCostPct} />
-                    </Td>
+            <FigureCards
+              label={`Por pasarela${suffix}`}
+              rows={summary.byGateway.map((gateway) => ({
+                key: gateway.gatewayId,
+                title: gatewayNames.get(gateway.gatewayId) ?? "Pasarela",
+                figures: [
+                  { label: "Bruto", value: <Money value={gateway.gross} currency={currency} /> },
+                  { label: "Parte", value: <OptionalPercent value={gateway.sharePct} /> },
+                  { label: "Costo efectivo", value: <OptionalPercent value={gateway.effectiveCostPct} /> },
+                ],
+              }))}
+            />
+            <div className="hidden md:block">
+              <Table label={`Por pasarela${suffix}`}>
+                <THead>
+                  <Tr>
+                    <Th>Pasarela</Th>
+                    <Th numeric>Bruto</Th>
+                    <Th numeric>Parte</Th>
+                    <Th numeric>Costo efectivo</Th>
                   </Tr>
-                ))}
-              </TBody>
-            </Table>
+                </THead>
+                <TBody>
+                  {summary.byGateway.map((gateway) => (
+                    <Tr key={gateway.gatewayId}>
+                      <Th scope="row" className="whitespace-nowrap">
+                        {gatewayNames.get(gateway.gatewayId) ?? "Pasarela"}
+                      </Th>
+                      <Td numeric>
+                        <Money value={gateway.gross} currency={currency} />
+                      </Td>
+                      <Td numeric>
+                        <OptionalPercent value={gateway.sharePct} />
+                      </Td>
+                      <Td numeric>
+                        <OptionalPercent value={gateway.effectiveCostPct} />
+                      </Td>
+                    </Tr>
+                  ))}
+                </TBody>
+              </Table>
+            </div>
           </div>
         </>
       )}

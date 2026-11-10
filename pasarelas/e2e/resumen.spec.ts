@@ -178,8 +178,10 @@ test("cuánto facturó cada empresa, sus comisiones, qué cae y en qué cuenta, 
   await expect(depositGroup(page, paypalOn, "Cuenta de ahorro (…7305)")).toContainText("$47,76");
 
   // Cuánto se le debe a cada grupo: asignado y liquidado en el período, saldo de toda la historia.
-  const splits = page.getByRole("table", { name: "Repartos por beneficiario" });
-  const row = (name: string) => splits.getByRole("row", { name: new RegExp(name) });
+  // En el celular, una tarjeta por beneficiario (la tabla no cabe); desde 768 px, la tabla.
+  const phone = (page.viewportSize()?.width ?? 0) < 768;
+  const splits = page.getByRole(phone ? "list" : "table", { name: "Repartos por beneficiario" });
+  const row = (name: string) => splits.getByRole(phone ? "listitem" : "row").filter({ hasText: name });
   await expect(row("Grupo A")).toContainText("$145,35");
   await expect(row("Grupo A")).toContainText("$40,00");
   await expect(row("Grupo A")).toContainText("$105,35");
