@@ -714,10 +714,13 @@ Los hallazgos menores que dejó la revisión de la tarea 7 y que conviene cerrar
 
 Lo que une la capa de datos (tarea 9) con la sesión (tarea 8) y con el navegador. Va después de las dos.
 
-**Archivos:** crear `src/server/pasarelas/action.ts`, `src/server/pasarelas/actions/{transactions.ts,receipts.ts}`,
+**Archivos:** crear `src/server/pasarelas/action.ts`, `src/server/pasarelas/queries/session-config.ts`,
+`src/server/pasarelas/actions/{transactions.ts,receipts.ts}`,
 `src/components/pasarelas/receipts/{ReceiptPicker.tsx,upload.ts,downscale.ts,check.ts}` y `check.test.ts`;
-modificar `src/server/pasarelas/queries/config.ts` (añadir `getPayConfig`); `e2e/acciones.spec.ts` y una página de
-prueba `src/app/(dashboard)/kit/acciones/page.tsx` (solo con `PASARELAS_KIT=1`).
+`e2e/acciones.spec.ts` y una página de prueba `src/app/(dashboard)/kit/acciones/page.tsx` (solo con
+`PASARELAS_KIT=1`); modificar `src/server/pasarelas/errors.ts` y `src/server/pasarelas/ops/receipts.ts` (y sus
+pruebas) como dicen las «Reglas». `queries/config.ts` **no se toca**: tiene que seguir siendo importable fuera de
+Next (lo usan la semilla y las pruebas de integración).
 
 **Consume:** tareas 7, 8 y 9. **Produce:**
 
@@ -726,7 +729,7 @@ prueba `src/app/(dashboard)/kit/acciones/page.tsx` (solo con `PASARELAS_KIT=1`).
 export async function runAction<S extends z.ZodType, T>(schema: S, input: unknown,
   fn: (ctx: { supabase: SupabaseClient<Database>; session: Session }, data: z.output<S>) => Promise<T>,
   opts?: { revalidate?: string[] }): Promise<ActionResult<T>>;
-// queries/config.ts
+// queries/session-config.ts (server-only; depende de la sesión de Next)
 export const getPayConfig: () => Promise<PayConfig>;      // una vez por petición (cache de React), con la sesión
 // actions/transactions.ts ('use server') — cada una recibe `input: unknown`, valida con Zod y usa runAction
 //   createTransaction → ActionResult<{ id: string }>      editTransaction({ id, ...cambios })
@@ -758,13 +761,26 @@ contenido) y `uploadToFolder` rechaza un archivo cuyo contenido no coincide con 
 recodifican siempre en el navegador (máx. 1600 px; WebP y, si el navegador no lo codifica, JPEG), lo que además les
 quita los metadatos; el nombre en Storage es `{uuid}.{ext}` y el original se guarda aparte.
 
+Más reglas, que salen de la revisión de la tarea 9:
+- `getPayConfig` exige la sesión, carga con `loadPayConfig` y, si el usuario todavía no tiene ningún feriado,
+  llama a `ensureHolidays` y vuelve a cargar (sin una consulta extra en el caso normal).
+- `errorMessage`: un `ZodError` **lanzado** es un fallo interno (un desglose guardado que no se deja leer, una
+  respuesta de la base con otra forma) y da el mensaje genérico, sin enseñar el texto de Zod. La entrada de la
+  persona nunca llega ahí: `runAction` la valida con `safeParse` y devuelve los errores por campo.
+- `registerReceipt` guarda el tipo y el tamaño **que dice Storage** (los de su listado), no los que declara el
+  navegador; si no coinciden con un tipo permitido o pasan de 10 MB, borra el archivo y rechaza.
+- `registerReceipt` y `removeReceipt` dejan en el historial del cobro los eventos `comprobante_agregado` y
+  `comprobante_quitado` (inserción directa en `pay_transaction_events`, que es de solo añadir).
+
 - [ ] **Pruebas primero:** `check.test.ts` (tipos y tamaños permitidos y rechazados; cabeceras reales de JPEG, PNG,
       WebP y PDF; un `.txt` renombrado a `.pdf` → rechazado). `e2e/acciones.spec.ts` (390×844) sobre la página de
       prueba: un botón crea el cobro E1 con `createTransaction` y la página muestra `9,70`, `90,30` y `45,15`;
       pulsarlo dos veces seguidas con el mismo `id` deja un solo cobro; se adjunta un PNG generado en memoria y la
       página lo muestra por su URL firmada; un archivo de 11 MB y un `.txt` se rechazan antes de subir; otro usuario
       no puede abrir esa URL firmada pasado el minuto ni registrar un comprobante en un cobro ajeno; una acción
-      llamada sin sesión no devuelve datos.
+      llamada sin sesión no devuelve datos. En integración (`cobros.test.ts` o un archivo nuevo): el tipo y el
+      tamaño guardados son los de Storage aunque se declaren otros, y agregar y quitar un comprobante dejan sus
+      dos eventos en el historial.
 - [ ] Implementar. `npm run typecheck`, `npm run lint`, `npm test`, `npm run test:int` y el e2e en verde; en la
       tabla de `npm run build` la página de prueba sale `ƒ (Dynamic)`.
 
