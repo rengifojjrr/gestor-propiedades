@@ -29,7 +29,15 @@ const MIME_OF_EXTENSION: Record<string, ReceiptMime> = {
   pdf: "application/pdf",
 };
 
-const TYPE_TEXT = "Ese tipo de archivo no se admite: solo JPG, PNG, WebP o PDF.";
+/** Un problema con el archivo de un comprobante: su mensaje ya está escrito para la persona. */
+export class ReceiptFileError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReceiptFileError";
+  }
+}
+
+const TYPE_TEXT ="Ese tipo de archivo no se admite: solo JPG, PNG, WebP o PDF.";
 const SIZE_TEXT = "El archivo pesa más de 10 MB.";
 const EMPTY_TEXT = "El archivo está vacío.";
 const CONTENT_TEXT = "El contenido del archivo no es un JPG, PNG, WebP o PDF: elige otro.";
