@@ -16,7 +16,7 @@ import {
   setGatewayActive as setGatewayActiveOp,
   updateGateway as updateGatewayOp,
 } from "../ops/gateways";
-import { refreshEstimatesTx } from "../ops/transactions";
+import { refreshEstimatesAfterTx } from "../ops/transactions";
 import type { ActionResult } from "../result";
 import { zDate, zId, zMoney, zOptionalText, zPct, zText } from "../zod";
 
@@ -88,13 +88,13 @@ export async function createGateway(input: unknown): Promise<ActionResult<{ id: 
 /**
  * Guarda los datos de la pasarela. Si cambian sus días al depósito o su tipo de días, la fecha estimada
  * automática de lo que está por caer por esa pasarela se vuelve a calcular: `refreshed` dice cuántas cambiaron
- * (con los mismos días no cambia ninguna).
+ * (con los mismos días no cambia ninguna; `null` si no se pudieron recalcular: la pasarela quedó guardada).
  */
-export async function updateGateway(input: unknown): Promise<ActionResult<{ refreshed: number }>> {
+export async function updateGateway(input: unknown): Promise<ActionResult<{ refreshed: number | null }>> {
   const schema = zGatewayFields.extend({ id: zId });
   return runAction(schema, input, async ({ supabase }, { id, ...fields }) => {
     await updateGatewayOp(supabase, id, fields);
-    return { refreshed: await refreshEstimatesTx(supabase, { gatewayId: id }) };
+    return { refreshed: await refreshEstimatesAfterTx(supabase, { gatewayId: id }) };
   });
 }
 

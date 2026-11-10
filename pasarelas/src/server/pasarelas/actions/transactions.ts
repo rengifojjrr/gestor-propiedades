@@ -7,7 +7,7 @@ import { runAction } from "../action";
 import {
   applyRecalcTx,
   createTx,
-  depositTx,
+  depositTxWithSkips,
   disputeTx,
   editTx,
   failTx,
@@ -22,6 +22,7 @@ import {
   transitTx,
   trashTx,
 } from "../ops/transactions";
+import type { DepositOutcome } from "../ops/transactions";
 import type { ActionResult } from "../result";
 import { zCurrency, zDate, zId, zMoney, zOptionalText, zPositiveMoney, zReference } from "../zod";
 
@@ -29,6 +30,9 @@ import { zCurrency, zDate, zId, zMoney, zOptionalText, zPositiveMoney, zReferenc
  * Las Server Actions de los cobros: delgadas. Cada una recibe `input: unknown` (un POST público), y `runAction`
  * exige la sesión, lo valida con Zod, llama a la operación de `ops/transactions.ts` y revalida las pantallas.
  * El `id` de un cobro nuevo lo pone el cliente, para que el mismo envío repetido no registre dos cobros.
+ *
+ * Las de un solo cobro llevan `expectedUpdatedAt`: la versión del cobro que vio la persona (el `updatedAt` del DTO
+ * con que se pintó la pantalla). Si el cobro cambió desde entonces, la base lo rechaza con un conflicto.
  */
 
 /** Lo más que cabe en la nota de un cobro. */
@@ -38,7 +42,12 @@ const NOTE_MAX = 280;
 const zInstant = z.iso.datetime({ offset: true, error: "Fecha y hora no válidas" });
 const zNote = zOptionalText(NOTE_MAX);
 const zByIds = z.object({ ids: z.array(zId) });
-const zById = z.object({ id: zId });
+/** Un cobro y la versión que vio la persona. */
+const zSeen = z.object({ id: zId, expectedUpdatedAt: zInstant });
+/** El dinero no llega al banco en un día que todavía no pasó (en Nueva York). */
+const zDepositDate = zDate.refine((day) => day <= todayNY(new Date()), {
+  error: "La fecha del depósito no puede ser futura",
+});
 const zRecalcMode = z.enum(["hoy", "fecha_del_cobro"]);
 
 const zNewTx = z.object({
@@ -54,14 +63,13 @@ const zNewTx = z.object({
   reference: zReference,
   note: zNote,
   status: z.enum(["registrado", "en_transito", "depositado"]).optional(),
-  depositedOn: zDate.nullish(),
+  depositedOn: zDepositDate.nullish(),
   bankAccountId: zId.nullish(),
   estimatedDepositOn: zDate.nullish(),
 });
 
 /** Lo que no viene (`undefined`) no se toca; lo que viene con `null` se vacía. */
-const zEditTx = z.object({
-  id: zId,
+const zEditTx = zSeen.extend({
   companyId: zId.optional(),
   channelId: zId.nullable().optional(),
   gatewayId: zId.optional(),
@@ -75,58 +83,79 @@ const zEditTx = z.object({
   bankAccountId: zId.nullable().optional(),
 });
 
-/** Registra un cobro, calculado en el servidor. La fecha del cobro sale de su instante, en Nueva York. */
-export async function createTransaction(input: unknown): Promise<ActionResult<{ id: string }>> {
-  return runAction(zNewTx, input, async ({ supabase }, tx) => {
-    const { id } = await createTx(supabase, { ...tx, occurredOn: nyDate(tx.occurredAt) });
-    return { id };
-  });
+/**
+ * Registra un cobro, calculado en el servidor. La fecha del cobro sale de su instante, en Nueva York. `created`
+ * es falso si ese id ya estaba guardado con lo mismo (un reenvío): no se creó nada nuevo.
+ */
+export async function createTransaction(input: unknown): Promise<ActionResult<{ id: string; created: boolean }>> {
+  return runAction(zNewTx, input, ({ supabase }, tx) => createTx(supabase, { ...tx, occurredOn: nyDate(tx.occurredAt) }));
 }
 
 export async function editTransaction(input: unknown): Promise<ActionResult> {
-  return runAction(zEditTx, input, ({ supabase }, { id, ...changes }) => editTx(supabase, id, changes));
+  return runAction(zEditTx, input, ({ supabase }, { id, expectedUpdatedAt, ...changes }) =>
+    editTx(supabase, id, changes, expectedUpdatedAt),
+  );
 }
 
 export async function refundTransaction(input: unknown): Promise<ActionResult> {
-  const schema = z.object({ id: zId, amount: zPositiveMoney, on: zDate, note: zNote });
-  return runAction(schema, input, ({ supabase }, { id, ...refund }) => refundTx(supabase, id, refund));
+  const schema = zSeen.extend({ amount: zPositiveMoney, on: zDate, note: zNote });
+  return runAction(schema, input, ({ supabase }, { id, expectedUpdatedAt, ...refund }) =>
+    refundTx(supabase, id, refund, expectedUpdatedAt),
+  );
 }
 
 export async function setRefundTotal(input: unknown): Promise<ActionResult> {
-  const schema = z.object({ id: zId, total: zMoney });
-  return runAction(schema, input, ({ supabase }, { id, total }) => setRefundTotalTx(supabase, id, total));
+  const schema = zSeen.extend({ total: zMoney });
+  return runAction(schema, input, ({ supabase }, { id, total, expectedUpdatedAt }) =>
+    setRefundTotalTx(supabase, id, total, expectedUpdatedAt),
+  );
 }
 
 export async function disputeTransaction(input: unknown): Promise<ActionResult> {
-  const schema = z.object({ id: zId, action: z.enum(["abrir", "ganar", "perder", "anular"]), on: zDate });
-  return runAction(schema, input, ({ supabase }, { id, ...dispute }) => disputeTx(supabase, id, dispute));
+  const schema = zSeen.extend({ action: z.enum(["abrir", "ganar", "perder", "anular"]), on: zDate });
+  return runAction(schema, input, ({ supabase }, { id, expectedUpdatedAt, ...dispute }) =>
+    disputeTx(supabase, id, dispute, expectedUpdatedAt),
+  );
 }
 
 export async function failTransaction(input: unknown): Promise<ActionResult> {
-  return runAction(zById, input, ({ supabase }, { id }) => failTx(supabase, id));
+  return runAction(zSeen, input, ({ supabase }, { id, expectedUpdatedAt }) => failTx(supabase, id, expectedUpdatedAt));
 }
 
 export async function reopenTransaction(input: unknown): Promise<ActionResult> {
-  return runAction(zById, input, ({ supabase }, { id }) => reopenTx(supabase, id));
+  return runAction(zSeen, input, ({ supabase }, { id, expectedUpdatedAt }) =>
+    reopenTx(supabase, id, expectedUpdatedAt),
+  );
 }
 
 export async function markInTransit(input: unknown): Promise<ActionResult<{ count: number }>> {
   return runAction(zByIds, input, async ({ supabase }, { ids }) => ({ count: await transitTx(supabase, ids) }));
 }
 
-export async function markDeposited(input: unknown): Promise<ActionResult<{ count: number }>> {
-  const schema = z.object({ ids: z.array(zId), on: zDate });
-  return runAction(schema, input, async ({ supabase }, { ids, on }) => ({ count: await depositTx(supabase, ids, on) }));
+/**
+ * Marca depositados los cobros el día `on` (no futuro) y dice cuántos se saltaron y por qué. `onlyPending`: el
+ * lote (la barra de Cobros, los próximos depósitos del Resumen) solo deposita lo que está por caer; el detalle de
+ * un cobro manda `false` para poder cambiar la fecha de un depósito ya hecho.
+ */
+export async function markDeposited(input: unknown): Promise<ActionResult<DepositOutcome>> {
+  const schema = z.object({ ids: z.array(zId), on: zDepositDate, onlyPending: z.boolean() });
+  return runAction(schema, input, ({ supabase }, { ids, on, onlyPending }) =>
+    depositTxWithSkips(supabase, ids, on, { onlyPending }),
+  );
 }
 
 export async function revertDeposit(input: unknown): Promise<ActionResult> {
-  return runAction(zById, input, ({ supabase }, { id }) => revertDepositTx(supabase, id));
+  return runAction(zSeen, input, ({ supabase }, { id, expectedUpdatedAt }) =>
+    revertDepositTx(supabase, id, expectedUpdatedAt),
+  );
 }
 
 /** Fija la fecha estimada a mano, o con `date: null` vuelve a la automática. */
 export async function setEstimatedDate(input: unknown): Promise<ActionResult> {
-  const schema = z.object({ id: zId, date: zDate.nullable() });
-  return runAction(schema, input, ({ supabase }, { id, date }) => setEstimatedTx(supabase, id, date));
+  const schema = zSeen.extend({ date: zDate.nullable() });
+  return runAction(schema, input, ({ supabase }, { id, date, expectedUpdatedAt }) =>
+    setEstimatedTx(supabase, id, date, expectedUpdatedAt),
+  );
 }
 
 /**

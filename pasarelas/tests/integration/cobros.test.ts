@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { PAY_STATE_TEXT, PayRuleError, PayStateError, planCreate, planDeposit, type NewTxInput } from "@/lib/pasarelas";
 import { UserError, errorMessage } from "@/server/pasarelas/errors";
 import { addHoliday } from "@/server/pasarelas/ops/holidays";
@@ -14,6 +14,7 @@ import {
   failTx,
   previewRecalcTx,
   purgeTx,
+  refreshEstimatesAfterTx,
   refreshEstimatesTx,
   refundTx,
   reopenTx,
@@ -27,7 +28,17 @@ import {
 import { loadPayConfig } from "@/server/pasarelas/queries/config";
 import { getSnapshots, getTx, lastTx, leanTx, listTx, type TxFilters } from "@/server/pasarelas/queries/transactions";
 import { saveTx } from "@/server/pasarelas/tx-save";
-import { adminClient, createUser, seedBasics, unwrap, type Basics, type Db, type TestUser } from "./helpers";
+import {
+  adminClient,
+  createUser,
+  e1Item,
+  saveTransactions,
+  seedBasics,
+  unwrap,
+  type Basics,
+  type Db,
+  type TestUser,
+} from "./helpers";
 
 /**
  * Los cobros de punta a punta contra la base: cada operación de `ops/` con la sesión real del usuario de prueba
@@ -801,6 +812,21 @@ describe("refreshEstimatesTx", () => {
     expect(await rowOf(disputed)).toMatchObject({ estimated_deposit_on: MARTES });
     // Ya al día: nada que escribir.
     expect(await refreshEstimatesTx(user.client, { gatewayId: b.gatewayId })).toBe(0);
+    expect(await refreshEstimatesAfterTx(user.client)).toBe(0);
+  });
+
+  it("refreshEstimatesAfterTx: si no se puede recalcular, devuelve null y lo deja en el registro, sin lanzar", async () => {
+    const user = await createUser();
+    const b = await seedBasics(user.client);
+    // Un cobro guardado a mano con un desglose a medias: no se puede leer como cobro.
+    await saveTransactions(user.client, [e1Item(b)]);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      expect(await refreshEstimatesAfterTx(user.client)).toBeNull();
+      expect(logged).toHaveBeenCalledWith("[refreshEstimatesTx]", expect.anything());
+    } finally {
+      logged.mockRestore();
+    }
   });
 });
 

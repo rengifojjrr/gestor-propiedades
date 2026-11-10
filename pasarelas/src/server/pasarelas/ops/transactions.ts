@@ -295,6 +295,20 @@ export async function refreshEstimatesTx(supabase: Db, opts: { gatewayId?: strin
   return changed;
 }
 
+/**
+ * `refreshEstimatesTx` después de un cambio que ya quedó guardado (un feriado, los días de una pasarela): si no se
+ * pudo, el cambio sigue en pie y devuelve `null` —no un «No se pudo guardar» que no sería cierto— y deja el fallo
+ * en el registro del servidor, como `runAction` con lo que no se esperaba.
+ */
+export async function refreshEstimatesAfterTx(supabase: Db, opts: { gatewayId?: string } = {}): Promise<number | null> {
+  try {
+    return await refreshEstimatesTx(supabase, opts);
+  } catch (error) {
+    console.error("[refreshEstimatesTx]", error);
+    return null;
+  }
+}
+
 // ─── Papelera ───────────────────────────────────────────────────────────────────────────────────────────────
 
 export async function trashTx(supabase: Db, ids: string[]): Promise<number> {
