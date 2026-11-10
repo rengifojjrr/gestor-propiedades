@@ -182,6 +182,31 @@ test("un fallo dentro del diálogo de borrar se dice en el diálogo, no detrás 
   await expectCleanScreen(page);
 });
 
+test("crear una cuenta: si se corta la conexión, el diálogo sigue abierto con lo escrito y ofrece «Ver cómo quedó»", async ({
+  page,
+}, testInfo) => {
+  const alias = `Cuenta Cortada ${testInfo.project.name}`;
+  await page.goto("/pasarelas/cuentas");
+  await page.getByRole("button", { name: "Agregar cuenta" }).click();
+  const dialog = page.getByRole("dialog", { name: "Nueva cuenta destino" });
+  await dialog.getByLabel("Alias").fill(alias);
+  await page.route("**/pasarelas/cuentas*", (route) =>
+    route.request().method() === "POST" ? route.abort("internetdisconnected") : route.continue(),
+  );
+  await dialog.getByRole("button", { name: "Guardar cuenta" }).click();
+  await expect(dialog.getByRole("alert")).toHaveText(UNSURE_TEXT);
+  await expect(dialog.getByRole("button", { name: "Ver cómo quedó" })).toBeVisible();
+  await expect(dialog.getByLabel("Alias")).toHaveValue(alias);
+  await expectCleanScreen(page);
+
+  // Al cerrar con la duda, la pantalla de detrás se vuelve a pintar: la llamada no llegó, así que no hay cuenta.
+  await page.unroute("**/pasarelas/cuentas*");
+  await dialog.getByRole("button", { name: "Cancelar" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole("heading", { level: 1, name: "Cuentas destino" })).toBeVisible();
+  await expect(page.getByRole("region", { name: alias })).toHaveCount(0);
+});
+
 test("feriados: un fallo al quitar uno se dice en su diálogo", async ({ page }) => {
   const { data: created } = await admin
     .from("pay_holidays")

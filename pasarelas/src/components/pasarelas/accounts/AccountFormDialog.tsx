@@ -1,8 +1,10 @@
 "use client";
 
 import { useActionState } from "react";
-import { Alert, Button, Dialog, Field, Input, SubmitButton, Textarea, notify } from "@/components/ui";
+import { Button, Dialog, Field, Input, SubmitButton, Textarea, notify } from "@/components/ui";
 import { saveBankAccount } from "@/server/pasarelas/actions/accounts";
+import { DialogActionError } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
 
 /** Lo que se edita de una cuenta, como texto de formulario. */
 export type AccountFormValues = {
@@ -18,7 +20,8 @@ export const EMPTY_ACCOUNT: AccountFormValues = { alias: "", institution: "", la
 type FormState = {
   /** Lo último que se envió: React vacía los campos al terminar la acción y vuelven con esto. */
   values: AccountFormValues;
-  error: string | null;
+  /** Si se cortó la red (`unsure`), no se sabe si se guardó: el aviso ofrece «Ver cómo quedó». */
+  error: ActionFailure | null;
   fieldErrors: Record<string, string[] | undefined>;
 };
 
@@ -46,13 +49,14 @@ function AccountForm({
         currency: text(data, "currency"),
         notes: text(data, "notes"),
       };
-      const result = await saveBankAccount({ id, ...values });
+      // Con `callAction`, un corte no sube a `error.tsx`: el diálogo sigue abierto con lo escrito y la duda.
+      const result = await callAction(() => saveBankAccount({ id, ...values }));
       if (result.ok) {
         notify.success("Cuenta guardada.");
         onClose();
         return { values, error: null, fieldErrors: {} };
       }
-      return { values, error: result.error, fieldErrors: result.fieldErrors ?? {} };
+      return { values, error: failureOf(result), fieldErrors: result.fieldErrors ?? {} };
     },
     { values: initial, error: null, fieldErrors: {} },
   );
@@ -94,11 +98,7 @@ function AccountForm({
       <Field label="Notas" optional error={fieldError("notes")}>
         <Textarea name="notes" defaultValue={state.values.notes} maxLength={500} />
       </Field>
-      {state.error ? (
-        <Alert tone="danger" announce>
-          {state.error}
-        </Alert>
-      ) : null}
+      <DialogActionError failure={state.error} />
       <div className="flex flex-wrap justify-end gap-2">
         <Button onClick={onClose}>Cancelar</Button>
         <SubmitButton>Guardar cuenta</SubmitButton>
