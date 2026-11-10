@@ -1366,6 +1366,55 @@ un nuevo `tests/integration/sesiones.test.ts` y `src/app/(dashboard)/ajustes/Sec
 4. Los cambios se aplican a la base local compartida SIN reiniciarla (`create or replace function`, `create policy`
    con `psql`), y el informe deja el SQL exacto.
 
+### Remates tras revisar las tareas 30 y 33 (tareas 37 y 38)
+
+Las tareas 30 y 33 se integraron sin pasar por su revisión; una revisión aparte (cada hallazgo grave verificado por
+otro agente) está en `/tmp/claude-0/-home-user-gestor-propiedades/b1082bf1-8952-53e0-b565-87e2dda8ba35/scratchpad/revision-30-33.json`: `confirmed` (R1 a R4), `previousNotFixed` (lo que quedó a medias) y `minors`.
+
+### Task 37: Remates de cobros, fechas estimadas y configuración
+
+**Dueña de:** `src/lib/pasarelas/{write,rules}.ts` (+ pruebas), `src/server/pasarelas/ops/transactions.ts`,
+`actions/{transactions,holidays,gateways,companies}.ts`, `src/components/pasarelas/callAction.ts`,
+`src/components/pasarelas/tx/**` (salvo `ReceiptsCard.tsx`), `registrar/**`, `holidays/**`, `accounts/**`, `gateways/**`,
+`splits/SchemeStatusActions.tsx`, `src/app/(dashboard)/pasarelas/cobros/**`, `tests/integration/{cobros.test.ts,helpers.ts}`
+y `e2e/{cobros,cobro-detalle,registrar,cuentas-feriados,pasarelas,listo-cuando}.spec.ts`.
+
+1. **R1** — Depositar (o cambiar la fecha del depósito) y recalcular DESDE EL DETALLE mandan la versión vista: una
+   pestaña vieja da conflicto. Los lotes siguen con «solo por caer».
+2. **R2** — `callAction` no refresca solo tras un fallo de red (con mala señal el refresco recarga la página y se
+   pierde todo): el aviso ofrece «Ver cómo quedó», que refresca cuando la persona lo pide (y al cerrar el diálogo).
+3. **R3** — Un reenvío del alta con el mismo `id` compara también el estado inicial, la fecha de depósito, la cuenta,
+   la fecha estimada y la nota.
+4. Lo que quedó a medias: **m7** (`planEdit` no deja la fecha del cobro después de su depósito), **m10** (si el lote
+   vacía la lista, el foco va al encabezado o al vacío), **m25** (los avisos de feriados, de la pasarela y de la cuenta
+   de la pasarela en la empresa dicen cuántas fechas estimadas cambiaron; si el recálculo falla, se dice; cambiar los
+   días de la cuenta de una pasarela en una empresa también recalcula; el historial dice que lo cambió el sistema),
+   y el menor de cambiar SOLO la moneda de un cobro con comisión informada (se descarta, como al cambiar el monto).
+5. De la tarea 34: las acciones de configuración con `startTransition` sin protección (cuentas, feriados, estado de la
+   pasarela, opciones, tarifas, estado del esquema) usan `callAction`; un solo texto para «no sabemos si se guardó».
+6. `e1Item` de `tests/integration/helpers.ts` arma un desglose COMPLETO (hoy guarda uno a medias que `parseBreakdown`
+   rechaza y deja errores en el registro del servidor durante las pruebas).
+
+### Task 38: Remates de comprobantes y liquidaciones
+
+**Dueña de:** `supabase/migrations/20261110120000_las_pasarelas_de_pago.sql` (solo la columna `original_name`),
+`src/lib/supabase/database.types.ts`, `src/server/pasarelas/dto.ts` (solo lo de los comprobantes),
+`src/server/pasarelas/queries/export.ts`, `src/server/pasarelas/{ops,actions}/{receipts,settlements}.ts`,
+`src/components/pasarelas/receipts/**`, `src/components/pasarelas/tx/ReceiptsCard.tsx`,
+`src/components/pasarelas/splits/{SettlementForm,SettlementActions,Movements}.tsx`,
+`tests/integration/{repartos,comprobantes,exportar}.test.ts` y `e2e/{repartos,acciones}.spec.ts`.
+
+1. **R4** — Un reintento de una liquidación con el mismo `id` y OTROS datos (beneficiario, fecha, moneda, monto, o
+   tener o no comprobante) no se da por bueno: se dice que quedó la del primer intento.
+2. **m4 completo** — La columna `original_name` desaparece de la migración (todavía no se aplicó a ninguna base
+   remota) y de todo el código y las pruebas: no se lee, no se muestra, no se exporta. El SQL para la base local
+   compartida (`alter table … drop column if exists original_name`) lo aplica quien integra.
+3. **m18 en liquidaciones** — La URL firmada del comprobante de una liquidación se pide al tocar el enlace.
+4. Menores: borrar una liquidación vacía su carpeta entera (no solo `receipt_path`: quedan los archivos de intentos
+   dudosos); tras un corte en los comprobantes del cobro, «Ver cómo quedó» antes de volver a subir (no duplicar); la
+   etiqueta del comprobante usa `formatDate` del motor; «Quitar» un comprobante y las acciones de la liquidación usan
+   `callAction`.
+
 ### Task 22: Documentación, revisión y entrega
 
 **Archivos:** `docs/PASARELAS.md`, `README.md`, raíz `README.md`.
