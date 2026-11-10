@@ -8,13 +8,17 @@ import * as guards from "./guards";
 import * as holidays from "./holidays";
 import * as motor from "./index";
 import * as money from "./money";
+import * as rules from "./rules";
 import * as schemes from "./schemes";
 import * as stats from "./stats";
 import * as status from "./status";
 import * as versions from "./versions";
+import * as write from "./write";
 
 // `types.ts` solo declara tipos: no deja nada en tiempo de ejecución que comprobar aquí (lo cubre el typecheck).
-const MODULOS = { allocate, breakdown, csv, dates, decimal, guards, holidays, money, schemes, stats, status, versions };
+const MODULOS = {
+  allocate, breakdown, csv, dates, decimal, guards, holidays, money, rules, schemes, stats, status, versions, write,
+};
 
 describe("index: la puerta única del motor", () => {
   test.each(Object.entries(MODULOS))("reexporta todo lo de %s", (_nombre, modulo) => {
