@@ -96,7 +96,7 @@ function printLogin(credentials: Credentials): void {
 /** Lo que se negó se explica en una línea; lo inesperado sale entero, para poder buscarlo. */
 function report(error: unknown): void {
   if (error instanceof Refusal || error instanceof NotEmptyError) console.error(error.message);
-  else console.error("La semilla falló (si quedó a medias, `npm run seed -- --reset` empieza de cero):", error);
+  else console.error("La semilla falló (contra el stack local, `npm run seed -- --reset` empieza de cero):", error);
   process.exitCode = 1;
 }
 
