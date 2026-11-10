@@ -72,7 +72,12 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
   módulo con datos de usuario. En la tabla de `next build`, todo lo privado debe salir `ƒ (Dynamic)`.
 - `redirect()` y `notFound()` **lanzan**: nunca dentro de `try`.
 - Lint: `react-hooks` 7 trata como **error** un `setState` síncrono dentro de `useEffect`.
-- React 19 vacía los campos no controlados al terminar la acción de un `<form>`: devuelve los valores en el estado.
+- Al terminar la acción de un `<form action>` (bien o con error), React 19 lo reinicia con `form.reset()`: cada
+  control vuelve a su valor por defecto del DOM. Los no controlados se vacían (devuelve los valores en el estado). Un
+  texto controlado sobrevive (React le mantiene el `defaultValue`), pero un `<select>`, una casilla o un interruptor
+  controlados volverían a lo que trajo el HTML del servidor (o a la primera opción, sin marcar) aunque el estado diga
+  otra cosa. `Select`, `Checkbox` y `Switch` del kit mantienen `defaultSelected` / `defaultChecked` iguales al valor
+  controlado, así que el reinicio no cambia nada en pantalla: dentro de un `<form action>` usa esos, no los nativos.
 - Comprobantes con URL firmada: `<img>` normal (o `<Image unoptimized>`), nunca `next/image` optimizado.
 - Tailwind 4 entra por el cargador `@tailwindcss/turbopack` (ver `next.config.ts`); no hay `postcss.config`.
 - Zod 4: `{ error: '…' }` y `z.flattenError(resultado.error).fieldErrors`.
