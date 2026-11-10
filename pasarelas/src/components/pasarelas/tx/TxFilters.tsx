@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import { Suspense } from "react";
 import { UrlPeriod, UrlSearch, UrlSelect } from "@/components/ui";
 import { STATUS_LABEL } from "@/lib/pasarelas/status";
@@ -53,8 +54,9 @@ export function TxFilters({ companies, channels, gateways, accounts, currencies,
           <UrlSelect param="orden" label="Orden" allLabel="Más recientes primero" options={SORT_OPTIONS} />
         </div>
         <details open={activeMore > 0} className="group rounded-card border border-rule bg-surface">
-          <summary className="flex min-h-11 cursor-pointer items-center px-4 py-2 font-semibold">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-4 py-2 font-semibold [&::-webkit-details-marker]:hidden">
             Más filtros{activeMore > 0 ? ` (${activeMore})` : ""}
+            <ChevronDown aria-hidden className="size-5 text-ink-soft transition-transform group-open:rotate-180" />
           </summary>
           <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2 lg:grid-cols-3">
             <UrlSelect param="empresa" label="Empresa" options={companies} />

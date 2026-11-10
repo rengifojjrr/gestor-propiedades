@@ -175,7 +175,7 @@ test("«Listo cuando» n.º 5: tres cobros de Stripe depositados en lote, «Sin 
   // El CSV (en español) de ese filtro: sus referencias y sus montos con coma.
   const [download] = await Promise.all([
     page.waitForEvent("download"),
-    page.getByRole("link", { name: "Exportar CSV (español)" }).click(),
+    page.getByRole("link", { name: "CSV en español" }).click(),
   ]);
   expect(download.suggestedFilename()).toMatch(/^cobros-\d{4}-\d{2}-\d{2}\.csv$/);
   const csv = await readFile(await download.path(), "utf8");

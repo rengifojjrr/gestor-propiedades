@@ -109,12 +109,13 @@ export default async function CobrosPage({ searchParams }: PageProps<"/pasarelas
         title="Cobros"
         actions={
           <>
-            {/* `download`: el navegador guarda el archivo. Sin `prefetch`: no se arma el CSV sin que nadie lo pida. */}
+            {/* Todo el filtro, no solo la página. `download`: el navegador guarda el archivo. Sin `prefetch`: no se
+                arma el CSV sin que nadie lo pida. «En español»: punto y coma y coma decimal; «estándar»: coma y punto. */}
             <ButtonLink href={exportHref(null)} download prefetch={false}>
-              Exportar CSV (español)
+              CSV en español
             </ButtonLink>
             <ButtonLink href={exportHref("estandar")} download prefetch={false}>
-              Exportar CSV (estándar)
+              CSV estándar
             </ButtonLink>
           </>
         }
