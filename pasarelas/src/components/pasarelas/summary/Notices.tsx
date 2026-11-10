@@ -20,7 +20,7 @@ function NoticeItem({ title, children }: { title: ReactNode; children: ReactNode
 
 /**
  * Lo que pide atención: cobros atrasados, disputas abiertas, cobros del período sin comprobante, empresas sin
- * esquema de reparto por defecto y el año en curso o el siguiente sin feriados. Sin nada que avisar, lo dice.
+ * esquema de reparto activo por defecto y el año en curso o el siguiente sin feriados. Sin nada que avisar, lo dice.
  */
 export function Notices({ notices }: { notices: SummaryNotices }) {
   const { overdue, disputes, withoutReceipt, companiesWithoutScheme, yearsWithoutHolidays } = notices;
@@ -67,15 +67,16 @@ export function Notices({ notices }: { notices: SummaryNotices }) {
             <NoticeItem
               title={
                 companiesWithoutScheme.length === 1
-                  ? "Una empresa sin esquema de reparto por defecto"
-                  : `${companiesWithoutScheme.length} empresas sin esquema de reparto por defecto`
+                  ? "Una empresa sin esquema de reparto activo por defecto"
+                  : `${companiesWithoutScheme.length} empresas sin esquema de reparto activo por defecto`
               }
             >
-              Sus cobros nuevos no se reparten si no eliges un esquema al registrarlos.
+              Sus cobros nuevos no se reparten si no eliges un esquema al registrarlos. Un esquema desactivado ya no
+              se ofrece al registrar.
               <span className="flex flex-wrap gap-x-4">
                 {companiesWithoutScheme.map((company) => (
                   <Link key={company.id} href={`/pasarelas/empresas/${company.id}`} className={LINK}>
-                    {company.name}
+                    {company.schemeInactive ? `${company.name} (su esquema está desactivado)` : company.name}
                   </Link>
                 ))}
               </span>

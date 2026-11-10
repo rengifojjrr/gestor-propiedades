@@ -11,6 +11,7 @@ import { StatCards } from "@/components/pasarelas/summary/StatCards";
 import { SummaryFilters } from "@/components/pasarelas/summary/SummaryFilters";
 import { UpcomingDeposits } from "@/components/pasarelas/summary/UpcomingDeposits";
 import { ButtonLink, DateText, EmptyState, PageHeader } from "@/components/ui";
+import { hrefWith } from "@/components/ui/url";
 import { requireSession } from "@/lib/auth/session";
 import { todayNY, type PayConfig } from "@/lib/pasarelas";
 import { createClient } from "@/lib/supabase/server";
@@ -59,6 +60,11 @@ function filterOptions(cfg: PayConfig, companyId: string | undefined, channelId:
   };
 }
 
+/** «USD», «EUR y USD», «EUR, MXN y USD». */
+function listOf(items: readonly string[]): string {
+  return items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} y ${items.at(-1)}`;
+}
+
 /**
  * Resumen: los filtros (período, empresa, canal, pasarela y moneda) en la URL; las cifras y los gráficos del
  * período en una sola moneda; lo que cae en los próximos 14 días con «Marcar depositado» por grupo; los repartos
@@ -75,7 +81,9 @@ export default async function ResumenPage({ searchParams }: PageProps<"/pasarela
   const gatewayName = namesOf(cfg.gateways, "Pasarela borrada");
   const accountName = accountNames(cfg);
   const beneficiaryName = namesOf(cfg.beneficiaries, "Beneficiario borrado");
-  const { filters } = summaryScope(sp, today);
+  const { filters, query } = summaryScope(sp, today);
+  // Hay cobros en el período, pero no en la moneda pedida (que se muestra por sus depósitos o repartos).
+  const elsewhere = currency !== null && summary === null && view.periodCurrencies.length > 0;
 
   return (
     <>
@@ -93,7 +101,18 @@ export default async function ResumenPage({ searchParams }: PageProps<"/pasarela
           </p>
         </div>
 
-        {summary === null || currency === null ? (
+        {elsewhere ? (
+          <EmptyState
+            icon={<ReceiptText aria-hidden className="size-8" />}
+            title={`No hay cobros en ${currency} en este período`}
+            description={`Los cobros del período están en ${listOf(view.periodCurrencies)}. Lo que hay en ${currency} (depósitos por caer o saldos de repartos) está más abajo.`}
+            action={
+              <ButtonLink href={hrefWith("/pasarelas", query, {})} variant="primary">
+                Ver los cobros en {view.defaultCurrency}
+              </ButtonLink>
+            }
+          />
+        ) : summary === null || currency === null ? (
           <EmptyState
             icon={<ReceiptText aria-hidden className="size-8" />}
             title="No hay cobros en este período"
@@ -131,7 +150,11 @@ export default async function ResumenPage({ searchParams }: PageProps<"/pasarela
             <UpcomingDeposits
               groups={view.deposits.map((group) => ({
                 date: group.date,
-                accountName: accountName(group.bankAccountId),
+                // Un grupo de más cobros de los que se marcan de una vez va por partes: «… · parte 1 de 2».
+                accountName:
+                  group.part === null
+                    ? accountName(group.bankAccountId)
+                    : `${accountName(group.bankAccountId)} · parte ${group.part.index} de ${group.part.of}`,
                 net: group.net,
                 count: group.count,
                 ids: group.ids,

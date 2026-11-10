@@ -4,7 +4,6 @@ import {
   ZERO,
   add,
   addDays,
-  cmp,
   dec,
   isOverdue,
   isZero,
@@ -16,6 +15,7 @@ import {
 } from "@/lib/pasarelas";
 import type { Currency, CurrencySummary, DepositGroup, ISODate, LeanTx, Money, PayConfig } from "@/lib/pasarelas";
 import type { Db } from "../dto";
+import { SAVE_BATCH_SIZE } from "../tx-save";
 import { EXACT_COUNT, readAll as readAllRows, type PageRead } from "./paging";
 import { chunked, leanTx, parseTxFilters, type TxFilters } from "./transactions";
 
@@ -64,8 +64,8 @@ export type SummaryNotices = {
   overdue: Notice | null;
   /** Con la disputa abierta, de toda la historia. */
   disputes: Notice | null;
-  /** Empresas activas sin esquema de reparto por defecto. */
-  companiesWithoutScheme: { id: string; name: string }[];
+  /** Empresas activas sin esquema de reparto por defecto activo (`companiesWithoutScheme`). */
+  companiesWithoutScheme: { id: string; name: string; schemeInactive: boolean }[];
   /** El año en curso y el siguiente, si no tienen ningún feriado cargado. */
   yearsWithoutHolidays: number[];
 };
@@ -76,13 +76,16 @@ export type SummaryView = {
   currencies: Currency[];
   /** La moneda en que se pinta todo; `null` si no hay nada que pintar. */
   currency: Currency | null;
-  /** La que rige sin `moneda` en la URL: la de más bruto en el período. */
+  /** La que rige sin `moneda` en la URL: la de más cobros en el período (ver `chooseCurrency`). */
   defaultCurrency: Currency | null;
+  /** Las monedas con cobros en el período, en orden alfabético. */
+  periodCurrencies: Currency[];
   /** El resumen del período en `currency`; `null` si no hubo cobros que cuenten. */
   summary: CurrencySummary | null;
   months: MonthRow[];
-  /** Lo atrasado y lo que cae en los próximos días, en `currency`. No depende del período. */
-  deposits: DepositGroup[];
+  /** Lo atrasado y lo que cae en los próximos días, en `currency`, en partes que se marcan de una vez. No depende
+   * del período. */
+  deposits: DepositPart[];
   /** Los días que cubre `deposits` (además de lo atrasado), ambos incluidos. */
   depositWindow: { from: ISODate; to: ISODate };
   splits: SplitRow[];
@@ -121,21 +124,64 @@ const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
  * La moneda en que se pinta el Resumen. Las disponibles son las del período y las de `others` (depósitos,
- * repartos). Por defecto, la de más bruto en el período (a igual bruto, la primera por orden alfabético); sin
- * cobros en el período, la primera disponible. La pedida rige solo si está disponible.
+ * repartos). Por defecto, la de más cobros en el período (no la de más bruto: montos de monedas distintas no se
+ * comparan); a igual número de cobros, la de más empresas (`companyCurrencies`: la moneda de cada empresa activa),
+ * y luego la primera por orden alfabético. Sin cobros en el período, la misma regla entre las disponibles. La
+ * pedida rige solo si está disponible.
  */
 export function chooseCurrency(
   byCurrency: Record<Currency, CurrencySummary>,
   others: readonly Currency[],
   requested: Currency | undefined,
+  companyCurrencies: readonly Currency[],
 ): { currencies: Currency[]; currency: Currency | null; defaultCurrency: Currency | null } {
   const currencies = [...new Set([...Object.keys(byCurrency), ...others])].sort(byText);
-  const ranked = Object.entries(byCurrency).sort(
-    ([a, x], [b, y]) => cmp(y.totals.gross, x.totals.gross) || byText(a, b),
+  const txCount = (currency: Currency): number => byCurrency[currency]?.totals.count ?? 0;
+  const companies = (currency: Currency): number => companyCurrencies.filter((used) => used === currency).length;
+  const [defaultCurrency = null] = [...currencies].sort(
+    (a, b) => txCount(b) - txCount(a) || companies(b) - companies(a) || byText(a, b),
   );
-  const defaultCurrency = ranked[0]?.[0] ?? currencies[0] ?? null;
   const currency = requested !== undefined && currencies.includes(requested) ? requested : defaultCurrency;
   return { currencies, currency, defaultCurrency };
+}
+
+/**
+ * Las empresas activas cuyos cobros nuevos no se reparten solos: sin esquema por defecto, o con uno desactivado (o
+ * que ya no existe), que no se ofrece al registrar. `schemeInactive`: tienen uno, pero no está activo.
+ */
+export function companiesWithoutScheme(
+  cfg: Pick<PayConfig, "companies" | "schemes">,
+): { id: string; name: string; schemeInactive: boolean }[] {
+  const active = new Set(cfg.schemes.filter((scheme) => scheme.active).map((scheme) => scheme.id));
+  return cfg.companies
+    .filter((company) => company.active && (company.defaultSchemeId === null || !active.has(company.defaultSchemeId)))
+    .map(({ id, name, defaultSchemeId }) => ({ id, name, schemeInactive: defaultSchemeId !== null }));
+}
+
+/** Un grupo de próximos depósitos; `part` dice cuál de sus partes es, si no cabe en un solo lote. */
+export type DepositPart = DepositGroup & { part: { index: number; of: number } | null };
+
+/**
+ * Los grupos de próximos depósitos, con los de más de `size` cobros (lo más que se marca depositado de una vez)
+ * partidos en partes de `size` como mucho, cada una con su neto. `rows`: los cobros de esos grupos.
+ */
+export function depositParts(
+  groups: readonly DepositGroup[],
+  rows: readonly LeanTx[],
+  size: number = SAVE_BATCH_SIZE,
+): DepositPart[] {
+  const netOf = new Map(rows.map((row) => [row.id, row.net]));
+  return groups.flatMap((group): DepositPart[] => {
+    if (group.ids.length <= size) return [{ ...group, part: null }];
+    const parts = chunked(group.ids, size);
+    return parts.map((ids, index) => ({
+      ...group,
+      ids,
+      count: ids.length,
+      net: add(...ids.map((id) => netOf.get(id) ?? ZERO)),
+      part: { index: index + 1, of: parts.length },
+    }));
+  });
 }
 
 /** El primer día del mes siguiente. */
@@ -335,6 +381,7 @@ export async function loadSummary(
       ...balances.filter((row) => !isZero(row.balance)).map((row) => row.currency),
     ],
     scope.requestedCurrency,
+    cfg.companies.filter((company) => company.active).map((company) => company.currency),
   );
   const summary = currency === null ? null : (byCurrency[currency] ?? null);
   const list = (changes: Record<string, string | null>) => hrefWith(TX_LIST, scope.query, changes);
@@ -346,9 +393,13 @@ export async function loadSummary(
     currencies,
     currency,
     defaultCurrency,
+    periodCurrencies: Object.keys(byCurrency).sort(byText),
     summary,
     months: monthRows({ from, to }, summary?.byMonth ?? []),
-    deposits: groups.filter((group) => group.currency === currency),
+    deposits: depositParts(
+      groups.filter((group) => group.currency === currency),
+      pendingRows,
+    ),
     depositWindow: { from: today, to: addDays(today, SUMMARY_DAYS - 1) },
     splits: splitRows(
       currency,
@@ -363,9 +414,7 @@ export async function loadSummary(
       ),
       overdue: notice(overdueRows.length, () => list({ ...spanOf(overdueRows), estado: "atrasado" })),
       disputes: notice(disputedRows.length, () => list({ ...spanOf(disputedRows), estado: "en_disputa" })),
-      companiesWithoutScheme: cfg.companies
-        .filter((company) => company.active && company.defaultSchemeId === null)
-        .map(({ id, name }) => ({ id, name })),
+      companiesWithoutScheme: companiesWithoutScheme(cfg),
       yearsWithoutHolidays: [year, year + 1].filter(
         (candidate) => !cfg.holidays.some((day) => day.startsWith(`${candidate}-`)),
       ),
