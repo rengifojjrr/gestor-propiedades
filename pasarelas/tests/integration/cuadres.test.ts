@@ -379,6 +379,45 @@ describe("nada que parezca un número de cuenta o de tarjeta, ni links peligroso
   });
 });
 
+describe("el nombre es único por usuario solo en empresas y pasarelas", () => {
+  const CON_NOMBRE_UNICO = [
+    { que: "una empresa", tabla: "pay_companies", indice: "pay_companies_name_uq" },
+    { que: "una pasarela", tabla: "pay_gateways", indice: "pay_gateways_name_uq" },
+  ] as const;
+
+  it.each(CON_NOMBRE_UNICO)("$que con un nombre que ya existe se rechaza, sin distinguir mayúsculas", async (caso) => {
+    const name = `Demo ${randomUUID()}`;
+    unwrap(await client.from(caso.tabla).insert({ name }).select("id"), caso.tabla);
+
+    const res = await client.from(caso.tabla).insert({ name: ` ${name.toUpperCase()} ` }).select("id");
+
+    expectRejected(res, "23505", caso.indice);
+  });
+
+  it("el mismo nombre de empresa en otro usuario sí se guarda", async () => {
+    const otro = (await createUser()).client;
+
+    // «Escuela Demo» ya es una empresa del usuario de estas pruebas (seedBasics).
+    const res = await otro.from("pay_companies").insert({ name: "Escuela Demo" }).select("name");
+
+    expect(res.error).toBeNull();
+    expect(res.data).toEqual([{ name: "Escuela Demo" }]);
+  });
+
+  // El spec §4 no pide nombre único en estas dos: la base no lo impone (si hace falta, lo avisa la pantalla).
+  it.each(["pay_beneficiaries", "pay_schemes"] as const)(
+    "dos filas de %s con el mismo nombre sí se guardan",
+    async (tabla) => {
+      const name = `Demo ${randomUUID()}`;
+
+      const res = await client.from(tabla).insert([{ name }, { name }]).select("name");
+
+      expect(res.error).toBeNull();
+      expect(res.data).toEqual([{ name }, { name }]);
+    },
+  );
+});
+
 describe("lo que tiene cobros no se puede borrar (foco 5)", () => {
   let otro: Db;
   let propio: Basics;

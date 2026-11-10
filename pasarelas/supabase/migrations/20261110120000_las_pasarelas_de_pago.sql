@@ -83,7 +83,6 @@ create table public.pay_beneficiaries (
   updated_at timestamptz not null default now(),
   unique (id, user_id)
 );
-create unique index pay_beneficiaries_name_uq on public.pay_beneficiaries (user_id, lower(btrim(name)));
 
 -- Esquema de reparto. Sus líneas viven en versiones: cambiarlo no toca lo ya repartido.
 create table public.pay_schemes (
@@ -96,7 +95,6 @@ create table public.pay_schemes (
   updated_at timestamptz not null default now(),
   unique (id, user_id)
 );
-create unique index pay_schemes_name_uq on public.pay_schemes (user_id, lower(btrim(name)));
 
 create table public.pay_scheme_versions (
   id uuid primary key default gen_random_uuid(),
@@ -123,6 +121,7 @@ create table public.pay_scheme_lines (
   pct numeric(7,4) not null check (pct > 0 and pct <= 100),
   sort integer not null default 0,
   created_at timestamptz not null default now(),
+  unique (id, user_id),
   unique (scheme_version_id, beneficiary_id),
   foreign key (scheme_version_id, user_id) references public.pay_scheme_versions (id, user_id) on delete cascade,
   foreign key (beneficiary_id, user_id) references public.pay_beneficiaries (id, user_id)
@@ -328,6 +327,7 @@ create table public.pay_allocations (
   pct numeric(7,4) not null check (pct >= 0 and pct <= 100),
   is_remainder boolean not null default false,
   created_at timestamptz not null default now(),
+  unique (id, user_id),
   unique (transaction_id, beneficiary_id),
   foreign key (transaction_id, user_id) references public.pay_transactions (id, user_id) on delete cascade,
   foreign key (beneficiary_id, user_id) references public.pay_beneficiaries (id, user_id)
@@ -344,6 +344,7 @@ create table public.pay_transaction_receipts (
   size_bytes integer not null check (size_bytes > 0 and size_bytes <= 10485760),
   original_name text check (original_name is null or char_length(original_name) <= 200),
   created_at timestamptz not null default now(),
+  unique (id, user_id),
   constraint pay_transaction_receipts_path_check check (
     path like user_id::text || '/' || transaction_id::text || '/%' and char_length(path) <= 300
   ),
@@ -364,6 +365,7 @@ create table public.pay_transaction_events (
   )),
   summary text not null check (char_length(summary) between 1 and 300),
   data jsonb,
+  unique (id, user_id),
   foreign key (transaction_id, user_id) references public.pay_transactions (id, user_id) on delete cascade
 );
 create index pay_transaction_events_tx_idx on public.pay_transaction_events (transaction_id, at desc);
@@ -398,6 +400,7 @@ create table public.pay_holidays (
   day date not null,
   name text not null check (char_length(btrim(name)) between 1 and 80),
   created_at timestamptz not null default now(),
+  unique (id, user_id),
   unique (user_id, day)
 );
 
@@ -1081,7 +1084,8 @@ create policy pay_comprobantes_delete on storage.objects
   );
 
 -- ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
--- 8. Comprobación final: ninguna tabla pay_ queda sin RLS ni sin la política del segundo factor
+-- 8. Comprobación final: ninguna tabla pay_ queda sin RLS, sin la política del segundo factor ni sin su
+--    unique (id, user_id)
 -- ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 do $$
@@ -1100,6 +1104,24 @@ begin
     );
   if v_missing is not null then
     raise exception 'Tablas pay_ sin RLS o sin política de segundo factor: %', v_missing;
+  end if;
+
+  select string_agg(c.relname, ', ') into v_missing
+  from pg_class c
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relkind = 'r' and c.relname like 'pay\_%'
+    and not exists (
+      select 1
+      from pg_constraint k
+      where k.conrelid = c.oid and k.contype = 'u'
+        and (
+          select array_agg(a.attname::text order by a.attname::text)
+          from pg_attribute a
+          where a.attrelid = c.oid and a.attnum = any (k.conkey)
+        ) = array['id', 'user_id']
+    );
+  if v_missing is not null then
+    raise exception 'Tablas pay_ sin unique (id, user_id): %', v_missing;
   end if;
 end;
 $$;
