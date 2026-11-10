@@ -1,8 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
-import { presetFor, type ColumnMapping, type ImportRow } from "@/lib/pasarelas";
+import {
+  addDays,
+  localInputToInstant,
+  nyDate,
+  presetFor,
+  todayNY,
+  type ColumnMapping,
+  type ImportRow,
+} from "@/lib/pasarelas";
 import { UserError } from "@/server/pasarelas/errors";
-import { importTransactions, saveImportMapping } from "@/server/pasarelas/ops/import";
+import { importTransactions, previewImport, saveImportMapping } from "@/server/pasarelas/ops/import";
+import { createTx, trashTx } from "@/server/pasarelas/ops/transactions";
 import { getImportMappings } from "@/server/pasarelas/queries/import";
 import { createUser, seedBasics, type Basics, type Db, type TestUser } from "./helpers";
 
@@ -43,12 +52,13 @@ function refs(): (n: number) => string {
 }
 
 /** Lo elegido en la pantalla para todos los cobros del archivo: Escuela Demo, Stripe, sin canal ni opciones. */
-const choice = (rows: unknown[], useReportedFee = false) => ({
+const choice = (rows: unknown[], useReportedFee = false, alreadyDeposited = false) => ({
   companyId: b.companyId,
   gatewayId: b.gatewayId,
   channelId: null,
   extraIds: [],
   useReportedFee,
+  alreadyDeposited,
   rows,
 });
 
@@ -57,7 +67,7 @@ async function saved(client: Db, references: string[]) {
   const { data } = await client
     .from("pay_transactions")
     .select(
-      "id, reference, occurred_at, occurred_on, currency, gross_original::text, fees_total::text, net_amount::text, scheme_id, status, estimated_deposit_on, bank_account_id, note, breakdown",
+      "id, reference, occurred_at, occurred_on, currency, gross_original::text, fees_total::text, net_amount::text, scheme_id, status, estimated_deposit_on, deposited_on, bank_account_id, note, breakdown",
     )
     .in("reference", references)
     .throwOnError();
@@ -81,7 +91,7 @@ describe("importTransactions", () => {
       user.client,
       choice([row(ref(1), { note: "Pedido demo" }), row(ref(2), { line: 3, grossOriginal: "33.33", reportedFee: null })]),
     );
-    expect(result).toEqual({ created: 2, duplicates: 0 });
+    expect(result).toEqual({ created: 2, duplicates: 0, trashed: 0 });
 
     const txs = await saved(user.client, [ref(1), ref(2)]);
     const first = txs.get(ref(1));
@@ -122,7 +132,7 @@ describe("importTransactions", () => {
       user.client,
       choice([row(ref(1)), row(ref(2), { line: 3, reportedFee: null })], true),
     );
-    expect(result).toEqual({ created: 2, duplicates: 0 });
+    expect(result).toEqual({ created: 2, duplicates: 0, trashed: 0 });
 
     const txs = await saved(user.client, [ref(1), ref(2)]);
     expect(txs.get(ref(1))).toMatchObject({ fees_total: "3.50", net_amount: "96.50" });
@@ -137,15 +147,16 @@ describe("importTransactions", () => {
   it("importar dos veces el mismo archivo no duplica nada: lo repetido se cuenta y no se toca", async () => {
     const ref = refs();
     const rows = [row(ref(1)), row(ref(2), { line: 3, grossOriginal: "50.00" })];
-    expect(await importTransactions(user.client, choice(rows))).toEqual({ created: 2, duplicates: 0 });
+    expect(await importTransactions(user.client, choice(rows))).toEqual({ created: 2, duplicates: 0, trashed: 0 });
     const before = await saved(user.client, [ref(1), ref(2)]);
 
     // Otra vez, ahora con la comisión del archivo: lo que ya estaba no cambia.
-    expect(await importTransactions(user.client, choice(rows, true))).toEqual({ created: 0, duplicates: 2 });
+    expect(await importTransactions(user.client, choice(rows, true))).toEqual({ created: 0, duplicates: 2, trashed: 0 });
     // Un archivo que trae uno viejo y uno nuevo.
     expect(await importTransactions(user.client, choice([rows[0]!, row(ref(3), { line: 4 })]))).toEqual({
       created: 1,
       duplicates: 1,
+      trashed: 0,
     });
 
     const after = await saved(user.client, [ref(1), ref(2), ref(3)]);
@@ -157,7 +168,7 @@ describe("importTransactions", () => {
   it("la misma referencia dos veces en un lote crea un solo cobro", async () => {
     const ref = refs();
     const result = await importTransactions(user.client, choice([row(ref(1)), row(ref(1), { line: 3 })]));
-    expect(result).toEqual({ created: 1, duplicates: 1 });
+    expect(result).toEqual({ created: 1, duplicates: 1, trashed: 0 });
     expect((await saved(user.client, [ref(1)])).size).toBe(1);
   });
 
@@ -206,6 +217,151 @@ describe("importTransactions", () => {
     const ref = refs();
     await expect(importTransactions(other.client, choice([row(ref(1))]))).rejects.toThrow("La empresa ya no existe.");
     expect((await saved(user.client, [ref(1)])).size).toBe(0);
+  });
+});
+
+/** Una fila de hace `days` días (negativo) o dentro de `days` días, a las 10:30 de Nueva York. */
+function rowOn(reference: string, line: number, days: number): ImportRow {
+  const day = addDays(todayNY(new Date()), days);
+  const occurredAt = localInputToInstant(`${day}T10:30`);
+  return row(reference, { line, occurredAt, occurredOn: nyDate(occurredAt) });
+}
+
+/** Un usuario aparte, con su propia configuración, para lo que cambia la configuración. */
+async function ownUser() {
+  const third = await createUser();
+  const own = await seedBasics(third.client);
+  const ownChoice = (rows: ImportRow[]) => ({ ...choice(rows), companyId: own.companyId, gatewayId: own.gatewayId });
+  return { client: third.client, own, ownChoice };
+}
+
+describe("importTransactions: estado inicial, papelera y esquema", () => {
+  it("con «ya se depositaron», lo que ya debió caer entra depositado en su fecha estimada; lo futuro, por caer", async () => {
+    const ref = refs();
+    const today = todayNY(new Date());
+    const rows = [rowOn(ref(1), 2, -30), rowOn(ref(2), 3, -10), rowOn(ref(3), 4, 20)];
+    expect(await importTransactions(user.client, choice(rows, false, true))).toEqual({
+      created: 3,
+      duplicates: 0,
+      trashed: 0,
+    });
+
+    const txs = await saved(user.client, [ref(1), ref(2), ref(3)]);
+    for (const past of [ref(1), ref(2)]) {
+      // Dos días hábiles después del cobro: lo de hace 10 o 30 días ya cayó.
+      const tx = txs.get(past)!;
+      expect(tx.estimated_deposit_on! <= today).toBe(true);
+      expect(tx).toMatchObject({ status: "depositado", deposited_on: tx.estimated_deposit_on });
+    }
+    expect(txs.get(ref(3))).toMatchObject({ status: "registrado", deposited_on: null });
+    expect(txs.get(ref(3))!.estimated_deposit_on! > today).toBe(true);
+  });
+
+  it("sin la opción, todo entra por caer aunque la fecha estimada ya haya pasado", async () => {
+    const ref = refs();
+    await importTransactions(user.client, choice([rowOn(ref(1), 2, -30)]));
+    expect((await saved(user.client, [ref(1)])).get(ref(1))).toMatchObject({ status: "registrado", deposited_on: null });
+  });
+
+  it("lo que choca con un cobro de la papelera no se crea y se cuenta aparte", async () => {
+    const ref = refs();
+    await importTransactions(user.client, choice([row(ref(1)), row(ref(2), { line: 3 })]));
+    expect(await trashTx(user.client, [(await saved(user.client, [ref(1)])).get(ref(1))!.id])).toBe(1);
+
+    const again = [row(ref(1)), row(ref(2), { line: 3 }), row(ref(3), { line: 4 })];
+    expect(await importTransactions(user.client, choice(again))).toEqual({ created: 1, duplicates: 1, trashed: 1 });
+  });
+
+  it("el esquema por defecto solo se aplica si está activo", async () => {
+    const { client, own, ownChoice } = await ownUser();
+    await client.from("pay_schemes").update({ active: false }).eq("id", own.schemeId).throwOnError();
+    const ref = refs();
+    await importTransactions(client, ownChoice([row(ref(1))]));
+    expect((await saved(client, [ref(1)])).get(ref(1))).toMatchObject({ scheme_id: null });
+  });
+});
+
+describe("previewImport", () => {
+  it("dice la fecha estimada de cada fila, lo que ya existe (también en la papelera) y el esquema", async () => {
+    const ref = refs();
+    await importTransactions(user.client, choice([row(ref(1)), row(ref(2), { line: 3 })]));
+    await trashTx(user.client, [(await saved(user.client, [ref(2)])).get(ref(2))!.id]);
+
+    const wednesday = { line: 4, occurredAt: "2026-11-18T15:30:00.000Z", occurredOn: "2026-11-18" };
+    const preview = await previewImport(user.client, choice([row(ref(1)), row(ref(2), { line: 3 }), row(ref(3), wednesday)]));
+    expect(preview.today).toBe(todayNY(new Date()));
+    // Dos hábiles (este usuario no tiene feriados): viernes 13 → martes 17; miércoles 18 → viernes 20.
+    expect(preview.estimates).toEqual([
+      { line: 2, estimatedDepositOn: "2026-11-17" },
+      { line: 3, estimatedDepositOn: "2026-11-17" },
+      { line: 4, estimatedDepositOn: "2026-11-20" },
+    ]);
+    expect(preview.existing).toHaveLength(2);
+    expect(preview.existing).toEqual(
+      expect.arrayContaining([
+        { reference: ref(1), trashed: false },
+        { reference: ref(2), trashed: true },
+      ]),
+    );
+    expect(preview.scheme).toEqual({ kind: "activo", name: "Reparto 50/30/20" });
+    // Solo leyó: el tercero sigue sin existir.
+    expect((await saved(user.client, [ref(3)])).size).toBe(0);
+  });
+
+  it("trae los cobros registrados a mano que pueden ser los mismos; no los importados ni los de la papelera", async () => {
+    const { client, own, ownChoice } = await ownUser();
+    const manual = (reference: string | null, occurredAt: string, grossOriginal = "100.00") => {
+      const id = randomUUID();
+      return createTx(client, {
+        id,
+        companyId: own.companyId,
+        channelId: null,
+        gatewayId: own.gatewayId,
+        extraIds: [],
+        schemeId: null,
+        occurredAt,
+        occurredOn: nyDate(occurredAt),
+        currency: "USD",
+        grossOriginal,
+        reference,
+        note: null,
+      }).then(() => id);
+    };
+    const sinRef = await manual(null, "2026-11-13T15:00:00.000Z");
+    const conRef = await manual("ch_mano_1", "2026-11-14T15:00:00.000Z");
+    await manual(null, "2026-11-20T15:00:00.000Z"); // a más de un día
+    await manual(null, "2026-11-13T16:00:00.000Z", "99.99"); // otro monto
+    await trashTx(client, [await manual(null, "2026-11-13T17:00:00.000Z")]);
+    const ref = refs();
+    // Uno importado con el mismo monto y el mismo día: no se registró a mano.
+    await importTransactions(client, ownChoice([row(ref(9))]));
+
+    const preview = await previewImport(client, ownChoice([row(ref(1)), row(ref(2), { line: 3, grossOriginal: "50.00" })]));
+    expect(preview.manual.map((tx) => tx.id).sort()).toEqual([sinRef, conRef].sort());
+    expect(preview.manual.find((tx) => tx.id === conRef)).toEqual({
+      id: conRef,
+      reference: "ch_mano_1",
+      currency: "USD",
+      grossOriginal: "100.00",
+      occurredOn: "2026-11-14",
+    });
+
+    // Otro usuario no ve nada de esto: ni la empresa.
+    await expect(previewImport(other.client, ownChoice([row(ref(1))]))).rejects.toThrow("La empresa ya no existe.");
+  });
+
+  it("dice si el esquema por defecto está desactivado o si no hay", async () => {
+    const { client, own, ownChoice } = await ownUser();
+    const input = ownChoice([row(refs()(1))]);
+    await client.from("pay_schemes").update({ active: false }).eq("id", own.schemeId).throwOnError();
+    expect((await previewImport(client, input)).scheme).toEqual({ kind: "desactivado", name: "Reparto 50/30/20" });
+    await client.from("pay_companies").update({ default_scheme_id: null }).eq("id", own.companyId).throwOnError();
+    expect((await previewImport(client, input)).scheme).toEqual({ kind: "ninguno" });
+  });
+
+  it("una fila que no pasa se dice antes de importar", async () => {
+    const bad = row(refs()(1), { line: 7, currency: "usd" });
+    expect(await userErrorOf(previewImport(user.client, choice([bad])))).toMatch(/^La línea 7 no se puede importar/);
   });
 });
 

@@ -168,6 +168,7 @@ export function ImportScreen({
           channelId: settings.channelId === "" ? null : settings.channelId,
           extraIds: settings.extraIds,
           useReportedFee: useReportedFee && mapping.fee != null,
+          alreadyDeposited: false,
           rows: batch,
         });
         if (!batchResult.ok) {

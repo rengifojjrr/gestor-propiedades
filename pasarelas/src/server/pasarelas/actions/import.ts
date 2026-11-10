@@ -14,7 +14,7 @@ import { zId } from "../zod";
  * está la que no sirve (por eso aquí las filas pasan como `unknown`).
  */
 
-const zImport = z.object({
+const zBatch = z.object({
   companyId: zId,
   gatewayId: zId,
   channelId: zId.nullable(),
@@ -23,9 +23,24 @@ const zImport = z.object({
   rows: z.array(z.unknown()),
 });
 
-/** Importa un lote de filas. Devuelve cuántos cobros se crearon y cuántos ya existían (y no se tocaron). */
-export async function importTransactions(input: unknown): Promise<ActionResult<{ created: number; duplicates: number }>> {
-  return runAction(zImport, input, ({ supabase }, data) => ops.importTransactions(supabase, data));
+/**
+ * Lo que «Así lo entendí» necesita del servidor sobre un lote, sin escribir nada: la fecha estimada de cada fila,
+ * las referencias que ya existen (también en la papelera), los cobros registrados a mano que pueden ser los mismos
+ * y el esquema de reparto que se aplicará.
+ */
+export async function previewImport(input: unknown): Promise<ActionResult<ops.ImportPreview>> {
+  return runAction(zBatch, input, ({ supabase }, data) => ops.previewImport(supabase, data), { revalidate: [] });
+}
+
+/**
+ * Importa un lote de filas. Devuelve cuántos cobros se crearon, cuántos ya existían (y no se tocaron) y cuántos de
+ * esos están en la papelera.
+ */
+export async function importTransactions(
+  input: unknown,
+): Promise<ActionResult<{ created: number; duplicates: number; trashed: number }>> {
+  const schema = zBatch.extend({ alreadyDeposited: z.boolean() });
+  return runAction(schema, input, ({ supabase }, data) => ops.importTransactions(supabase, data));
 }
 
 /** Recuerda el mapeo de columnas (y el formato del archivo) para la próxima importación con esa pasarela. */
