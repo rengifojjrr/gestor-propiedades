@@ -1003,8 +1003,10 @@ EventsTimeline.tsx,ReceiptsCard.tsx}`; `e2e/cobro-detalle.spec.ts`.
 
 **Archivos:** `src/app/(dashboard)/pasarelas/{page.tsx,loading.tsx,error.tsx}`;
 `src/components/pasarelas/summary/{SummaryFilters.tsx,StatCards.tsx,MonthChart.tsx,CompanyRanking.tsx,
-GatewayShare.tsx,GatewayCost.tsx,AccountsChart.tsx,UpcomingDeposits.tsx,SplitsTable.tsx,Notices.tsx,ChartFrame.tsx}`;
-`src/server/pasarelas/queries/summary.ts`; `e2e/resumen.spec.ts`.
+GatewayShare.tsx,GatewayCost.tsx,AccountsChart.tsx,UpcomingDeposits.tsx,SplitsTable.tsx,Notices.tsx,ChartFrame.tsx,
+BarsChart.tsx}` (`BarsChart.tsx` es el único módulo que importa Recharts: `ChartFrame`, de cliente, lo carga con
+`next/dynamic` y `ssr: false`); `src/server/pasarelas/queries/summary.ts`; `src/server/pasarelas/queries/paging.ts`
+(`readAll`, la lectura por tramos que comparten `config.ts` y `summary.ts`); `e2e/resumen.spec.ts`.
 
 **Consume:** `leanTx`, `summarize`, `upcomingDeposits`, `pay_beneficiary_balances`, `DepositDialog`.
 
