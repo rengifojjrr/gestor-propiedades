@@ -66,10 +66,10 @@ export function parsePct(input: string): Pct | null {
 
 // ─── Mostrar ────────────────────────────────────────────────────────────────────────────────────────────────
 
+/** Solo los símbolos que `parseMoney` sabe leer: lo que se muestra con símbolo se puede volver a escribir tal cual. */
 const SYMBOLS = new Map<Currency, string>([
   ["USD", "$"],
   ["EUR", "€"],
-  ["GBP", "£"],
 ]);
 
 /** Miles con punto y decimales con coma: "1.234,56" · "-3,20". */

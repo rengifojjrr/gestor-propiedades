@@ -164,7 +164,7 @@ describe("formatMoney", () => {
     ["-3.20", "USD", "-$3,20"],
     ["5.00", "MXN", "5,00 MXN"],
     ["5.00", "EUR", "€5,00"],
-    ["1234.56", "GBP", "£1.234,56"],
+    ["1234.56", "GBP", "1.234,56 GBP"],
     ["1234.56", "MXN", "1.234,56 MXN"],
     ["-5.00", "MXN", "-5,00 MXN"],
     ["-5.00", "EUR", "-€5,00"],
@@ -172,6 +172,15 @@ describe("formatMoney", () => {
     ["-0.00", "USD", "$0,00"],
   ])("%s %s → %s", (amount, currency, expected) => {
     expect(formatMoney(amount, currency)).toBe(expected);
+  });
+
+  test("solo llevan símbolo las monedas que parseMoney sabe leer: las demás van con su código", () => {
+    for (const currency of ["GBP", "MXN", "CAD", "JPY", "CHF"]) {
+      expect(formatMoney("5.00", currency)).toBe(`5,00 ${currency}`);
+    }
+    for (const currency of ["USD", "EUR"]) {
+      expect(parseMoney(formatMoney("5.00", currency))).toBe("5.00");
+    }
   });
 
   test("una moneda con nombre de propiedad heredada va como código", () => {
