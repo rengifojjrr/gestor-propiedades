@@ -214,6 +214,120 @@ test.describe.serial("registrar cobro", () => {
     expect(await savedWith(ownerDb, reference)).toHaveLength(1);
   });
 
+  test("«Listo cuando» n.º 1 con días hábiles: el 25/11/2026 por Stripe (2 hábiles, Acción de Gracias el 26) cae el 30/11/2026", async ({
+    page,
+  }) => {
+    await login(page, owner);
+    await openForm(page);
+    await chooseE1(page);
+    await expect(page.getByRole("switch", { name: "Pago rápido" })).not.toBeChecked();
+    await page.getByLabel("Monto").fill("100");
+    await page.getByLabel("Fecha y hora").fill("2026-11-25T10:00");
+    const reference = `HABILES-${randomUUID().slice(0, 8)}`;
+    await page.getByLabel("Referencia").fill(reference);
+
+    const preview = page.getByRole("region", { name: "Vista previa" });
+    await expect(preview.getByTestId("fecha-estimada").locator("time")).toHaveAttribute("datetime", "2026-11-30");
+    await expectCleanScreen(page);
+    await page.getByRole("button", { name: "Guardar" }).click();
+    await expect(page.getByRole("region", { name: /Avisos/ }).getByText("Cobro guardado")).toBeVisible();
+
+    const [saved, ...more] = await savedWith(ownerDb, reference);
+    expect(more).toEqual([]);
+    expect(saved?.estimated_deposit_on).toBe("2026-11-30");
+  });
+
+  test("si se pierde la respuesta: el aviso no afirma que no se guardó, reenviarlo no lo duplica y corregirlo no se da por guardado", async ({
+    page,
+  }) => {
+    const tag = randomUUID().slice(0, 8);
+    const main = page.getByRole("main");
+    const toasts = page.getByRole("region", { name: /Avisos/ }).getByRole("listitem");
+    // La llamada que se corta a propósito deja su aviso en la consola.
+    expectedLoadFailures = ["/pasarelas/registrar"];
+    /** Con la marca puesta, la próxima llamada a una acción llega al servidor (que guarda), pero su respuesta no vuelve. */
+    let armed = false;
+    await page.route("**/pasarelas/registrar", async (route) => {
+      const request = route.request();
+      if (!armed || request.method() !== "POST" || request.headers()["next-action"] === undefined) {
+        return route.fallback();
+      }
+      armed = false;
+      await route.fetch();
+      await route.abort();
+    });
+    const loseNextResponse = () => {
+      armed = true;
+    };
+
+    await login(page, owner);
+    await openForm(page);
+    await chooseE1(page);
+
+    // A: se pierde la respuesta y se reenvía tal cual. Queda uno solo, y el aviso no dice «Cobro guardado.».
+    const refA = `CORTE-A-${tag}`;
+    await page.getByLabel("Monto").fill("100");
+    await page.getByLabel("Referencia").fill(refA);
+    loseNextResponse();
+    await page.getByRole("button", { name: "Guardar" }).click();
+    const unsure = main.getByRole("alert").filter({ hasText: "No sabemos si se guardó" });
+    await expect(unsure).toBeVisible();
+    await expect(unsure).toContainText("revisa Cobros antes de cambiar nada; si lo envías igual, no se duplica");
+    expect(await savedWith(ownerDb, refA)).toHaveLength(1);
+    await expectCleanScreen(page);
+    await page.getByRole("button", { name: "Guardar" }).click();
+    await expect(toasts.filter({ hasText: "Este cobro ya estaba guardado" })).toBeVisible();
+    await expect(toasts.filter({ hasText: "Cobro guardado." })).toHaveCount(0);
+    await expect(page.getByLabel("Monto")).toHaveValue("");
+    expect(await savedWith(ownerDb, refA)).toHaveLength(1);
+
+    // B: se pierde la respuesta, se corrige el monto y se reenvía. No se guarda lo corregido y se dice.
+    const refB = `CORTE-B-${tag}`;
+    await page.getByLabel("Monto").fill("100");
+    await page.getByLabel("Referencia").fill(refB);
+    loseNextResponse();
+    await page.getByRole("button", { name: "Guardar" }).click();
+    await expect(unsure).toBeVisible();
+    await page.getByLabel("Monto").fill("150");
+    await page.getByRole("button", { name: "Guardar" }).click();
+    const honest = main.getByRole("alert").filter({ hasText: "ya se había guardado en el primer intento" });
+    await expect(honest).toBeVisible();
+    await expect(honest).toContainText("lo que cambiaste no se guardó");
+    const [savedB, ...moreB] = await savedWith(ownerDb, refB);
+    expect(moreB).toEqual([]);
+    await expect(honest.getByRole("link", { name: "Ver el cobro guardado" })).toHaveAttribute(
+      "href",
+      `/pasarelas/cobros/${savedB?.id}`,
+    );
+    await expect(toasts.filter({ hasText: "Cobro guardado." })).toHaveCount(0);
+    const { data: rowB } = await ownerDb.from("pay_transactions").select("gross_original::text").eq("reference", refB);
+    expect(rowB).toEqual([{ gross_original: "100.00" }]);
+    // Listo para el siguiente, con otro id: lo de antes no se vuelve a mandar.
+    await expect(page.getByLabel("Monto")).toHaveValue("");
+    await expectCleanScreen(page);
+  });
+
+  test("si el esquema por defecto de la empresa está desactivado, lo dice fuera de «Más opciones»", async ({ page }) => {
+    const solo = await newUser();
+    const soloDb = await signInAal1(solo.email, solo.password);
+    const { error } = await soloDb.from("pay_schemes").update({ active: false }).eq("id", solo.basics.schemeId);
+    if (error) throw new Error(`No se pudo desactivar el esquema: ${error.message}`);
+
+    await login(page, solo);
+    await openForm(page);
+    await page.getByLabel("Empresa").selectOption({ label: "Escuela Demo" });
+    const warning = page.getByText("El esquema de reparto por defecto de esta empresa está desactivado");
+    await expect(warning).toBeVisible();
+    await expect(warning).toContainText("este cobro no se reparte");
+    await expect(page.getByRole("link", { name: "Ver la empresa" })).toHaveAttribute(
+      "href",
+      `/pasarelas/empresas/${solo.basics.companyId}`,
+    );
+    // Se ve sin abrir «Más opciones», donde está el esquema.
+    await expect(page.getByLabel("Esquema de reparto")).toBeHidden();
+    await expectCleanScreen(page);
+  });
+
   test("Foco 3: un archivo de 11 MB y un .txt se rechazan antes de subir; se guarda sin comprobante", async ({ page }) => {
     const storageWrites: string[] = [];
     page.on("request", (call) => {

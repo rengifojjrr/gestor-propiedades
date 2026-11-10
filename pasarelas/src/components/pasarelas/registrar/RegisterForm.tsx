@@ -19,6 +19,7 @@ import { instantToLocalInput, localInputToInstant } from "@/lib/pasarelas/dates"
 import { parseMoney } from "@/lib/pasarelas/money";
 import { defaultExtraIds } from "@/lib/pasarelas/rules";
 import { LIFECYCLE_LABEL } from "@/lib/pasarelas/status";
+import { PAY_STATE_TEXT } from "@/lib/pasarelas/write";
 import type { Currency, Money as MoneyText, PayConfig } from "@/lib/pasarelas/types";
 import { createTransaction } from "@/server/pasarelas/actions/transactions";
 import { ExtrasToggles } from "./ExtrasToggles";
@@ -51,9 +52,15 @@ const MORE_FIELDS = ["schemeId", "bankAccountId", "estimatedDepositOn", "status"
 
 const NOTE_MAX = 280;
 const FIELDS_TEXT = "Revisa los campos marcados.";
-/** Solo cuando falla el guardado del cobro mismo: lo que pase después (el comprobante) tiene sus propios textos. */
-const OFFLINE_TEXT = "No se pudo guardar el cobro. Revisa tu conexión e inténtalo de nuevo.";
+/**
+ * Solo cuando falla la llamada que guarda el cobro: puede que el servidor lo haya guardado y se perdiera la
+ * respuesta, así que no se afirma que no se guardó. Reenviarlo tal cual no lo duplica (va con el mismo id).
+ */
+const OFFLINE_TEXT = "No sabemos si se guardó: revisa Cobros antes de cambiar nada; si lo envías igual, no se duplica.";
 const SAVED_TEXT = "Cobro guardado.";
+/** El reenvío de un cobro que ya estaba guardado con lo mismo: no se creó nada nuevo. */
+const ALREADY_SAVED_TEXT = "Este cobro ya estaba guardado: no se registró otra vez.";
+const FUTURE_DEPOSIT_TEXT = "La fecha del depósito no puede ser futura.";
 /** Con el comprobante fallido, el aviso de éxito lo dice y remite al aviso que deja arreglarlo. */
 const SAVED_WITHOUT_RECEIPT_TEXT = {
   retry: "Cobro guardado, pero el comprobante no se subió: reinténtalo en el aviso junto a «Guardar».",
@@ -148,6 +155,7 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
   const [currency, setCurrency] = useState(() => companyDefaults(companyId).currency);
   const [amount, setAmount] = useState("");
   const [occurredLocal, setOccurredLocal] = useState(now);
+  const today = now.slice(0, 10);
   const [reference, setReference] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -187,6 +195,10 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
   }, [lastFailedId]);
 
   const channels = cfg.channels.filter((channel) => channel.active && channel.companyId === companyId);
+  // El esquema por defecto de la empresa está desactivado: no se propone, y sin otro el cobro no se reparte.
+  const defaultScheme = companies.find((company) => company.id === companyId)?.defaultSchemeId ?? null;
+  const inactiveDefault =
+    defaultScheme !== null && schemeId === "" && !schemes.some((scheme) => scheme.id === defaultScheme);
   const gateway = gateways.find((candidate) => candidate.id === gatewayId);
   const options = (gateway?.extras ?? []).filter((option) => option.active).sort((a, b) => a.sort - b.sort);
 
@@ -253,6 +265,10 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
       errors.occurredAt = "Elige la fecha y la hora.";
     }
     if (status === "depositado" && depositedOn === "") errors.depositedOn = "Escribe cuándo se depositó.";
+    else if (status === "depositado" && depositedOn > today) errors.depositedOn = FUTURE_DEPOSIT_TEXT;
+    else if (status === "depositado" && depositedOn < occurredLocal.slice(0, 10)) {
+      errors.depositedOn = PAY_STATE_TEXT.deposito_antes_del_cobro;
+    }
     return errors;
   }
 
@@ -272,10 +288,13 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
   }
 
   /**
-   * Guarda el cobro y dice su id, o pinta por qué no se guardó y devuelve `null`. Es lo único que puede decir «No se
-   * pudo guardar el cobro»: lo que pasa después (el comprobante, el aviso) ya es con el cobro guardado.
+   * Guarda el cobro y dice su id y si se creó ahora (`created`: falso si ya estaba guardado con lo mismo), o pinta
+   * por qué no se guardó y devuelve `null`. Si ese id ya estaba guardado con OTROS datos (se corrigió algo tras un
+   * fallo de red en el que el primer envío sí llegó), lo dice con el enlace al cobro guardado y deja el formulario
+   * listo para el siguiente: lo corregido no se guardó y se corrige en el detalle. Lo que pasa después del guardado
+   * (el comprobante, el aviso) ya es con el cobro guardado.
    */
-  async function saveTransaction(): Promise<string | null> {
+  async function saveTransaction(): Promise<{ id: string; created: boolean } | null> {
     try {
       const result = await createTransaction({
         id,
@@ -299,9 +318,13 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
           Object.entries(result.fieldErrors ?? {}).map(([name, messages]) => [name, messages[0]]),
         );
         showErrors(result.error, errors);
+        if (result.error === PAY_STATE_TEXT.ya_registrado) {
+          setUnfinishedId(id);
+          resetForNext();
+        }
         return null;
       }
-      return result.data.id;
+      return result.data;
     } catch {
       showErrors(OFFLINE_TEXT, {});
       return null;
@@ -322,8 +345,9 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
     setUnfinishedId(null);
     setFieldErrors({});
     try {
-      const transactionId = await saveTransaction();
-      if (transactionId === null) return;
+      const saved = await saveTransaction();
+      if (saved === null) return;
+      const transactionId = saved.id;
       try {
         const failure = file === null ? null : await attachReceipt(file, transactionId);
         if (file !== null && failure !== null) {
@@ -340,9 +364,11 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
           setLastFailedId(transactionId);
         }
         const message =
-          failure === null
-            ? SAVED_TEXT
-            : SAVED_WITHOUT_RECEIPT_TEXT[failure.unusableFile ? "replace" : "retry"];
+          failure !== null
+            ? SAVED_WITHOUT_RECEIPT_TEXT[failure.unusableFile ? "replace" : "retry"]
+            : saved.created
+              ? SAVED_TEXT
+              : ALREADY_SAVED_TEXT;
         notifyAction(message, {
           label: "Ver cobro",
           onClick: () => router.push(`/pasarelas/cobros/${transactionId}`),
@@ -433,6 +459,18 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
               ))}
             </Select>
           </Field>
+
+          {inactiveDefault ? (
+            <Alert tone="warning">
+              <p>
+                El esquema de reparto por defecto de esta empresa está desactivado: este cobro no se reparte. Puedes
+                elegir otro en «Más opciones».{" "}
+                <Link href={`/pasarelas/empresas/${companyId}`} className="font-semibold underline">
+                  Ver la empresa
+                </Link>
+              </p>
+            </Alert>
+          ) : null}
 
           <Field label="Canal" optional error={fieldErrors.channelId}>
             <Select value={channelId} onChange={(event) => setChannelId(event.currentTarget.value)}>
@@ -564,7 +602,13 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
 
               {status === "depositado" ? (
                 <Field label="Depositado el" error={fieldErrors.depositedOn}>
-                  <Input type="date" value={depositedOn} onChange={(event) => setDepositedOn(event.currentTarget.value)} />
+                  <Input
+                    type="date"
+                    value={depositedOn}
+                    min={occurredLocal.slice(0, 10)}
+                    max={today}
+                    onChange={(event) => setDepositedOn(event.currentTarget.value)}
+                  />
                 </Field>
               ) : null}
 
