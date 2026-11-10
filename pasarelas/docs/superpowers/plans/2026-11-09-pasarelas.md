@@ -679,6 +679,32 @@ ninguna base remota: se edita en su sitio), `src/lib/supabase/database.types.ts`
       remite a `npm run db:env`.
 - [ ] Verificar: `npm run typecheck`, `npm run lint`, `npm test`, `npm run test:int`, `npm run build`.
 
+### Task 24: Pulido del kit de interfaz
+
+Los hallazgos menores que dejó la revisión de la tarea 7 y que conviene cerrar antes de construir pantallas encima.
+
+**Archivos:** modificar `src/components/ui/{Dialog.tsx,Field.tsx,Alert.tsx,Toggles.tsx}`,
+`src/components/shell/AppShell.tsx`, `src/app/globals.css`, la galería (`src/app/(dashboard)/kit/*`) y
+`e2e/kit.spec.ts`.
+
+- [ ] **`Dialog`: `onClose` exactamente una vez por cierre que inicia la persona** (Escape, botón de cerrar, clic en
+      el fondo, «Cancelar») y **nunca** por el cierre que el propio código hace después de confirmar.
+      `ConfirmDialog` llama a `onConfirm` una sola vez y no dispara `onClose` tras confirmar. Prueba de punta a punta
+      con un contador visible en la galería: cancelar → `onClose` 1 y `onConfirm` 0; confirmar → `onConfirm` 1 y
+      `onClose` 0; Escape → `onClose` 1.
+- [ ] **`Dialog`: el clic en el fondo solo cierra si empezó y terminó en el fondo.** Soltar fuera una selección de
+      texto iniciada dentro, o usar la barra de desplazamiento del diálogo, no lo cierra. Prueba: arrastrar desde un
+      campo de texto del diálogo hasta el fondo lo deja abierto; un clic limpio en el fondo lo cierra.
+- [ ] **Sombras en oscuro:** `shadow-raised` y `shadow-overlay` usan sus variantes del modo oscuro.
+- [ ] **`Field`:** si el control hijo trae su propio `id`, se respeta y la etiqueta apunta a él; si trae
+      `aria-describedby`, se **combina** con la ayuda y el error en vez de reemplazarse.
+- [ ] **`Checkbox` y `Switch`:** un `aria-labelledby` del llamador se conserva, combinado con el propio.
+- [ ] **`Alert`:** por defecto un aviso fijo no lleva `role="alert"` (un lector de pantalla no debe interrumpir por
+      un texto que ya estaba en la página); se pide con la prop `announce`. La galería enseña los dos.
+- [ ] **`AppShell`:** sin desestructurar `NAV.main` como si fuera una tupla.
+- [ ] Verificar: `npm run typecheck`, `npm run lint`, `npm test` y `e2e/kit.spec.ts` (los dos tamaños, claro y
+      oscuro, axe sin violaciones serias ni críticas).
+
 ---
 
 ## Fase 1 · Pantallas
