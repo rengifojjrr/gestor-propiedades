@@ -121,6 +121,19 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 - Integración: dos usuarios reales del stack local; cada prueba crea los suyos y no depende de datos de otra.
 - Punta a punta: contra `next build && next start`. La salida de las pruebas debe quedar limpia, sin avisos.
 
+## Kit de interfaz
+
+- Las pantallas se arman con `@/components/ui` y `@/components/shell`. La galería `/kit` muestra cada componente con
+  sus props: existe con `next dev`; en producción da 404 salvo que se compile **y** se arranque con `PASARELAS_KIT=1`
+  (`PASARELAS_KIT=1 npm run build && PASARELAS_KIT=1 npx next start -p 3110`; sin ella `next build` deja el 404 fijo).
+  No es un secreto y no va en Vercel; `npm run test:e2e` la enciende sola para `e2e/kit.spec.ts`.
+- **Los colores por defecto de Tailwind están apagados**: `bg-white` o `text-gray-500` no hacen nada. Usa los tokens de
+  `src/app/globals.css` (`bg-surface`, `text-ink-soft`, `border-rule`…), que ya traen su par para el modo oscuro.
+- Dinero y porcentajes se pintan con `<Money value currency />` y `<Percent value />`, que llaman a `formatMoney` y
+  `formatPct`; las fechas, con `<DateText value />` y `<DateTimeText value />`. No se formatea a mano en una pantalla.
+- axe se pasa con `expectNoSeriousAxe` de `e2e/axe.ts` (concilia los tipos de las dos versiones de `playwright-core`
+  del lockfile). Si hace falta desde otro archivo de ayuda, se reexporta de ahí: no se duplica.
+
 ## Commits
 
 Pequeños, en español, que digan qué cambia y por qué. Nada de `.env*` (salvo `.env.example`), ni datos reales, ni
