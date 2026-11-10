@@ -5,3 +5,10 @@
 export { detectFormat, type ImportFormat } from "./detect";
 export { presetFor, referenceWarning, type ColumnMapping } from "./presets";
 export { mapRows, parseImportAmount, validateMapping, type ImportRow, type ImportSkip } from "./mapping";
+export {
+  classifyRepeats,
+  depositedOnImport,
+  type ExistingRef,
+  type ManualTx,
+  type RepeatCheck,
+} from "./review";
