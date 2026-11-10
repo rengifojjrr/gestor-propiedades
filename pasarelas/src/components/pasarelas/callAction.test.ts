@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { describe, expect, test } from "vitest";
-import { UNSURE_TEXT, callAction, failureOf, isUnsure } from "./callAction";
+import { RETRY_TEXT, UNSURE_TEXT, callAction, callActionOr, failureOf, isUnsure } from "./callAction";
 
 describe("callAction", () => {
   test("lo que responde la acción pasa tal cual, sea bien o mal, y no es una duda", async () => {
@@ -45,5 +45,34 @@ describe("failureOf", () => {
     const cut = await callAction<void>(() => Promise.reject(new Error("x")));
     if (cut.ok) throw new Error("Se esperaba un error");
     expect(failureOf(cut)).toEqual({ text: UNSURE_TEXT, unsure: true });
+  });
+});
+
+describe("callActionOr", () => {
+  test("lo que responde la acción, con su propio tipo, pasa tal cual", async () => {
+    const answer = { error: "Correo o contraseña incorrectos.", email: "ana@example.com" };
+    expect(await callActionOr(async () => answer, () => "corte")).toBe(answer);
+  });
+
+  test("si la llamada no llega o no vuelve, no lanza: devuelve lo de `onCut`", async () => {
+    const result = await callActionOr(
+      () => Promise.reject(new TypeError("Failed to fetch")),
+      () => ({ error: RETRY_TEXT }),
+    );
+    expect(result).toEqual({ error: RETRY_TEXT });
+  });
+
+  test("una redirección de Next (entrar, cerrar sesión) no es un corte: sigue su camino", async () => {
+    let redirection: unknown;
+    try {
+      redirect("/login");
+    } catch (error) {
+      redirection = error;
+    }
+    await expect(callActionOr(() => Promise.reject(redirection), () => "corte")).rejects.toBe(redirection);
+  });
+
+  test("el texto de repetir dice que se cortó y que se puede volver a intentar, sin la duda", () => {
+    expect(RETRY_TEXT).toBe("Se perdió la conexión. Revisa tu señal y vuelve a intentarlo.");
   });
 });

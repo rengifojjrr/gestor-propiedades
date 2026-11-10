@@ -47,3 +47,24 @@ export type ActionFailure = { text: string; unsure: boolean };
 export function failureOf(result: Extract<CallResult<unknown>, { ok: false }>): ActionFailure {
   return { text: result.error, unsure: "unsure" in result && result.unsure === true };
 }
+
+/**
+ * Lo que se dice de un corte cuando repetir es seguro (entrar, escribir el código, empezar a activar un
+ * dispositivo): no hay duda que revisar, así que no va con «Ver cómo quedó».
+ */
+export const RETRY_TEXT = "Se perdió la conexión. Revisa tu señal y vuelve a intentarlo.";
+
+/**
+ * `callAction` para las acciones que no devuelven el `ActionResult` del módulo (la entrada, Ajustes → Seguridad y
+ * cerrar sesión): si la llamada no llega o su respuesta no vuelve, no lanza y devuelve lo que dé `onCut`. Quien
+ * llama decide qué decir: que repita (`RETRY_TEXT`) o la duda (`UNSURE_TEXT`). Las redirecciones de Next siguen su
+ * camino.
+ */
+export async function callActionOr<T, U>(action: () => Promise<T>, onCut: () => U): Promise<T | U> {
+  try {
+    return await action();
+  } catch (error) {
+    unstable_rethrow(error);
+    return onCut();
+  }
+}
