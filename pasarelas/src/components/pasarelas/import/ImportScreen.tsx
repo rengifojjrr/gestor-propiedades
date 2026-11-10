@@ -1,19 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  Alert,
-  Button,
-  ButtonLink,
-  Card,
-  CardBody,
-  CardHeader,
-  CardTitle,
-  Checkbox,
-  Field,
-  Input,
-  notify,
-} from "@/components/ui";
+import { FileUp } from "lucide-react";
+import { useEffect, useId, useMemo, useState } from "react";
+import { Alert, Button, ButtonLink, Card, CardBody, CardHeader, CardTitle, Checkbox, cn, notify } from "@/components/ui";
+import { buttonClass } from "@/components/ui/Button";
 import {
   mapRows,
   referenceWarning,
@@ -126,6 +116,7 @@ export function ImportScreen({
   });
   const [file, setFile] = useState<CsvFile | null>(null);
   const [fileKey, setFileKey] = useState(0);
+  const fileHintId = useId();
   const [reading, setReading] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
   const [proposal, setProposal] = useState<Proposal | null>(null);
@@ -311,18 +302,33 @@ export function ImportScreen({
           <CardTitle>Archivo</CardTitle>
         </CardHeader>
         <CardBody className="flex flex-col gap-4">
-          <Field
-            label="Archivo CSV"
-            hint="De Stripe (movimientos de saldo o pagos), de PayPal (actividad) u otro. Se lee en este dispositivo: el archivo no se sube."
-          >
-            <Input
-              key={fileKey}
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(event) => void onFile(event.currentTarget.files?.[0])}
-              disabled={importing || reading}
-            />
-          </Field>
+          {/* El botón es la etiqueta de un control escondido, como en los comprobantes: el nativo, en un celular en
+              español, no cabe («Seleccionar archivo Ningún ar…ccionado»). El anillo de foco va en la etiqueta. */}
+          <div className="flex min-w-0 flex-col items-start gap-1.5">
+            <label
+              className={cn(
+                buttonClass("secondary"),
+                "cursor-pointer has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus",
+                (importing || reading) && "pointer-events-none opacity-55",
+              )}
+            >
+              <FileUp aria-hidden className="size-5" />
+              Elegir archivo CSV
+              <input
+                key={fileKey}
+                type="file"
+                accept=".csv,text/csv"
+                className="sr-only"
+                aria-describedby={fileHintId}
+                onChange={(event) => void onFile(event.currentTarget.files?.[0])}
+                disabled={importing || reading}
+              />
+            </label>
+            <p id={fileHintId} className="text-sm text-ink-soft">
+              De Stripe (movimientos de saldo o pagos), de PayPal (actividad) u otro. Se lee en este dispositivo: el
+              archivo no se sube.
+            </p>
+          </div>
           {reading ? <p role="status">Leyendo el archivo…</p> : null}
           {readError ? (
             <Alert tone="danger" announce>
