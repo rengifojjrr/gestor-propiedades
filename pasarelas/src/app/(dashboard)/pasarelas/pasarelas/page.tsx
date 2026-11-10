@@ -47,7 +47,7 @@ function GatewayItem({ gateway, totals, today }: { gateway: GatewayCfg; totals: 
             <dt className="text-ink-soft">Tarifa vigente</dt>
             <dd>{fee ? <FeeText pct={fee.pct} fixed={fee.fixed} /> : "Sin tarifa"}</dd>
             <dt className="text-ink-soft">Depósito</dt>
-            <dd>{payoutText(gateway.payoutDays, gateway.payoutDayType)}</dd>
+            <dd>{payoutText(gateway.payoutDays, gateway.payoutDayType, gateway.payoutDaysMax)}</dd>
             <dt className="text-ink-soft">Tiempo real</dt>
             <dd>
               <LagText totals={totals} />

@@ -3,13 +3,17 @@
 import { useId, useState } from "react";
 import { DepositDialog } from "@/components/pasarelas/tx/DepositDialog";
 import { cobros } from "@/components/pasarelas/tx/plural";
+import { DepositWindowShort } from "@/components/pasarelas/tx/DepositWindow";
 import { Badge, Button, DateText, Money, cn } from "@/components/ui";
-import { formatDate } from "@/lib/pasarelas/dates";
+import { formatDate, windowDayLabels } from "@/lib/pasarelas/dates";
 import type { Currency, ISODate, Money as MoneyValue } from "@/lib/pasarelas/types";
 
 /** Un grupo de `upcomingDeposits` con el nombre de su cuenta ya resuelto. */
 export type DepositGroupView = {
+  /** El día en que cuenta: la fecha más tardía de las ventanas de sus cobros. */
   date: ISODate;
+  /** Desde cuándo puede caer: la más temprana de sus ventanas (`date` si todas son de un solo día). */
+  from: ISODate;
   accountName: string;
   net: MoneyValue;
   count: number;
@@ -26,9 +30,10 @@ export type UpcomingDepositsProps = {
 };
 
 /**
- * Lo que cae en los próximos días, por fecha estimada y cuenta destino, con lo atrasado arriba y en ámbar. «Marcar
- * depositado» marca TODO lo de esa fecha y esa cuenta que siga por caer, con la fecha propuesta: la estimada si ya
- * pasó, hoy si no (no se marca depositado algo con una fecha que todavía no llegó).
+ * Lo que cae en los próximos días, por fecha estimada y cuenta destino, con lo atrasado arriba y en ámbar. Un cobro
+ * cuenta en el día de la fecha más tardía de su ventana; si el grupo tiene ventanas, se ve la corta («16–18 nov»).
+ * «Marcar depositado» marca TODO lo de esa fecha y esa cuenta que siga por caer, con la fecha propuesta: la
+ * estimada si ya pasó, hoy si no (no se marca depositado algo con una fecha que todavía no llegó).
  */
 export function UpcomingDeposits({ groups, currency, today, window }: UpcomingDepositsProps) {
   const headingId = useId();
@@ -80,6 +85,11 @@ function DepositGroupCard({
   onDeposit: () => void;
 }) {
   const titleId = useId();
+  const window = { from: group.from, to: group.date };
+  const [first, last] = windowDayLabels(window);
+  // El nombre del grupo, como texto corrido: «vie 13 nov 2026 · Cuenta principal ··4321», o con una ventana,
+  // «Entre el lun 16 y el mié 18 nov · Cuenta principal ··4321».
+  const name = last === undefined ? formatDate(group.date) : `Entre el ${first} y el ${last}`;
   return (
     <article
       aria-labelledby={titleId}
@@ -89,11 +99,10 @@ function DepositGroupCard({
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
-        {/* El nombre del grupo, como texto corrido: «vie 13 nov 2026 · Cuenta principal (…4321)». */}
         <h3 id={titleId} className="min-w-0 font-semibold">
-          <span className="sr-only">{`${formatDate(group.date)} · ${group.accountName}`}</span>
+          <span className="sr-only">{`${name} · ${group.accountName}`}</span>
           <span aria-hidden className="flex flex-col">
-            <DateText value={group.date} />
+            {last === undefined ? <DateText value={group.date} /> : <DepositWindowShort window={window} />}
             <span className="font-normal text-ink-soft">{group.accountName}</span>
           </span>
         </h3>

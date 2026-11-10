@@ -9,6 +9,8 @@ import type { DayType, ExtraBase, ExtraCfg } from "@/lib/pasarelas/types";
 export type GatewayDraft = {
   name: string;
   payoutDays: string;
+  /** El máximo de la ventana («a»); vacío, un solo día. */
+  payoutDaysMax: string;
   payoutDayType: DayType;
   refundsReturnFee: boolean;
   disputeFee: string;
@@ -22,6 +24,7 @@ export type ExtraDraft = {
   base: ExtraBase;
   defaultOn: boolean;
   payoutDaysOverride: string;
+  payoutDaysOverrideMax: string;
 };
 
 /** Los problemas de cada campo que devuelve una acción (`fieldErrors`). */
@@ -33,6 +36,7 @@ export const firstError = (errors: FieldErrors, key: string): string | undefined
 export const EMPTY_GATEWAY: GatewayDraft = {
   name: "",
   payoutDays: "2",
+  payoutDaysMax: "",
   payoutDayType: "habiles",
   refundsReturnFee: false,
   disputeFee: "0,00",
@@ -46,7 +50,11 @@ export const EMPTY_EXTRA: ExtraDraft = {
   base: "bruto",
   defaultOn: false,
   payoutDaysOverride: "",
+  payoutDaysOverrideMax: "",
 };
+
+/** Unos días guardados, como se vuelven a escribir en un campo: vacío si no hay. */
+export const daysDraft = (days: number | null): string => (days === null ? "" : String(days));
 
 /** Un porcentaje o un monto ya guardados, como se vuelven a escribir en un campo («2,9», «0,30»). */
 export const pctDraft = (pct: string): string => formatPct(pct).replace(" %", "");
@@ -60,7 +68,8 @@ export function extraDraft(extra: ExtraCfg): ExtraDraft {
     fixed: moneyDraft(extra.fixed),
     base: extra.base,
     defaultOn: extra.defaultOn,
-    payoutDaysOverride: extra.payoutDaysOverride === null ? "" : String(extra.payoutDaysOverride),
+    payoutDaysOverride: daysDraft(extra.payoutDaysOverride),
+    payoutDaysOverrideMax: daysDraft(extra.payoutDaysOverrideMax),
   };
 }
 
@@ -73,6 +82,7 @@ export function extraInput(extra: ExtraCfg) {
     base: extra.base,
     defaultOn: extra.defaultOn,
     payoutDaysOverride: extra.payoutDaysOverride === null ? null : String(extra.payoutDaysOverride),
+    payoutDaysOverrideMax: extra.payoutDaysOverrideMax === null ? null : String(extra.payoutDaysOverrideMax),
     active: extra.active,
   };
 }

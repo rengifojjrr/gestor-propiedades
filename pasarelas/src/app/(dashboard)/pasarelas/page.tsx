@@ -154,6 +154,7 @@ export default async function ResumenPage({ searchParams }: PageProps<"/pasarela
             <UpcomingDeposits
               groups={view.deposits.map((group) => ({
                 date: group.date,
+                from: group.from,
                 // Un grupo de más cobros de los que se marcan de una vez va por partes: «… · parte 1 de 2».
                 accountName:
                   group.part === null

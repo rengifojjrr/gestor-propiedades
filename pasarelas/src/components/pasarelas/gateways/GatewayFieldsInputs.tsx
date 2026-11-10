@@ -2,6 +2,7 @@
 
 import { Checkbox, Field, Input, MoneyInput, Select, Textarea } from "@/components/ui";
 import type { DayType } from "@/lib/pasarelas/types";
+import { DaysRangeInputs } from "./DaysRangeInputs";
 import { firstError, type FieldErrors, type GatewayDraft } from "./drafts";
 
 export const DISPUTE_FEE_HINT = "Un solo costo, que se revierte si la disputa se gana.";
@@ -28,27 +29,22 @@ export function GatewayFieldsInputs({
           required
         />
       </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Días al depósito" error={firstError(errors, "payoutDays")}>
-          <Input
-            value={value.payoutDays}
-            onChange={(event) => set("payoutDays", event.currentTarget.value)}
-            inputMode="numeric"
-            autoComplete="off"
-            className="cifra text-right"
-            required
-          />
-        </Field>
-        <Field label="Tipo de días" error={firstError(errors, "payoutDayType")}>
-          <Select
-            value={value.payoutDayType}
-            onChange={(event) => set("payoutDayType", event.currentTarget.value as DayType)}
-          >
-            <option value="habiles">Hábiles</option>
-            <option value="corridos">Corridos</option>
-          </Select>
-        </Field>
-      </div>
+      <DaysRangeInputs
+        legend="Días al depósito"
+        hint="Si la pasarela promete «de 3 a 5 días», escribe los dos; si siempre es el mismo, solo «De»."
+        value={{ min: value.payoutDays, max: value.payoutDaysMax }}
+        onChange={({ min, max }) => onChange({ ...value, payoutDays: min, payoutDaysMax: max })}
+        errors={{ min: firstError(errors, "payoutDays"), max: firstError(errors, "payoutDaysMax") }}
+      />
+      <Field label="Tipo de días" error={firstError(errors, "payoutDayType")}>
+        <Select
+          value={value.payoutDayType}
+          onChange={(event) => set("payoutDayType", event.currentTarget.value as DayType)}
+        >
+          <option value="habiles">Hábiles</option>
+          <option value="corridos">Corridos</option>
+        </Select>
+      </Field>
       <Checkbox
         label="Devuelve la comisión si reembolsas"
         hint="Si no la devuelve, lo que se queda cuenta como costo del reembolso."

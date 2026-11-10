@@ -216,7 +216,7 @@ test.describe.serial("empresas", () => {
     const gateways = page.getByRole("region", { name: "Pasarelas de la empresa" });
     await gateways.getByRole("button", { name: "Editar Stripe" }).click();
     const dialog = page.getByRole("dialog", { name: "Editar pasarela" });
-    await dialog.getByLabel("Días hasta el depósito").fill("5");
+    await dialog.getByRole("group", { name: "Días hasta el depósito" }).getByLabel("De", { exact: true }).fill("5");
     await dialog.getByRole("button", { name: "Guardar pasarela" }).click();
     await expect(dialog).toBeHidden();
     await expectToast(page, "Pasarela guardada. Se actualizó la fecha estimada de 1 cobro por caer.");

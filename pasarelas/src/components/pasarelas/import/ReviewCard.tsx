@@ -331,7 +331,7 @@ function DepositSummary({
       ) : null}
       <Checkbox
         label="Estos cobros ya se depositaron"
-        hint="Los que tienen la fecha estimada hasta hoy entran como depositados en esa fecha. Es una estimación, no la fecha real, y entra en el tiempo real promedio de depósito de la pasarela y de la cuenta."
+        hint="Los que tienen la fecha estimada (la más tardía, si la pasarela da una ventana de días) hasta hoy entran como depositados en esa fecha. Es una estimación, no la fecha real, y entra en el tiempo real promedio de depósito de la pasarela y de la cuenta."
         checked={alreadyDeposited}
         onChange={(event) => onAlreadyDeposited(event.currentTarget.checked)}
         disabled={disabled}

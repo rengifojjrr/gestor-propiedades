@@ -204,9 +204,12 @@ function RecalcForm({ transactions, onClose, onDone, expectedUpdatedAt: current 
   );
 }
 
-/** Una cifra del antes o del después: un monto, la fecha estimada o «—» si ese lado no la tiene. */
+/** Las filas de la fecha estimada (`estimateRows` de `ops/transactions.ts`): una fecha, no un monto. */
+const DATE_ROWS = new Set(["estimatedDepositOn", "estimatedDepositFrom"]);
+
+/** Una cifra del antes o del después: un monto, una fecha de la estimada o «—» si ese lado no la tiene. */
 function Value({ row, value, currency }: { row: DiffRow; value: string; currency: Currency }) {
-  if (row.key === "estimatedDepositOn") return isISODate(value) ? <DateText value={value} /> : <>—</>;
+  if (DATE_ROWS.has(row.key)) return isISODate(value) ? <DateText value={value} /> : <>—</>;
   return isMoney(value) ? <Money value={value} currency={currency} /> : <>—</>;
 }
 

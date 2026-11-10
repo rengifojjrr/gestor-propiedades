@@ -7,7 +7,7 @@ import { GatewayStatusActions } from "@/components/pasarelas/gateways/GatewaySta
 import { InternationalCard } from "@/components/pasarelas/gateways/InternationalCard";
 import { activeInternational } from "@/components/pasarelas/gateways/international";
 import { LagText } from "@/components/pasarelas/gateways/LagText";
-import { moneyDraft } from "@/components/pasarelas/gateways/drafts";
+import { daysDraft, moneyDraft } from "@/components/pasarelas/gateways/drafts";
 import { payoutText } from "@/components/pasarelas/gateways/days";
 import { Badge, Card, CardBody, CardHeader, CardTitle, Money, PageHeader } from "@/components/ui";
 import { requireSession } from "@/lib/auth/session";
@@ -84,7 +84,7 @@ export default async function PasarelaPage({ params }: PageProps<"/pasarelas/pas
   const today = todayNY(new Date());
   const current = pickVersion(gateway.feeVersions, today);
   const totals = allTotals.filter((row) => row.gatewayId === gateway.id);
-  const payout = payoutText(gateway.payoutDays, gateway.payoutDayType);
+  const payout = payoutText(gateway.payoutDays, gateway.payoutDayType, gateway.payoutDaysMax);
   const international = activeInternational(gateway);
 
   return (
@@ -105,8 +105,19 @@ export default async function PasarelaPage({ params }: PageProps<"/pasarelas/pas
           />
           <InternationalCard
             // Otra clave si cambia lo guardado: la tarjeta vuelve a partir de ahí (también al agregarlo o quitarlo).
-            key={international === null ? "sin-recargo" : `${international.id}|${international.pct}|${international.fixed}`}
+            key={
+              international === null
+                ? "sin-recargo"
+                : [
+                    international.id,
+                    international.pct,
+                    international.fixed,
+                    international.payoutDaysOverride,
+                    international.payoutDaysOverrideMax,
+                  ].join("|")
+            }
             gatewayId={gateway.id}
+            dayType={gateway.payoutDayType}
             fee={current === null ? null : { pct: current.pct, fixed: current.fixed }}
             international={international}
           />
@@ -116,11 +127,20 @@ export default async function PasarelaPage({ params }: PageProps<"/pasarelas/pas
           <TotalsCard totals={totals} payout={payout} />
           <GatewaySettingsForm
             // Otra clave si cambian los datos guardados: el formulario vuelve a partir de lo guardado.
-            key={`${gateway.name}|${gateway.payoutDays}|${gateway.payoutDayType}|${gateway.refundsReturnFee}|${gateway.disputeFee}|${gateway.notes ?? ""}`}
+            key={[
+              gateway.name,
+              gateway.payoutDays,
+              gateway.payoutDaysMax,
+              gateway.payoutDayType,
+              gateway.refundsReturnFee,
+              gateway.disputeFee,
+              gateway.notes ?? "",
+            ].join("|")}
             id={gateway.id}
             initial={{
               name: gateway.name,
               payoutDays: String(gateway.payoutDays),
+              payoutDaysMax: daysDraft(gateway.payoutDaysMax),
               payoutDayType: gateway.payoutDayType,
               refundsReturnFee: gateway.refundsReturnFee,
               disputeFee: moneyDraft(gateway.disputeFee),

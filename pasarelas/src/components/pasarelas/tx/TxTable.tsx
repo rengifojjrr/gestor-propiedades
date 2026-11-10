@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { Checkbox, DateText, Money, TBody, THead, Table, Td, Th, Tr } from "@/components/ui";
-import { formatDate } from "@/lib/pasarelas/dates";
+import { depositWindowOf, formatDate } from "@/lib/pasarelas/dates";
 import { formatMoney } from "@/lib/pasarelas/money";
 import type { ISODate } from "@/lib/pasarelas/types";
 import type { TxListItem } from "@/server/pasarelas/dto";
+import { DepositWindowShort, isWindow } from "./DepositWindow";
 import { StatusBadge } from "./StatusBadge";
 import { SelectAllCheckbox, useTxSelection } from "./TxBulkBar";
 
@@ -49,8 +50,12 @@ export function TxCheckbox({ tx }: { tx: TxRowView }) {
   );
 }
 
-/** Cuándo cae o cayó: la fecha real si ya se depositó; si no, la estimada. */
+/**
+ * Cuándo cae o cayó: la fecha real si ya se depositó; si no, la estimada. Si la estimada es una ventana, la corta
+ * («16–18 nov»); si es un solo día, la fecha de siempre.
+ */
 export function DepositDate({ tx }: { tx: TxRowView }) {
+  const estimated = depositWindowOf(tx);
   if (tx.status === "depositado" && tx.depositedOn !== null) {
     return (
       <span className="flex flex-col">
@@ -59,11 +64,11 @@ export function DepositDate({ tx }: { tx: TxRowView }) {
       </span>
     );
   }
-  if (tx.estimatedDepositOn !== null) {
+  if (estimated !== null) {
     return (
       <span className="flex flex-col">
         <span className="text-sm text-ink-soft">Estimado</span>
-        <DateText value={tx.estimatedDepositOn} />
+        {isWindow(estimated) ? <DepositWindowShort window={estimated} /> : <DateText value={estimated.to} />}
       </span>
     );
   }

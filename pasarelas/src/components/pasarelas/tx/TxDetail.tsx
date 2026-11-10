@@ -3,8 +3,10 @@ import { AllocationList } from "@/components/pasarelas/AllocationList";
 import { BreakdownCard } from "@/components/pasarelas/BreakdownCard";
 import { ORIGIN_LABEL, isOption, originOf } from "@/components/pasarelas/gateways/international";
 import { Alert, Card, CardBody, CardHeader, CardTitle, DateText, DateTimeText } from "@/components/ui";
+import { depositWindowOf } from "@/lib/pasarelas/dates";
 import type { ISODate, PayConfig, TxSnapshot } from "@/lib/pasarelas/types";
 import type { TxDetail as TxDetailData } from "@/server/pasarelas/dto";
+import { DepositWindowText } from "./DepositWindow";
 import { EventsTimeline } from "./EventsTimeline";
 import { ReceiptsCard } from "./ReceiptsCard";
 import { StatusBadge } from "./StatusBadge";
@@ -15,7 +17,7 @@ function Row({ label, testId, children }: { label: string; testId?: string; chil
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
       <dt className="text-ink-soft">{label}</dt>
-      <dd data-testid={testId} className="min-w-0 text-right break-words">
+      <dd data-testid={testId} className="ml-auto min-w-0 text-right break-words">
         {children}
       </dd>
     </div>
@@ -61,6 +63,7 @@ function DataCard({ tx, cfg }: { tx: TxSnapshot; cfg: PayConfig }) {
   const names = namesOf(tx, cfg);
   const scheme = tx.breakdown.rules.scheme;
   const origin = originText(tx, cfg);
+  const estimated = depositWindowOf(tx);
   return (
     <Card>
       <CardHeader>
@@ -80,11 +83,11 @@ function DataCard({ tx, cfg }: { tx: TxSnapshot; cfg: PayConfig }) {
             <DateTimeText value={tx.occurredAt} />
           </Row>
           <Row label="Fecha estimada" testId="fecha-estimada">
-            {tx.estimatedDepositOn === null ? (
+            {estimated === null ? (
               "—"
             ) : (
               <span className="flex flex-col items-end">
-                <DateText value={tx.estimatedDepositOn} />
+                <DepositWindowText window={estimated} />
                 {tx.estimatedIsManual ? <span className="text-sm text-ink-soft">puesta a mano</span> : null}
               </span>
             )}

@@ -23,4 +23,12 @@ describe("payoutText", () => {
     expect(payoutText(0, "habiles")).toBe("El mismo día");
     expect(payoutText(0, "corridos")).toBe("El mismo día");
   });
+
+  it("con un máximo mayor, la ventana: «De 3 a 5 días hábiles»; igual o vacío, un solo día", () => {
+    expect(payoutText(3, "habiles", 5)).toBe("De 3 a 5 días hábiles");
+    expect(payoutText(7, "corridos", 10)).toBe("De 7 a 10 días corridos");
+    expect(payoutText(0, "habiles", 1)).toBe("De 0 a 1 día hábil");
+    expect(payoutText(2, "habiles", 2)).toBe("2 días hábiles");
+    expect(payoutText(2, "habiles", null)).toBe("2 días hábiles");
+  });
 });

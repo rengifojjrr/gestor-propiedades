@@ -54,6 +54,10 @@ function ExtraItem({
   const [defaultOn, setDefaultOn] = useOptimistic(extra.defaultOn);
   const [error, setError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
+  const payout =
+    extra.payoutDaysOverride === null
+      ? null
+      : payoutText(extra.payoutDaysOverride, dayType, extra.payoutDaysOverrideMax);
 
   /** Rige al tocarlo. Si falla (o se corta), vuelve a como estaba y se dice debajo. */
   function toggle(next: boolean) {
@@ -78,9 +82,7 @@ function ExtraItem({
         </div>
         <p className="text-sm text-ink-soft">
           <FeeText pct={extra.pct} fixed={extra.fixed} /> · {BASE_LABEL[extra.base].toLowerCase()}
-          {extra.payoutDaysOverride === null
-            ? null
-            : ` · depósito: ${payoutText(extra.payoutDaysOverride, dayType).toLowerCase()}`}
+          {payout === null ? null : ` · depósito: ${payout.toLowerCase()}`}
         </p>
         <Switch
           label="Encendida por defecto"

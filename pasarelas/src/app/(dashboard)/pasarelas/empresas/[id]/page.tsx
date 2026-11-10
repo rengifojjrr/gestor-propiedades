@@ -43,6 +43,7 @@ export default async function EmpresaPage({ params, searchParams }: PageProps<"/
     name: gateway.name,
     active: gateway.active,
     payoutDays: gateway.payoutDays,
+    payoutDaysMax: gateway.payoutDaysMax,
     payoutDayType: gateway.payoutDayType,
     // El recargo internacional no se enciende por defecto: se aplica si el pago fue internacional.
     extras: gateway.extras.filter(isOption).map(({ id: extraId, name, defaultOn, active }) => ({

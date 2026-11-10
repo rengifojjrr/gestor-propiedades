@@ -4,9 +4,16 @@ import Link from "next/link";
 import { useId } from "react";
 import { AllocationList } from "@/components/pasarelas/AllocationList";
 import { BreakdownCard } from "@/components/pasarelas/BreakdownCard";
-import { Alert, Card, CardBody, CardHeader, CardTitle, DateText } from "@/components/ui";
+import { DepositWindowText } from "@/components/pasarelas/tx/DepositWindow";
+import { Alert, Card, CardBody, CardHeader, CardTitle } from "@/components/ui";
 import { compute } from "@/lib/pasarelas/breakdown";
-import { estimateDepositDate, isISODate, localInputToInstant, nyDate } from "@/lib/pasarelas/dates";
+import {
+  estimateDepositWindow,
+  isISODate,
+  localInputToInstant,
+  nyDate,
+  type DateWindow,
+} from "@/lib/pasarelas/dates";
 import { ZERO } from "@/lib/pasarelas/decimal";
 import { cmp, parseMoney } from "@/lib/pasarelas/money";
 import { PAY_RULE_TEXT, PayRuleError, resolvePayout, resolveRules, type PayRuleCode } from "@/lib/pasarelas/rules";
@@ -30,11 +37,12 @@ export type PreviewInput = {
 type Preview =
   | { kind: "incompleto"; text: string }
   | { kind: "falta"; code: PayRuleCode }
-  | { kind: "listo"; breakdown: Breakdown; estimatedOn: ISODate; manual: boolean };
+  | { kind: "listo"; breakdown: Breakdown; estimated: DateWindow; manual: boolean };
 
 /**
  * El cálculo de la vista previa, con el mismo motor y la misma configuración que usa el servidor al guardar:
- * reglas → desglose → días → fecha estimada. Lo que todavía no se puede calcular lo dice en vez de inventarlo.
+ * reglas → desglose → días → fecha estimada (una ventana, «de 3 a 5 días»; la puesta a mano es un solo día). Lo que
+ * todavía no se puede calcular lo dice en vez de inventarlo.
  */
 function previewOf(cfg: PayConfig, input: PreviewInput): Preview {
   if (input.companyId === "" || input.gatewayId === "") {
@@ -65,11 +73,13 @@ function previewOf(cfg: PayConfig, input: PreviewInput): Preview {
     const rules = resolveRules(cfg, selection);
     const breakdown = compute(rules, { grossOriginal: gross, refunded: ZERO, dispute: null, failed: false }, input.currency);
     if (isISODate(input.manualEstimate)) {
-      return { kind: "listo", breakdown, estimatedOn: input.manualEstimate, manual: true };
+      const day = input.manualEstimate;
+      return { kind: "listo", breakdown, estimated: { from: day, to: day }, manual: true };
     }
-    const { days, dayType } = resolvePayout(cfg, selection, rules.extras);
-    const estimatedOn = estimateDepositDate({ occurredOn, days, dayType, holidays: new Set(cfg.holidays) });
-    return { kind: "listo", breakdown, estimatedOn, manual: false };
+    const { days, daysMax, dayType } = resolvePayout(cfg, selection, rules.extras);
+    const holidays = new Set(cfg.holidays);
+    const estimated = estimateDepositWindow({ occurredOn, days, daysMax, dayType, holidays });
+    return { kind: "listo", breakdown, estimated, manual: false };
   } catch (error) {
     if (error instanceof PayRuleError) return { kind: "falta", code: error.code };
     throw error;
@@ -133,8 +143,8 @@ export function LivePreview({ cfg, input }: { cfg: PayConfig; input: PreviewInpu
           <Card>
             <CardBody className="flex items-baseline justify-between gap-3">
               <span>Fecha estimada del depósito</span>
-              <span data-testid="fecha-estimada" className="flex flex-col items-end">
-                <DateText value={preview.estimatedOn} className="font-semibold" />
+              <span data-testid="fecha-estimada" className="flex flex-col items-end text-right">
+                <DepositWindowText window={preview.estimated} className="font-semibold" />
                 {preview.manual ? <span className="text-sm text-ink-soft">puesta a mano</span> : null}
               </span>
             </CardBody>

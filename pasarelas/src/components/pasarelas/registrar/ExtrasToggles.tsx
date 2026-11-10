@@ -4,6 +4,20 @@ import { Switch } from "@/components/ui";
 import { formatMoney, formatPct, isZero } from "@/lib/pasarelas/money";
 import type { Currency, ExtraCfg } from "@/lib/pasarelas/types";
 
+/**
+ * Cuándo cae el dinero con una opción que tiene días propios: «cae el mismo día», «cae en 2 días» o, con una
+ * ventana, «cae en 1 a 3 días». Sin días propios, nada.
+ */
+function payoutOf(option: ExtraCfg): string | null {
+  const days = option.payoutDaysOverride;
+  if (days === null) return null;
+  const max = option.payoutDaysOverrideMax;
+  const last = max !== null && max > days ? max : days;
+  if (last === 0) return "cae el mismo día";
+  const unit = last === 1 ? "día" : "días";
+  return last === days ? `cae en ${days} ${unit}` : `cae en ${days} a ${last} ${unit}`;
+}
+
 /** Lo que cuesta una opción y cuándo cae el dinero con ella: «1,5 % del bruto · cae el mismo día». */
 function describe(option: ExtraCfg, currency: Currency): string {
   const cost = [
@@ -13,10 +27,7 @@ function describe(option: ExtraCfg, currency: Currency): string {
     .filter(Boolean)
     .join(" + ");
   const base = option.base === "bruto" ? "del bruto" : "de lo que queda después de la comisión";
-  const days = option.payoutDaysOverride;
-  const payout =
-    days === null ? null : days === 0 ? "cae el mismo día" : `cae en ${days} ${days === 1 ? "día" : "días"}`;
-  return [cost === "" ? "Sin costo" : `${cost} ${base}`, payout].filter(Boolean).join(" · ");
+  return [cost === "" ? "Sin costo" : `${cost} ${base}`, payoutOf(option)].filter(Boolean).join(" · ");
 }
 
 export type ExtrasTogglesProps = {

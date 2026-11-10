@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 import { ZONE, addDays, todayNY, wallTimeToInstant } from "../src/lib/pasarelas/dates";
 import { signInAal1, type Db } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
@@ -61,6 +61,10 @@ async function cutActions(page: Page, url: string): Promise<() => Promise<void>>
 const toastWith = (page: Page, text: string) =>
   page.getByRole("region", { name: /Avisos/ }).getByRole("listitem").filter({ hasText: text });
 
+/** «De» en «Días al depósito» de la pasarela: el mínimo de su ventana. */
+const minDays = (scope: Page | Locator): Locator =>
+  scope.getByRole("group", { name: "Días al depósito", exact: true }).getByLabel("De", { exact: true });
+
 async function checkScreen(page: Page): Promise<void> {
   await expectNoSeriousAxe(page);
   await expectNoHorizontalOverflow(page);
@@ -92,7 +96,7 @@ test("crear «PayPal Demo» 3,49 % + 0,49 con la opción «Transferencia inmedia
   await page.getByLabel("Nombre", { exact: true }).fill("PayPal Demo");
   await page.getByLabel("Comisión", { exact: true }).fill("3,49");
   await page.getByLabel("Cuota fija", { exact: true }).fill("0,49");
-  await page.getByLabel("Días al depósito").fill("1");
+  await minDays(page).fill("1");
   await page.getByLabel("Tipo de días").selectOption("habiles");
   await page.getByLabel("Devuelve la comisión si reembolsas").check();
   await page.getByLabel("Costo por disputa").fill("20");
@@ -344,14 +348,14 @@ test("opciones con su interruptor y su diálogo, y los datos de la pasarela", as
   // Los datos se editan en su tarjeta. Con otros días cambia la fecha estimada de lo que está por caer, y lo dice.
   await charge(todayNY(new Date()));
   const data = page.getByRole("region", { name: "Datos" });
-  await data.getByLabel("Días al depósito").fill("3");
+  await minDays(data).fill("3");
   await data.getByRole("button", { name: "Guardar cambios" }).click();
   await expect(
     page.getByText(/^Cambios guardados\. Se actualizó la fecha estimada de \d+ cobros? por caer\.$/),
   ).toBeVisible();
   await expect(page.getByRole("region", { name: "Tiempo real de depósito" })).toContainText("3 días hábiles");
   await page.reload();
-  await expect(page.getByRole("region", { name: "Datos" }).getByLabel("Días al depósito")).toHaveValue("3");
+  await expect(minDays(page.getByRole("region", { name: "Datos" }))).toHaveValue("3");
   await checkScreen(page);
 });
 
@@ -404,13 +408,13 @@ test("si se corta la conexión al guardar los datos de una pasarela se dice en s
   await login(page, user);
   await page.goto(`/pasarelas/pasarelas/${user.basics.gatewayId}`);
   const data = page.getByRole("region", { name: "Datos" });
-  await data.getByLabel("Días al depósito").fill("5");
+  await minDays(data).fill("5");
 
   await cutActions(page, `**/pasarelas/pasarelas/${user.basics.gatewayId}`);
   await data.getByRole("button", { name: "Guardar cambios" }).click();
   await expect(data.getByRole("alert")).toHaveText(NETWORK_TEXT);
   await expect(page.getByRole("heading", { level: 1, name: "Stripe" })).toBeVisible();
-  await expect(data.getByLabel("Días al depósito")).toHaveValue("5");
+  await expect(minDays(data)).toHaveValue("5");
   await checkScreen(page);
 });
 

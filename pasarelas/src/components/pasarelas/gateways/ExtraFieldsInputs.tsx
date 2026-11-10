@@ -2,6 +2,7 @@
 
 import { Field, Input, MoneyInput, PctInput, Select, Switch } from "@/components/ui";
 import type { ExtraBase } from "@/lib/pasarelas/types";
+import { DaysRangeInputs } from "./DaysRangeInputs";
 import { BASE_LABEL, firstError, type ExtraDraft, type FieldErrors } from "./drafts";
 
 /** Los datos de una opción de la pasarela (p. ej. «Pago rápido»): su costo, sobre qué se calcula y sus días. */
@@ -40,20 +41,17 @@ export function ExtraFieldsInputs({
           <option value="despues_de_comision">{BASE_LABEL.despues_de_comision}</option>
         </Select>
       </Field>
-      <Field
-        label="Días al depósito con esta opción"
+      <DaysRangeInputs
+        legend="Días al depósito con esta opción"
         optional
-        hint="Vacío: los de la pasarela. 0: el mismo día."
-        error={firstError(errors, "payoutDaysOverride")}
-      >
-        <Input
-          value={value.payoutDaysOverride}
-          onChange={(event) => set("payoutDaysOverride", event.currentTarget.value)}
-          inputMode="numeric"
-          autoComplete="off"
-          className="cifra text-right"
-        />
-      </Field>
+        hint="Vacíos: los de la pasarela. 0: el mismo día."
+        value={{ min: value.payoutDaysOverride, max: value.payoutDaysOverrideMax }}
+        onChange={({ min, max }) => onChange({ ...value, payoutDaysOverride: min, payoutDaysOverrideMax: max })}
+        errors={{
+          min: firstError(errors, "payoutDaysOverride"),
+          max: firstError(errors, "payoutDaysOverrideMax"),
+        }}
+      />
       <Switch
         label="Encendida por defecto"
         hint="Viene marcada al registrar un cobro con esta pasarela."

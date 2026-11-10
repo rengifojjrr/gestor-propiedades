@@ -25,6 +25,8 @@ import {
 } from "@/components/ui";
 import { deleteCompanyGateway, saveCompanyGateway } from "@/server/pasarelas/actions/companies";
 import type { CompanyGateway } from "@/server/pasarelas/queries/companies";
+import { DaysRangeInputs } from "../gateways/DaysRangeInputs";
+import { daysDraft } from "../gateways/drafts";
 import { savedWithRefresh } from "../tx/plural";
 import { ExternalLink } from "./ExternalLink";
 import { useActionForm } from "./useActionForm";
@@ -48,6 +50,8 @@ export type GatewayOption = {
   name: string;
   active: boolean;
   payoutDays: number;
+  /** El máximo de su ventana; `null` = un solo día. */
+  payoutDaysMax: number | null;
   payoutDayType: "habiles" | "corridos";
   extras: { id: string; name: string; defaultOn: boolean; active: boolean }[];
 };
@@ -55,13 +59,19 @@ export type GatewayOption = {
 /** Una cuenta destino del usuario: su id y cómo se nombra («Cuenta principal ··4321»). */
 export type BankAccountOption = { id: string; label: string; active: boolean };
 
-/** «Cae el mismo día» · «Cae en 2 días hábiles». */
-function payoutText(days: number, type: GatewayOption["payoutDayType"]): string {
-  if (days === 0) return "Cae el mismo día";
-  const unit = days === 1 ? "día" : "días";
-  const kind = type === "habiles" ? (days === 1 ? "hábil" : "hábiles") : days === 1 ? "corrido" : "corridos";
-  return `Cae en ${days} ${unit} ${kind}`;
+/** «Cae el mismo día» · «Cae en 2 días hábiles» · con una ventana, «Cae en 3 a 5 días hábiles». */
+function payoutText(days: number, type: GatewayOption["payoutDayType"], max: number | null): string {
+  const window = max !== null && max > days;
+  if (days === 0 && !window) return "Cae el mismo día";
+  const last = window ? max : days;
+  const unit = last === 1 ? "día" : "días";
+  const kind = type === "habiles" ? (last === 1 ? "hábil" : "hábiles") : last === 1 ? "corrido" : "corridos";
+  return `Cae en ${window ? `${days} a ${max}` : days} ${unit} ${kind}`;
 }
+
+/** Los días de la pasarela misma: los que valen si la empresa no tiene los suyos. */
+const gatewayPayout = (gateway: GatewayOption): string =>
+  payoutText(gateway.payoutDays, gateway.payoutDayType, gateway.payoutDaysMax);
 
 /** Los nombres de las opciones, separados por comas; «ninguna» si no hay. */
 const namesOf = (extras: readonly { name: string }[]) =>
@@ -73,6 +83,7 @@ type AccountValues = {
   checkoutUrl: string;
   bankAccountId: string;
   payoutDaysOverride: string;
+  payoutDaysOverrideMax: string;
   /** `null`: las que la pasarela trae encendidas. */
   defaultExtraIds: string[] | null;
 };
@@ -83,7 +94,8 @@ function valuesOf(account: CompanyGateway | null, firstGatewayId: string): Accou
     dashboardUrl: account?.dashboardUrl ?? "",
     checkoutUrl: account?.checkoutUrl ?? "",
     bankAccountId: account?.bankAccountId ?? "",
-    payoutDaysOverride: account?.payoutDaysOverride === null || !account ? "" : String(account.payoutDaysOverride),
+    payoutDaysOverride: daysDraft(account?.payoutDaysOverride ?? null),
+    payoutDaysOverrideMax: daysDraft(account?.payoutDaysOverrideMax ?? null),
     defaultExtraIds: account?.defaultExtraIds ?? null,
   };
 }
@@ -202,25 +214,20 @@ function AccountForm({
             ))}
         </Select>
       </Field>
-      <Field
-        label="Días hasta el depósito"
+      <DaysRangeInputs
+        legend="Días hasta el depósito"
         optional
         hint={
           gateway
-            ? `Vacío: los de la pasarela (${payoutText(gateway.payoutDays, gateway.payoutDayType).toLowerCase()}).`
+            ? `Vacíos: los de la pasarela (${gatewayPayout(gateway).toLowerCase()}).`
             : undefined
         }
-        error={errorOf("payoutDaysOverride")}
-      >
-        <Input
-          value={values.payoutDaysOverride}
-          onChange={set("payoutDaysOverride")}
-          inputMode="numeric"
-          autoComplete="off"
-          maxLength={2}
-          className="max-w-24"
-        />
-      </Field>
+        value={{ min: values.payoutDaysOverride, max: values.payoutDaysOverrideMax }}
+        onChange={({ min, max }) =>
+          setValues((current) => ({ ...current, payoutDaysOverride: min, payoutDaysOverrideMax: max }))
+        }
+        errors={{ min: errorOf("payoutDaysOverride"), max: errorOf("payoutDaysOverrideMax") }}
+      />
       {extras.length > 0 ? (
         <fieldset className="flex flex-col gap-1">
           <legend className="text-sm font-semibold text-ink">Opciones encendidas por defecto</legend>
@@ -368,9 +375,15 @@ export function GatewaysCard({
                       <div>
                         <dt className="text-ink-soft">Depósito</dt>
                         <dd>
-                          {gateway
-                            ? payoutText(account.payoutDaysOverride ?? gateway.payoutDays, gateway.payoutDayType)
-                            : "—"}
+                          {gateway === undefined
+                            ? "—"
+                            : account.payoutDaysOverride === null
+                              ? gatewayPayout(gateway)
+                              : payoutText(
+                                  account.payoutDaysOverride,
+                                  gateway.payoutDayType,
+                                  account.payoutDaysOverrideMax,
+                                )}
                           {account.payoutDaysOverride !== null ? " (propios de esta empresa)" : null}
                         </dd>
                       </div>
