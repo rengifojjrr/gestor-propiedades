@@ -75,6 +75,11 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 - El rol `authenticated` no puede leer `auth.mfa_factors`: por eso `private.pay_mfa_ok()` es `security definer`.
 - PostgREST devuelve `numeric` como número JSON: **lee el dinero con `::text`**
   (`select('id, gross_amount::text')`) y escríbelo como cadena. Usa las listas de columnas de `dto.ts`.
+- **`Database` se importa de `@/lib/supabase/types`**, no de `database.types.ts` (el generado, que no se edita):
+  es el mismo tipo, pero al escribir las columnas de dinero y de porcentaje son `string` y rechazan `number`.
+- Borrar un usuario (panel o `auth.admin.deleteUser`) corre los disparadores de la cascada con el rol del servicio
+  de Auth, que no tiene permisos sobre `pay_*` ni sobre `private`: un disparador que lea o escriba tablas va con
+  `security definer` y `search_path` vacío. La cascada no borra los archivos de Storage.
 - Las agregaciones de la API están apagadas: se suma con decimal.js o con las vistas `pay_*_totals`.
 - Tope de 1000 filas por petición: para totales, pagina (`leanTx`).
 - Storage: `delete from storage.objects` está bloqueado; se borra por API (`list` + `remove`) y **antes** de borrar la

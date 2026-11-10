@@ -91,8 +91,12 @@ los tipos del motor** (contrato cerrado: las tareas 3–6 no lo cambian sin avis
 ### Task 2: Base de datos
 
 **Archivos:** crear `supabase/migrations/20261110120000_las_pasarelas_de_pago.sql`,
-`src/lib/supabase/database.types.ts` (generado), `tests/integration/{helpers.ts,rls.test.ts,cuadres.test.ts,
-funciones.test.ts,storage.test.ts}`.
+`src/lib/supabase/database.types.ts` (generado), `src/lib/supabase/types.ts`, `tests/integration/{helpers.ts,
+rls.test.ts,cuadres.test.ts,funciones.test.ts,storage.test.ts,borrar-usuario.test.ts}`.
+
+**`Database` se importa de `@/lib/supabase/types`**, nunca de `database.types.ts`: es el generado, pero al escribir
+(Insert/Update) las columnas de dinero y de porcentaje son cadenas y no admiten `number`. Vale para todo
+`SupabaseClient<Database>` de las tareas 8 en adelante.
 
 **Produce:** las 17 tablas del spec §4; funciones `private.pay_mfa_ok()`, `pay_save_transactions(p_items jsonb,
 p_skip_duplicates boolean) → jsonb [{id, inserted, skipped}]`, `pay_save_scheme(p jsonb) → {scheme_id, version_id,
@@ -105,7 +109,10 @@ bruto y 0 días, cuenta destino, Grupos A/B/C y esquema 50/30/20 sobre el neto).
 
 Mensajes de error de la base (los traduce la tarea 9): `pay_alloc_sum_mismatch`, `pay_scheme_over_100`,
 `pay_scheme_under_100`, `pay_scheme_remainder_in_lines`, `pay_scheme_version_in_use`, `pay_tx_conflict` (40001),
-`pay_tx_not_found` (P0002), `pay_bad_payload` (22023), `pay_no_session` (28000).
+`pay_tx_not_found` (P0002), `pay_scheme_not_found` (P0002: `pay_save_scheme` con un `scheme_id` que no existe o es
+de otro usuario), `pay_bad_payload` (22023), `pay_no_session` (28000). El nombre repetido de una empresa o de una
+pasarela da 23505 (`pay_companies_name_uq`, `pay_gateways_name_uq`); beneficiarios y esquemas admiten nombres
+repetidos.
 
 - [ ] **Pruebas primero** (`npm run test:int`, deben fallar sin la migración):
   - `rls.test.ts`, para **cada una** de las 17 tablas y las 4 vistas, generado desde una lista: el usuario B no ve
@@ -129,6 +136,8 @@ Mensajes de error de la base (los traduce la tarea 9): `pay_alloc_sum_mismatch`,
     nada; con factor y aal1, nada; archivo de 11 MB y `text/plain` → rechazados por el bucket.
   - **Foco 5:** borrar una pasarela, un canal, un beneficiario o una versión de esquema **con cobros** → error de
     clave foránea (23503) y las filas siguen ahí.
+  - `borrar-usuario.test.ts`: un usuario con filas en las 17 tablas se borra con `auth.admin.deleteUser` sin error y
+    no queda ninguna fila suya (los disparadores de la cascada corren con el rol del servicio de Auth).
 - [ ] Escribir la migración (spec §4; SQL comentado en español). `npm run db:reset` la aplica sin errores.
 - [ ] `npm run db:types` genera `database.types.ts`; `npm run typecheck` en verde.
 - [ ] `npm run test:int` en verde.
@@ -458,6 +467,7 @@ login/verificar/VerifyForm.tsx}`, `src/app/(dashboard)/ajustes/{page.tsx,Securit
 **Consume:** tarea 7 y `tests/integration/helpers.ts` (tarea 2). **Produce:**
 
 ```ts
+// `Database` siempre de '@/lib/supabase/types' (dinero como cadena al escribir), no de database.types.ts
 // lib/supabase/client.ts            → export function createClient(): SupabaseClient<Database>        (navegador)
 // lib/supabase/server.ts            → export async function createClient(): Promise<SupabaseClient<Database>>
 // lib/auth/session.ts  (server-only)
@@ -515,7 +525,7 @@ export function ReceiptPicker(props: { onPick: (file: File | null) => void; erro
 export async function runAction<S extends z.ZodType, T>(schema: S, input: unknown,
   fn: (ctx: { supabase: SupabaseClient<Database>; session: Session }, data: z.output<S>) => Promise<T>,
   opts?: { revalidate?: string[] }): Promise<ActionResult<T>>;
-export function dbErrorMessage(e: unknown): string;       // códigos y mensajes pay_* → español
+export function dbErrorMessage(e: unknown): string;       // códigos y mensajes pay_* → español (lista en la tarea 2)
 // dto.ts — fila de la base → tipos del motor; los numeric pasan a Money con toMoney(dec(String(n)))
 export function toLeanTx(row): LeanTx;  export function toTxSnapshot(row): TxSnapshot;  /* y uno por tabla */
 // queries/config.ts
