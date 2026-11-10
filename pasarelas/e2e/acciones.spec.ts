@@ -159,7 +159,7 @@ test.describe.serial("acciones del servidor y comprobantes", () => {
 
     const [receipt, ...more] = await receiptsOf(txId);
     expect(more).toEqual([]);
-    expect(receipt).toMatchObject({ mime: "image/webp", original_name: "recibo-demo.png" });
+    expect(receipt).toMatchObject({ mime: "image/webp", original_name: null });
     expect(receipt?.path).toMatch(new RegExp(`^${owner.id}/${txId}/[0-9a-f-]{36}\\.webp$`));
     receiptId = receipt?.id ?? "";
     receiptPath = receipt?.path ?? "";

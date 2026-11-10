@@ -194,7 +194,7 @@ test.describe.serial("registrar cobro", () => {
     await expect(detailShares.getByRole("listitem").filter({ hasText: "Grupo B" })).toContainText("$27,09");
     await expect(detailShares.getByRole("listitem").filter({ hasText: "Grupo C" })).toContainText("$18,06");
     await expect(page.getByTestId("fecha-estimada").locator("time")).toHaveAttribute("datetime", estimated ?? "");
-    await expect(page.getByRole("list", { name: "Comprobantes" }).getByRole("listitem")).toContainText("recibo-demo.png");
+    await expect(page.getByRole("list", { name: "Comprobantes" }).getByRole("listitem")).toContainText("Imagen · ");
   });
 
   test("Foco 1: un doble toque en «Guardar» deja un solo cobro", async ({ page }) => {

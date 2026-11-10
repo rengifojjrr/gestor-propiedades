@@ -983,14 +983,12 @@ describe("trashTx, restoreTx y purgeTx", () => {
       path: `${folder}/recibo.png`,
       mime: "image/png",
       sizeBytes: PNG.length,
-      originalName: "Recibo demo.png",
     });
     await registerReceipt(user.client, user.id, {
       transactionId: id,
       path: `${folder}/factura.pdf`,
       mime: "application/pdf",
       sizeBytes: PNG.length,
-      originalName: null,
     });
     await trashTx(user.client, [id]);
 
@@ -1094,13 +1092,12 @@ describe("registerReceipt, removeReceipt y receiptSignedUrl", () => {
       path: `${folder}/recibo.png`,
       mime: "image/png",
       sizeBytes: PNG.length,
-      originalName: "Recibo demo.png",
     };
 
     const id = await registerReceipt(user.client, user.id, receipt);
 
     expect(await receiptRows()).toEqual([
-      { id, path: `${folder}/recibo.png`, mime: "image/png", size_bytes: PNG.length, original_name: "Recibo demo.png" },
+      { id, path: `${folder}/recibo.png`, mime: "image/png", size_bytes: PNG.length, original_name: null },
     ]);
     expect(await rowOf(txId)).toMatchObject({ receipts_count: 1 });
     expect(ids((await listTx(user.client, { receipt: "con" }, "fecha_desc", 1, TODAY)).rows)).toEqual([txId]);
@@ -1113,7 +1110,7 @@ describe("registerReceipt, removeReceipt y receiptSignedUrl", () => {
 
   it("no registra una ruta que no sea de ese usuario y de ese cobro", async () => {
     const other = await createUser();
-    const base = { transactionId: txId, mime: "image/png", sizeBytes: PNG.length, originalName: null };
+    const base = { transactionId: txId, mime: "image/png", sizeBytes: PNG.length };
     const text = "El comprobante no corresponde a ese cobro.";
 
     await expectUserError(
@@ -1134,7 +1131,7 @@ describe("registerReceipt, removeReceipt y receiptSignedUrl", () => {
   });
 
   it("no registra un tipo que no se admite ni un tamaño fuera de 1 byte a 10 MB", async () => {
-    const base = { transactionId: txId, path: `${folder}/recibo.png`, originalName: null };
+    const base = { transactionId: txId, path: `${folder}/recibo.png` };
 
     await expectUserError(
       registerReceipt(user.client, user.id, { ...base, mime: "image/gif", sizeBytes: 100 }),
@@ -1158,7 +1155,6 @@ describe("registerReceipt, removeReceipt y receiptSignedUrl", () => {
       path: `${folder}/no-subido.png`,
       mime: "image/png",
       sizeBytes: 100,
-      originalName: null,
     };
 
     await expectUserError(
@@ -1221,7 +1217,6 @@ describe("registerReceipt, removeReceipt y receiptSignedUrl", () => {
       path: `${folder}/a-medias.png`,
       mime: "image/png",
       sizeBytes: PNG.length,
-      originalName: null,
     });
     const removed = await user.client.storage.from(BUCKET).remove([`${folder}/a-medias.png`]);
     expect(removed.data).toHaveLength(1);
@@ -1382,7 +1377,6 @@ describe("getTx, getSnapshots y lastTx", () => {
       path: `${user.id}/${id}/recibo.png`,
       mime: "image/png",
       sizeBytes: PNG.length,
-      originalName: "Recibo demo.png",
     });
     await transitTx(user.client, [id]);
     await depositTx(user.client, [id], MARTES);
@@ -1437,7 +1431,7 @@ describe("getTx, getSnapshots y lastTx", () => {
         path: `${user.id}/${id}/recibo.png`,
         mime: "image/png",
         sizeBytes: PNG.length,
-        originalName: "Recibo demo.png",
+        originalName: null,
         createdAt: expect.any(String) as string,
       },
     ]);

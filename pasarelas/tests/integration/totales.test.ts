@@ -221,7 +221,6 @@ describe("con cobros de todos los estados", () => {
         path,
         mime: "image/png",
         sizeBytes: PNG.length,
-        originalName: null,
       });
     }
   });

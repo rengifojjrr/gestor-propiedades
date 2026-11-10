@@ -160,7 +160,7 @@ test.describe.serial("«Listo cuando»", () => {
     await expect(lineOf(page, "Reparto", "Grupo B")).toContainText("$27,09");
     await expect(lineOf(page, "Reparto", "Grupo C")).toContainText("$18,06");
     await expect(page.getByTestId("fecha-estimada").locator("time")).toHaveAttribute("datetime", e1EstimatedOn);
-    await expect(lineOf(page, "Comprobantes", "recibo-demo.png")).toBeVisible();
+    await expect(lineOf(page, "Comprobantes", "Imagen · ")).toBeVisible();
     await expectCleanScreen(page);
   });
 
@@ -180,9 +180,9 @@ test.describe.serial("«Listo cuando»", () => {
     // El dueño la abre: la imagen llega con una URL firmada, pedida al abrirla.
     await login(page, owner);
     await page.goto(detail);
-    await lineOf(page, "Comprobantes", "recibo-demo.png").getByRole("button", { name: "Ver" }).click();
-    const viewer = page.getByRole("dialog", { name: "recibo-demo.png" });
-    const image = viewer.getByRole("img", { name: "Comprobante recibo-demo.png" });
+    await lineOf(page, "Comprobantes", "Imagen · ").getByRole("button", { name: "Ver" }).click();
+    const viewer = page.getByRole("dialog", { name: /^Comprobante 1: Imagen · / });
+    const image = viewer.getByRole("img", { name: /^Comprobante 1: Imagen · / });
     await expect(image).toBeVisible();
     await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
     await expectCleanScreen(page);

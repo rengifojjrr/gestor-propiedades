@@ -202,11 +202,11 @@ test.describe.serial("detalle del cobro", () => {
     // El comprobante se ve con una URL firmada, pedida al abrirlo.
     const receipts = page.getByRole("list", { name: "Comprobantes" }).getByRole("listitem");
     await expect(receipts).toHaveCount(1);
-    await expect(receipts.first()).toContainText("recibo-demo.png");
+    await expect(receipts.first()).toContainText("Imagen · ");
     await expectCleanScreen(page);
     await receipts.first().getByRole("button", { name: "Ver" }).click();
-    const viewer = page.getByRole("dialog", { name: "recibo-demo.png" });
-    const image = viewer.getByRole("img", { name: "Comprobante recibo-demo.png" });
+    const viewer = page.getByRole("dialog", { name: /^Comprobante 1: Imagen · / });
+    const image = viewer.getByRole("img", { name: /^Comprobante 1: Imagen · / });
     await expect(image).toBeVisible();
     await expect(image).toHaveAttribute("src", /\/storage\/v1\/object\/sign\/comprobantes\//);
     await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBeGreaterThan(0);
@@ -378,7 +378,7 @@ test.describe.serial("detalle del cobro", () => {
     await card.getByLabel("Elegir archivo").setInputFiles({ name: "factura.png", mimeType: "image/png", buffer: png(300, 200) });
     const receipts = card.getByRole("list", { name: "Comprobantes" }).getByRole("listitem");
     await expect(receipts).toHaveCount(1);
-    await expect(receipts.first()).toContainText("factura.png");
+    await expect(receipts.first()).toContainText("Imagen · ");
     await expectToast(page, "Comprobante agregado");
     expect(await storedFiles(client, user.id, id)).toHaveLength(1);
     expect(await receiptRows(client, id)).toBe(1);

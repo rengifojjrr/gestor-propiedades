@@ -283,7 +283,6 @@ describe("wipeUserData", () => {
       path: receipt,
       mime: "image/png",
       sizeBytes: PNG.length,
-      originalName: "recibo.png",
     });
     const othersBefore = await rowCounts(a.id);
 
