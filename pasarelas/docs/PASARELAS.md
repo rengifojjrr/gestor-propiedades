@@ -163,6 +163,10 @@ un dato, avisa de que ya se había guardado con los datos del primer intento, pe
 - En una liquidación avisa si cambió el beneficiario, la fecha, la moneda o el monto, o si se puso o se quitó el
   comprobante. Un cambio en el medio de pago o en la nota no se detecta y se pierde.
 
+Lo mismo pasa al entrar, al escribir el código y en Ajustes → Seguridad. Entrar y el código piden repetir, que es
+seguro. Para cambiar la contraseña, el aviso dice cómo saber si cambió: se vuelve a intentar, y si responde que la
+actual no es correcta, es que ya se cambió y vale la nueva.
+
 ## Las piezas
 
 Es una aplicación Next 16.4 con Supabase (Postgres, Auth y Storage). Vive en la carpeta `pasarelas/` del repositorio,
@@ -1379,6 +1383,8 @@ README.
 
 - Abrir el detalle de un cobro de otro usuario (o uno que no existe) enseña «Esta página no existe», sin ningún
   dato, pero la respuesta sale con código 200 en vez de 404.
+- Sin JavaScript no se puede entrar (ni usar el resto de la app). Es el precio de que, con un corte al entrar, la
+  pantalla lo diga y conserve el correo en vez de caer en una página de error.
 - Al importar no se elige el esquema de reparto: va el por defecto de la empresa, si está activo, o ninguno. Para
   repartir con otro, se edita cada cobro después.
 - Los reembolsos de un CSV no se importan: se registran en el detalle de cada cobro. Un pago de Stripe ya

@@ -161,12 +161,21 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
   salvo las redirecciones de Next. Sin `opts.revalidate` revalida todo `/pasarelas`; una acción que solo lee pasa
   `{ revalidate: [] }`. Las de Ajustes → Seguridad (`src/app/(dashboard)/ajustes/actions.ts`) y las de `/login` van
   aparte, con sus propios tipos de resultado.
-- Desde un diálogo, una barra o un botón se llama **siempre** con `callAction(() => accion(…))`
-  (`components/pasarelas/callAction.ts`). Si la llamada no llega o la respuesta no vuelve (un corte de red), no
-  lanza: devuelve un error con `unsure: true` («no se sabe si se guardó»). Así el fallo no sube a `error.tsx`, no
-  desmonta la pantalla y no se pierde lo escrito. Deja pasar las redirecciones (`unstable_rethrow`). Los
-  formularios y diálogos de `companies/` (logo incluido) y el importador no lo usan: atrapan el corte con su propio
-  `try/catch` y su propio texto.
+- **Ninguna llamada a una Server Action desde el navegador queda sin proteger.** Si la llamada no llega o la
+  respuesta no vuelve (un corte de red), la promesa rechaza y, sin protección, el error sube a `error.tsx` (o a
+  `global-error.tsx` en la entrada): se desmonta la pantalla y se pierde lo escrito. Hay tres formas:
+  - `callAction(() => accion(…))` (`components/pasarelas/callAction.ts`) para las que devuelven el `ActionResult` del
+    módulo: con un corte no lanza y devuelve un error con `unsure: true` («no se sabe si se guardó»).
+  - `callActionOr(() => accion(…), () => loQueSeDice)` para las que traen su propio tipo de resultado: la entrada y
+    el código (`RETRY_TEXT`, porque repetir es seguro), Ajustes → Seguridad (`UNSURE_TEXT`, o un texto propio que
+    explica cómo saber si cambió la contraseña) y cerrar sesión (`src/app/(auth)/login/SignOutForm.tsx`). Por eso
+    la entrada ya no funciona con JavaScript apagado: React repite el envío hecho antes de hidratar.
+  - Un `try/catch` propio, con su propio texto: los formularios y diálogos de `companies/` (logo incluido,
+    `useActionForm`), el importador, `registrar/RegisterForm.tsx`, `splits/SchemeEditor.tsx`,
+    `splits/SettlementForm.tsx` y `receipts/upload.ts`.
+
+  Las dos primeras dejan pasar las redirecciones de Next (`unstable_rethrow`). Un `try/catch` alrededor de una
+  acción que redirige también tiene que dejarlas pasar, como `companies/CompanyCard.tsx` con `deleteCompany`.
 - El error se pinta con `<ActionError failure={failureOf(result)} />` (`components/pasarelas/ActionError.tsx`); dentro
   de un diálogo, `<DialogActionError>`. Con `unsure` ofrece «Ver cómo quedó», que hace `router.refresh()`.
   `callAction` **no refresca solo**: con mala señal el refresco fallido recargaría la página entera. Al cerrar un
