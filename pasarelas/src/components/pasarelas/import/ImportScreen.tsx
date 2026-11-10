@@ -151,36 +151,40 @@ export function ImportScreen({
   async function runImport() {
     if (result === null || proposal === null || mapping === null) return;
     const rows = result.ok;
+    // Fuera del try: si la llamada misma falla (red cortada, cuerpo demasiado grande), se dice cuánto ya se guardó.
+    const counts: Counts = { created: 0, duplicates: 0 };
     setOutcome(null);
     setProgress({ done: 0, total: rows.length });
-    const remembered = await saveImportMapping({ gatewayId: settings.gatewayId, format: proposal.format, mapping });
-    if (!remembered.ok) {
-      setProgress(null);
-      setOutcome({ counts: { created: 0, duplicates: 0 }, error: remembered.error });
-      return;
-    }
-    const counts: Counts = { created: 0, duplicates: 0 };
-    for (const batch of chunk(rows, IMPORT_BATCH_SIZE)) {
-      const batchResult = await importTransactions({
-        companyId: settings.companyId,
-        gatewayId: settings.gatewayId,
-        channelId: settings.channelId === "" ? null : settings.channelId,
-        extraIds: settings.extraIds,
-        useReportedFee: useReportedFee && mapping.fee != null,
-        rows: batch,
-      });
-      if (!batchResult.ok) {
-        setProgress(null);
-        setOutcome({ counts, error: batchResult.error });
+    try {
+      const remembered = await saveImportMapping({ gatewayId: settings.gatewayId, format: proposal.format, mapping });
+      if (!remembered.ok) {
+        setOutcome({ counts, error: remembered.error });
         return;
       }
-      counts.created += batchResult.data.created;
-      counts.duplicates += batchResult.data.duplicates;
-      setProgress({ done: counts.created + counts.duplicates, total: rows.length });
+      for (const batch of chunk(rows, IMPORT_BATCH_SIZE)) {
+        const batchResult = await importTransactions({
+          companyId: settings.companyId,
+          gatewayId: settings.gatewayId,
+          channelId: settings.channelId === "" ? null : settings.channelId,
+          extraIds: settings.extraIds,
+          useReportedFee: useReportedFee && mapping.fee != null,
+          rows: batch,
+        });
+        if (!batchResult.ok) {
+          setOutcome({ counts, error: batchResult.error });
+          return;
+        }
+        counts.created += batchResult.data.created;
+        counts.duplicates += batchResult.data.duplicates;
+        setProgress({ done: counts.created + counts.duplicates, total: rows.length });
+      }
+      setOutcome({ counts, error: null });
+      notify.success(createdText(counts.created));
+    } catch {
+      setOutcome({ counts: { ...counts }, error: "Se perdió la conexión con el servidor." });
+    } finally {
+      setProgress(null);
     }
-    setProgress(null);
-    setOutcome({ counts, error: null });
-    notify.success(createdText(counts.created));
   }
 
   return (
