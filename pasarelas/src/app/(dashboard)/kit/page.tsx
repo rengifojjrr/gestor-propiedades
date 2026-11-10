@@ -281,7 +281,7 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
       <Section
         id="kit-campos"
         title="Campos"
-        intro="Field pone la etiqueta, la ayuda y el error, y los enlaza al control que lleva dentro."
+        intro="Field pone la etiqueta, la ayuda y el error, y los enlaza al control que lleva dentro. Switch y Checkbox traen su propia etiqueta, su ayuda y su error."
       >
         <div className="grid max-w-2xl gap-5 sm:grid-cols-2">
           <Spec
@@ -331,12 +331,31 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
             props={[
               ["label: ReactNode", "el nombre del interruptor"],
               ["hint?: ReactNode", "aclaración bajo la etiqueta"],
+              ["error?: string", "mensaje de error bajo la fila; marca el interruptor con aria-invalid"],
             ]}
           >
             <Switch name="fast" label="Pago rápido" hint="1,5 % sobre el bruto; el dinero cae el mismo día." defaultChecked />
+            <Switch
+              name="applyToExisting"
+              label="Aplicar a los cobros ya registrados"
+              error="Hay cobros depositados en ese período: no se pueden recalcular."
+            />
           </Spec>
-          <Spec name="Checkbox" props={[["label: ReactNode", "el texto junto a la casilla"], ["hint?: ReactNode", "aclaración"]]}>
+          <Spec
+            name="Checkbox"
+            props={[
+              ["label: ReactNode", "el texto junto a la casilla"],
+              ["hint?: ReactNode", "aclaración bajo la etiqueta"],
+              ["error?: string", "mensaje de error bajo la fila; marca la casilla con aria-invalid"],
+            ]}
+          >
             <Checkbox name="refundsReturnFee" label="La pasarela devuelve la comisión al reembolsar" />
+            <Checkbox
+              name="confirmPurge"
+              label="Entiendo que borrar del todo no se puede deshacer"
+              hint="Se borran también sus comprobantes."
+              error="Marca la casilla para continuar."
+            />
           </Spec>
         </div>
       </Section>

@@ -202,6 +202,32 @@ test.describe("componentes", () => {
     await page.getByRole("checkbox", { name: "La pasarela devuelve la comisión al reembolsar" }).check();
   });
 
+  test("casillas e interruptores: el error queda enlazado al control, junto a su ayuda", async ({ page }) => {
+    await openKit(page);
+    const fields = page.getByRole("region", { name: "Campos" });
+
+    const checkbox = fields.getByRole("checkbox", { name: "Entiendo que borrar del todo no se puede deshacer" });
+    await expect(checkbox).toHaveAttribute("aria-invalid", "true");
+    await expect(checkbox).toHaveAccessibleDescription("Se borran también sus comprobantes. Marca la casilla para continuar.");
+    await expect(fields.getByText("Marca la casilla para continuar.")).toBeVisible();
+    // Sigue funcionando como casilla: se marca tocando su etiqueta.
+    await fields.getByText("Entiendo que borrar del todo no se puede deshacer").click();
+    await expect(checkbox).toBeChecked();
+
+    const toggle = fields.getByRole("switch", { name: "Aplicar a los cobros ya registrados" });
+    await expect(toggle).toHaveAttribute("aria-invalid", "true");
+    await expect(toggle).toHaveAccessibleDescription("Hay cobros depositados en ese período: no se pueden recalcular.");
+
+    // Los que no tienen error no quedan marcados.
+    await expect(fields.getByRole("switch", { name: "Pago rápido" })).not.toHaveAttribute("aria-invalid");
+    await expect(fields.getByRole("switch", { name: "Pago rápido" })).toHaveAccessibleDescription(
+      "1,5 % sobre el bruto; el dinero cae el mismo día.",
+    );
+    await expect(
+      fields.getByRole("checkbox", { name: "La pasarela devuelve la comisión al reembolsar" }),
+    ).not.toHaveAttribute("aria-invalid");
+  });
+
   test("cifras: tabulares, y los negativos con signo y tono propio", async ({ page }) => {
     await openKit(page);
     const figures = page.getByRole("region", { name: "Cifras" });
