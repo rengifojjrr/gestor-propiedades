@@ -17,8 +17,10 @@ alter table public.pay_gateway_extras
     constraint pay_gateway_extras_kind_check check (kind in ('opcion', 'internacional'));
 
 -- 2. Una sola opción internacional ACTIVA por pasarela. Las apagadas se quedan: los cobros viejos las congelaron.
+--    Con user_id en el índice: si fuera solo (gateway_id), quien intentara agregar un recargo a una pasarela ajena
+--    recibiría «repetido» (23505) antes que la clave foránea (23503), y sabría que esa pasarela tiene recargo.
 create unique index if not exists pay_gateway_extras_internacional_uq
-  on public.pay_gateway_extras (gateway_id)
+  on public.pay_gateway_extras (gateway_id, user_id)
   where kind = 'internacional' and active;
 
 -- 3. Crea una pasarela con su primera tarifa («desde el inicio») y sus opciones. Igual que la de la migración
