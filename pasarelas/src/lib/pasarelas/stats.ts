@@ -42,8 +42,9 @@ export type CurrencySummary = {
     effectiveCostPct: Pct | null;
   }[];
   /**
-   * De mayor a menor neto; `null` es «sin cuenta». `sharePct`: su parte del neto de la moneda. Los días son de sus
-   * cobros ya depositados (`null` si todavía no hay ninguno).
+   * De mayor a menor neto; `null` es «sin cuenta». `sharePct`: su parte del neto de la moneda, de 0 a 100 %; `null`
+   * si el neto total es 0 o si alguna cuenta tiene pérdidas (neto negativo). Los días son de sus cobros ya
+   * depositados (`null` si todavía no hay ninguno).
    */
   byAccount: {
     bankAccountId: string | null;
@@ -174,14 +175,27 @@ function summarizeCurrency(rows: readonly LeanTx[]): CurrencySummary {
         };
       })
       .sort(largestFirst((gateway) => gateway.gross, (gateway) => gateway.gatewayId)),
-    byAccount: [...groupBy(rows, (row) => row.bankAccountId)]
-      .map(([bankAccountId, group]) => {
-        const { net, count } = sumRows(group);
-        const { avgDays, medianDays } = lagOf(group) ?? NO_LAG;
-        return { bankAccountId, net, count, sharePct: pctOf(net, all.net), avgDays, medianDays };
-      })
-      .sort(largestFirst((account) => account.net, (account) => accountOrder(account.bankAccountId))),
+    byAccount: accountsOf(rows, all.net),
   };
+}
+
+/**
+ * Las cuentas de las filas de UNA moneda, de mayor a menor neto. La parte del neto solo existe si ninguna cuenta
+ * tiene pérdidas: con un neto negativo en alguna, las demás pasarían del 100 % y esa daría un porcentaje negativo.
+ */
+function accountsOf(rows: readonly LeanTx[], totalNet: Money): CurrencySummary["byAccount"] {
+  const accounts = [...groupBy(rows, (row) => row.bankAccountId)].map(([bankAccountId, group]) => {
+    const { net, count } = sumRows(group);
+    const { avgDays, medianDays } = lagOf(group) ?? NO_LAG;
+    return { bankAccountId, net, count, avgDays, medianDays };
+  });
+  const losses = accounts.some((account) => cmp(account.net, ZERO) < 0);
+  return accounts
+    .map(({ bankAccountId, net, count, avgDays, medianDays }) => {
+      const sharePct = losses ? null : pctOf(net, totalNet);
+      return { bankAccountId, net, count, sharePct, avgDays, medianDays };
+    })
+    .sort(largestFirst((account) => account.net, (account) => accountOrder(account.bankAccountId)));
 }
 
 /**

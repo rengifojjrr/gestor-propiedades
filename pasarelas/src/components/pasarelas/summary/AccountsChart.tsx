@@ -1,5 +1,7 @@
 import { Money, Percent, TBody, THead, Table, Td, Th, Tr } from "@/components/ui";
 import { formatDays } from "@/components/pasarelas/accounts/days";
+import { ZERO } from "@/lib/pasarelas/decimal";
+import { cmp } from "@/lib/pasarelas/money";
 import type { CurrencySummary } from "@/lib/pasarelas/stats";
 import type { Currency } from "@/lib/pasarelas/types";
 import { ChartFrame } from "./ChartFrame";
@@ -13,11 +15,14 @@ export type AccountsChartProps = {
 
 /**
  * A qué cuenta destino va el neto del período, de mayor a menor, con su parte y cuánto tardan en caer sus cobros
- * ya depositados (días de calendario entre el cobro y el depósito real).
+ * ya depositados (días de calendario entre el cobro y el depósito real). Si alguna cuenta tiene pérdidas, ninguna
+ * tiene parte, y el resumen dice por qué.
  */
 export function AccountsChart({ summary, currency, nameOf }: AccountsChartProps) {
   const { byAccount } = summary;
   const [top] = byAccount;
+  // Con pérdidas en alguna cuenta, el motor no da la parte de ninguna (pasaría del 100 % o saldría negativa).
+  const losses = byAccount.filter((account) => cmp(account.net, ZERO) < 0);
   return (
     <ChartFrame
       title="Cuentas destino"
@@ -35,6 +40,11 @@ export function AccountsChart({ summary, currency, nameOf }: AccountsChartProps)
             {top.avgDays === null
               ? ". Todavía no hay depósitos para saber cuánto tarda."
               : `; tarda en promedio ${formatDays(top.avgDays)} en caer.`}
+            {losses.length === 0
+              ? null
+              : ` ${losses.map((account) => nameOf(account.bankAccountId)).join(", ")} ${
+                  losses.length === 1 ? "tiene" : "tienen"
+                } pérdidas en el período (neto negativo): por eso no se calcula qué parte del neto va a cada cuenta.`}
           </>
         )
       }

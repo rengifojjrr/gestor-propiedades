@@ -209,14 +209,14 @@ describe("summarize: 6 filas en USD y 2 en EUR", () => {
     ]);
   });
 
-  test("byAccount: de mayor a menor neto, con su parte del neto y lo que tardan sus depósitos", () => {
+  test("byAccount: de mayor a menor neto, con lo que tardan sus depósitos; con pérdidas en una cuenta, sin parte", () => {
     expect(resumen.USD?.byAccount).toEqual([
       // u1 cayó en 1 día y u2 en 2; u4 sigue en tránsito y no cuenta para los días.
-      { bankAccountId: "cta-a", net: "316.26", count: 3, sharePct: "71.97", avgDays: "1.5", medianDays: "1.5" },
-      // 124,65 ÷ 439,45 = 28,36500017… %: pasa de la mitad por muy poco.
-      { bankAccountId: "cta-b", net: "124.65", count: 2, sharePct: "28.37", avgDays: "4.0", medianDays: "4.0" },
-      // «Sin cuenta»: nada depositado todavía.
-      { bankAccountId: null, net: "-1.46", count: 1, sharePct: "-0.33", avgDays: null, medianDays: null },
+      { bankAccountId: "cta-a", net: "316.26", count: 3, sharePct: null, avgDays: "1.5", medianDays: "1.5" },
+      { bankAccountId: "cta-b", net: "124.65", count: 2, sharePct: null, avgDays: "4.0", medianDays: "4.0" },
+      // «Sin cuenta»: nada depositado todavía, y un neto negativo. Sobre el neto total, cta-a sería el 71,97 %,
+      // cta-b el 28,37 % y esta el −0,33 %: por eso, con pérdidas, ninguna tiene parte.
+      { bankAccountId: null, net: "-1.46", count: 1, sharePct: null, avgDays: null, medianDays: null },
     ]);
     expect(resumen.EUR?.byAccount).toEqual([
       { bankAccountId: "cta-eur", net: "96.50", count: 2, sharePct: "100", avgDays: "3.0", medianDays: "3.0" },
@@ -247,6 +247,28 @@ describe("summarize: bordes", () => {
     expect(usd?.byGateway).toEqual([
       { gatewayId: "pas-stripe", gross: "0.00", fees: "2.92", net: "-2.92", count: 2, sharePct: null, effectiveCostPct: null },
     ]);
+  });
+
+  test("sin pérdidas, la parte del neto de cada cuenta va de 0 a 100 %", () => {
+    const filas = [
+      tx("a", { ...monto("75.00", "0.00", "75.00") }),
+      tx("b", { bankAccountId: "cta-b", ...monto("25.00", "0.00", "25.00") }),
+      tx("c", { bankAccountId: "cta-c", grossOriginal: "40.00", refunded: "40.00", gross: "0.00", fees: "0.00", net: "0.00" }),
+    ];
+    expect(summarize(filas, HOY).USD?.byAccount.map(({ bankAccountId, sharePct }) => [bankAccountId, sharePct])).toEqual([
+      ["cta-a", "75"],
+      ["cta-b", "25"],
+      ["cta-c", "0"],
+    ]);
+  });
+
+  test("con pérdidas en una cuenta, ninguna tiene parte: nunca más de 100 % ni porcentajes negativos", () => {
+    // Sobre el neto total (50,00) saldría 200 %, 0 % y −100 %.
+    const filas = [
+      tx("g", { ...monto("100.00", "0.00", "100.00") }),
+      tx("p", { bankAccountId: "cta-b", grossOriginal: "60.00", refunded: "60.00", gross: "0.00", fees: "50.00", net: "-50.00" }),
+    ];
+    expect(summarize(filas, HOY).USD?.byAccount.map((account) => account.sharePct)).toEqual([null, null]);
   });
 
   test("con neto total 0,00 las cuentas no tienen parte del neto", () => {
