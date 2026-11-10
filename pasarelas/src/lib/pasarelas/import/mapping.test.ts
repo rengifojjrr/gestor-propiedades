@@ -182,6 +182,18 @@ describe("validateMapping", () => {
     "E-mail",
     "Contact Phone Number",
     "Customer Description",
+    // La dirección por partes: PayPal las trae marcadas por defecto en la descarga de actividad.
+    "Town/City",
+    "Zip/Postal Code",
+    "State / Province / Region / Territory / Prefecture / Republic",
+    "Country",
+    "customer_shipping_address_city",
+    "Shipping State",
+    "Ciudad",
+    "Código postal",
+    "Provincia",
+    "País",
+    "Localidad",
   ])("la nota y la referencia no pueden salir de «%s» (datos del comprador)", (columna) => {
     const encabezados = [...ENCABEZADOS, columna];
     const motivo = (campo: string) =>
@@ -189,6 +201,13 @@ describe("validateMapping", () => {
     expect(validateMapping(encabezados, { ...BASE, note: columna })).toEqual([motivo("nota")]);
     expect(validateMapping(encabezados, { ...BASE, reference: columna })).toEqual([motivo("referencia")]);
   });
+
+  test.each(["Statement Descriptor", "Status", "Estado", "Descripción", "Item Title", "Subject"])(
+    "«%s» no es una columna del comprador: sirve como nota",
+    (columna) => {
+      expect(validateMapping([...ENCABEZADOS, columna], { ...BASE, note: columna })).toEqual([]);
+    },
+  );
 
   test("zona fija, moneda por defecto, separador y formato de fecha inválidos (pueden venir mal de la base)", () => {
     const malo = {
