@@ -108,7 +108,7 @@ describe("lecturas del Resumen", () => {
 });
 
 describe("loadSummary", () => {
-  it("arma el Resumen del período en la moneda de más bruto, sin mezclar monedas", async () => {
+  it("arma el Resumen del período en la moneda de más cobros, sin mezclar monedas", async () => {
     const cfg = await loadPayConfig(user.client);
     const view = await loadSummary(user.client, {}, TODAY, cfg);
 
@@ -116,6 +116,7 @@ describe("loadSummary", () => {
     expect(view.currencies).toEqual(["EUR", "USD"]);
     expect(view.currency).toBe("USD");
     expect(view.defaultCurrency).toBe("USD");
+    expect(view.periodCurrencies).toEqual(["EUR", "USD"]);
     expect(view.summary?.totals).toMatchObject({ count: USD_COUNT, gross: "12000.00", net: "10836.00" });
     expect(view.months).toEqual([
       { month: "2026-11", label: "nov 2026", gross: "12000.00", fees: "1164.00", net: "10836.00", count: USD_COUNT },
@@ -131,6 +132,7 @@ describe("loadSummary", () => {
         count: 1,
         ids: expect.any(Array),
         overdue: true,
+        part: null,
       },
       {
         date: "2026-11-13",
@@ -140,6 +142,7 @@ describe("loadSummary", () => {
         count: USD_COUNT - 1,
         ids: expect.any(Array),
         overdue: true,
+        part: null,
       },
     ]);
     expect(view.depositWindow).toEqual({ from: TODAY, to: "2026-12-03" });
@@ -163,7 +166,7 @@ describe("loadSummary", () => {
         count: 1,
         href: "/pasarelas/cobros?periodo=personalizado&desde=2026-11-13&hasta=2026-11-13&estado=en_disputa",
       },
-      companiesWithoutScheme: [{ id: shopId, name: "Tienda Demo" }],
+      companiesWithoutScheme: [{ id: shopId, name: "Tienda Demo", schemeInactive: false }],
       yearsWithoutHolidays: [2026, 2027],
     });
   });
