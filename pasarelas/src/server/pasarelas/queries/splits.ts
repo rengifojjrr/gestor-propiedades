@@ -99,6 +99,20 @@ export async function listBalances(supabase: Db, beneficiaryId?: string): Promis
   }));
 }
 
+/**
+ * Cuántos cobros usan esa versión de un esquema, también los de la papelera (los dos guardan congelado el reparto
+ * con que se registraron). Solo cuenta los del usuario de la sesión.
+ */
+export async function countSchemeVersionTransactions(supabase: Db, versionId: string): Promise<number> {
+  const { count } = await supabase
+    .from("pay_transactions")
+    .select("id", { count: "exact", head: true })
+    .eq("scheme_version_id", versionId)
+    .throwOnError();
+  if (count === null) throw new Error("La cuenta de cobros de una versión llegó sin el total (count).");
+  return count;
+}
+
 /** La ficha de un beneficiario, o `null` si no existe (o es de otro usuario). */
 export async function getBeneficiary(supabase: Db, id: string): Promise<BeneficiaryView | null> {
   const { data } = await supabase

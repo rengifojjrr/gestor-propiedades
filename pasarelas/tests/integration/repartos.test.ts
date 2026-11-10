@@ -4,15 +4,22 @@ import { SCHEME_ISSUE_TEXT } from "@/lib/pasarelas";
 import { errorMessage } from "@/server/pasarelas/errors";
 import { deleteSettlement, saveSettlement, settlementReceiptUrl } from "@/server/pasarelas/ops/settlements";
 import {
+  correctScheme,
   deleteBeneficiary,
   deleteScheme,
+  renameScheme,
   saveBeneficiary,
   saveScheme,
   setBeneficiaryActive,
   setSchemeActive,
 } from "@/server/pasarelas/ops/splits";
 import { listSettlements } from "@/server/pasarelas/queries/settlements";
-import { getBeneficiary, listBalances, listBeneficiaryAllocations } from "@/server/pasarelas/queries/splits";
+import {
+  countSchemeVersionTransactions,
+  getBeneficiary,
+  listBalances,
+  listBeneficiaryAllocations,
+} from "@/server/pasarelas/queries/splits";
 import {
   adminClient,
   createUser,
@@ -201,6 +208,31 @@ describe("beneficiarios", () => {
   });
 });
 
+/** Las versiones de un esquema con sus líneas, como las dejó la base. */
+async function versionsOf(schemeId: string) {
+  const versions = unwrap(
+    await admin
+      .from("pay_scheme_versions")
+      .select("id, version, base, remainder_beneficiary_id, effective_from")
+      .eq("scheme_id", schemeId)
+      .order("version"),
+    "versiones",
+  );
+  return Promise.all(
+    versions.map(async (version) => ({
+      ...version,
+      lines: unwrap(
+        await admin
+          .from("pay_scheme_lines")
+          .select("beneficiary_id, pct::text, sort")
+          .eq("scheme_version_id", version.id)
+          .order("sort"),
+        "líneas",
+      ),
+    })),
+  );
+}
+
 describe("esquemas", () => {
   let user: TestUser;
   let other: TestUser;
@@ -210,31 +242,6 @@ describe("esquemas", () => {
     [user, other] = await Promise.all([createUser(), createUser()]);
     basics = await seedBasics(user.client);
   });
-
-  /** Las versiones de un esquema con sus líneas, como las dejó la base. */
-  async function versionsOf(schemeId: string) {
-    const versions = unwrap(
-      await admin
-        .from("pay_scheme_versions")
-        .select("id, version, base, remainder_beneficiary_id, effective_from")
-        .eq("scheme_id", schemeId)
-        .order("version"),
-      "versiones",
-    );
-    return Promise.all(
-      versions.map(async (version) => ({
-        ...version,
-        lines: unwrap(
-          await admin
-            .from("pay_scheme_lines")
-            .select("beneficiary_id, pct::text, sort")
-            .eq("scheme_version_id", version.id)
-            .order("sort"),
-          "líneas",
-        ),
-      })),
-    );
-  }
 
   it("saveScheme arma un esquema nuevo 50/30/20 que rige desde el inicio", async () => {
     const { a, b, c } = basics.beneficiaryIds;
@@ -425,6 +432,188 @@ describe("esquemas", () => {
       .select("id", { count: "exact", head: true })
       .eq("scheme_id", unused.schemeId);
     expect(count).toBe(0);
+  });
+});
+
+describe("corregir la última versión de un esquema", () => {
+  let user: TestUser;
+  let other: TestUser;
+  let basics: Basics;
+
+  /** Lo que se dice si, mientras se corregía, un cobro empezó a usar la versión. */
+  const VERSION_USED =
+    "Mientras la corregías se registró un cobro con esta versión, así que ya no se corrige: cambiaría lo ya " +
+    "repartido. Para repartir distinto de aquí en adelante, crea una versión nueva desde una fecha en la ficha del " +
+    "esquema.";
+
+  beforeAll(async () => {
+    [user, other] = await Promise.all([createUser(), createUser()]);
+    basics = await seedBasics(user.client);
+  });
+
+  /** Un esquema como el que armó el dueño: Grupo A 60 % y Grupo B 40 %, sobre el bruto, desde el inicio. */
+  const onGross = (name: string) =>
+    saveScheme(user.client, {
+      schemeId: null,
+      name,
+      base: "bruto",
+      remainderBeneficiaryId: null,
+      effectiveFrom: "2000-01-01",
+      lines: [
+        { beneficiaryId: basics.beneficiaryIds.a, pct: "60" },
+        { beneficiaryId: basics.beneficiaryIds.b, pct: "40" },
+      ],
+    });
+
+  /** Un cobro E1 que usa esa versión del esquema. Devuelve su id. */
+  async function txWith(scheme: { schemeId: string; versionId: string }, reference: string): Promise<string> {
+    const [saved] = await saveTransactions(user.client, [
+      e1Item(basics, { reference, scheme_id: scheme.schemeId, scheme_version_id: scheme.versionId }),
+    ]);
+    if (saved === undefined) throw new Error("No se guardó el cobro");
+    return saved.id;
+  }
+
+  it("la única versión, sin cobros y con la misma «vigente desde»: pasa de bruto a neto con otras líneas y sigue siendo la 1", async () => {
+    const { a, b, c } = basics.beneficiaryIds;
+    const created = await onGross("Todos");
+    const fixed = await correctScheme(user.client, {
+      schemeId: created.schemeId,
+      name: "Todos",
+      base: "neto",
+      remainderBeneficiaryId: c,
+      effectiveFrom: "2000-01-01",
+      lines: [
+        { beneficiaryId: a, pct: "50" },
+        { beneficiaryId: b, pct: "30" },
+      ],
+    });
+    expect(fixed).toMatchObject({ schemeId: created.schemeId, version: 1 });
+    // Se reemplazó: la versión de antes ya no está.
+    expect(fixed.versionId).not.toBe(created.versionId);
+    expect(await versionsOf(created.schemeId)).toEqual([
+      {
+        id: fixed.versionId,
+        version: 1,
+        base: "neto",
+        remainder_beneficiary_id: c,
+        effective_from: "2000-01-01",
+        lines: [
+          { beneficiary_id: a, pct: "50.0000", sort: 0 },
+          { beneficiary_id: b, pct: "30.0000", sort: 1 },
+        ],
+      },
+    ]);
+  });
+
+  it("con varias versiones, corregir la última conserva su número y no toca las anteriores", async () => {
+    const { a, b } = basics.beneficiaryIds;
+    const created = await onGross("Todos con versiones");
+    await saveScheme(user.client, {
+      schemeId: created.schemeId,
+      name: "Todos con versiones",
+      base: "bruto",
+      remainderBeneficiaryId: null,
+      effectiveFrom: "2026-12-01",
+      lines: [
+        { beneficiaryId: a, pct: "70" },
+        { beneficiaryId: b, pct: "30" },
+      ],
+    });
+    const [first] = await versionsOf(created.schemeId);
+
+    const fixed = await correctScheme(user.client, {
+      schemeId: created.schemeId,
+      name: "Todos con versiones",
+      base: "neto",
+      remainderBeneficiaryId: null,
+      effectiveFrom: "2026-12-01",
+      lines: [
+        { beneficiaryId: a, pct: "80" },
+        { beneficiaryId: b, pct: "20" },
+      ],
+    });
+    expect(fixed.version).toBe(2);
+    expect(await versionsOf(created.schemeId)).toEqual([
+      first,
+      {
+        id: fixed.versionId,
+        version: 2,
+        base: "neto",
+        remainder_beneficiary_id: null,
+        effective_from: "2026-12-01",
+        lines: [
+          { beneficiary_id: a, pct: "80.0000", sort: 0 },
+          { beneficiary_id: b, pct: "20.0000", sort: 1 },
+        ],
+      },
+    ]);
+  });
+
+  it("cuántos cobros usan una versión: también los de la papelera, y solo los propios", async () => {
+    const created = await onGross("Todos contados");
+    expect(await countSchemeVersionTransactions(user.client, created.versionId)).toBe(0);
+
+    const kept = await txWith(created, "pi_corregir_contar_1");
+    const trashed = await txWith(created, "pi_corregir_contar_2");
+    await user.client
+      .from("pay_transactions")
+      .update({ deleted_at: "2026-11-21T10:00:00+00:00" })
+      .eq("id", trashed)
+      .throwOnError();
+    expect(kept).not.toBe(trashed);
+    expect(await countSchemeVersionTransactions(user.client, created.versionId)).toBe(2);
+    // Otro usuario no ve los cobros: para él no hay ninguno.
+    expect(await countSchemeVersionTransactions(other.client, created.versionId)).toBe(0);
+  });
+
+  it("con un cobro que la usa, aunque esté en la papelera, no se corrige: lo dice y nada cambia", async () => {
+    const { a, b } = basics.beneficiaryIds;
+    const created = await onGross("Todos con un cobro");
+    const tx = await txWith(created, "pi_corregir_papelera");
+    await user.client
+      .from("pay_transactions")
+      .update({ deleted_at: "2026-11-21T10:00:00+00:00" })
+      .eq("id", tx)
+      .throwOnError();
+    const before = await versionsOf(created.schemeId);
+
+    const error = await failure(
+      correctScheme(user.client, {
+        schemeId: created.schemeId,
+        name: "Todos con un cobro",
+        base: "neto",
+        remainderBeneficiaryId: null,
+        effectiveFrom: "2000-01-01",
+        lines: [
+          { beneficiaryId: a, pct: "50" },
+          { beneficiaryId: b, pct: "50" },
+        ],
+      }),
+    );
+    expect(errorMessage(error)).toBe(VERSION_USED);
+    expect(await versionsOf(created.schemeId)).toEqual(before);
+  });
+
+  it("cambiar solo el nombre no crea una versión, también con cobros; un nombre repetido o un esquema ajeno no", async () => {
+    const created = await onGross("Todos sin renombrar");
+    await txWith(created, "pi_corregir_nombre");
+    const before = await versionsOf(created.schemeId);
+
+    await renameScheme(user.client, created.schemeId, "Todos renombrado");
+    const name = async () =>
+      unwrap(await admin.from("pay_schemes").select("name").eq("id", created.schemeId).single(), "esquema").name;
+    expect(await name()).toBe("Todos renombrado");
+    expect(await versionsOf(created.schemeId)).toEqual(before);
+
+    // El nombre de otro esquema (sin distinguir mayúsculas): el mismo mensaje que al crearlo.
+    const repeated = await failure(renameScheme(user.client, created.schemeId, "reparto 50/30/20"));
+    expect(errorMessage(repeated)).toBe("Ya hay un esquema de reparto con ese nombre.");
+    // Uno de otro usuario no se toca.
+    await expect(renameScheme(other.client, created.schemeId, "Ajeno")).rejects.toThrow(
+      "Ese esquema de reparto ya no existe.",
+    );
+    expect(await name()).toBe("Todos renombrado");
   });
 });
 

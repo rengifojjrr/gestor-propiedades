@@ -74,6 +74,23 @@ export async function saveScheme(input: unknown): Promise<ActionResult<{ schemeI
   }));
 }
 
+/**
+ * Corrige la última versión de un esquema que ningún cobro usa: llega con su misma «vigente desde» y la base la
+ * reemplaza. Si mientras tanto un cobro empezó a usarla, no cambia nada y lo dice.
+ */
+export async function correctScheme(input: unknown): Promise<ActionResult<{ schemeId: string }>> {
+  return runAction(zScheme.extend({ schemeId: zId }), input, async ({ supabase }, scheme) => ({
+    schemeId: (await ops.correctScheme(supabase, scheme)).schemeId,
+  }));
+}
+
+/** Cambia solo el nombre de un esquema, sin versión nueva (vale también si tiene cobros). */
+export async function renameScheme(input: unknown): Promise<ActionResult> {
+  return runAction(z.object({ id: zId, name: zText(NAME_MAX) }), input, ({ supabase }, { id, name }) =>
+    ops.renameScheme(supabase, id, name),
+  );
+}
+
 export async function setSchemeActive(input: unknown): Promise<ActionResult> {
   return runAction(zActive, input, ({ supabase }, { id, active }) => ops.setSchemeActive(supabase, id, active));
 }

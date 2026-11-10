@@ -8,8 +8,9 @@ import { UserError } from "../errors";
  * Las escrituras de Repartos: los beneficiarios y los esquemas de reparto. El cliente llega de fuera, con la sesión
  * del usuario (la RLS aplica): lo de otro usuario no se ve, y se trata como algo que ya no existe.
  *
- * Un esquema nunca se edita: se le agrega una versión con su «vigente desde» (cada cobro guarda congelada la que
- * usó). Lo que tiene historia no se borra (la base no deja): se dice que se desactive.
+ * Una versión de un esquema que algún cobro usa nunca se toca: para repartir distinto se le agrega una versión con
+ * su «vigente desde» (cada cobro guarda congelada la que usó). Solo la que ningún cobro usa se puede corregir, y la
+ * base la reemplaza. Lo que tiene historia no se borra (la base no deja): se dice que se desactive.
  */
 
 export type BeneficiaryInput = {
@@ -38,6 +39,10 @@ const BENEFICIARY_NOT_FOUND = "Ese beneficiario ya no existe.";
 const SCHEME_NOT_FOUND = "Ese esquema de reparto ya no existe.";
 const IN_USE = "Tiene movimientos: desactívalo en su lugar";
 const IN_SCHEME = "Está en un esquema de reparto: desactívalo en su lugar";
+const VERSION_USED =
+  "Mientras la corregías se registró un cobro con esta versión, así que ya no se corrige: cambiaría lo ya " +
+  "repartido. Para repartir distinto de aquí en adelante, crea una versión nueva desde una fecha en la ficha del " +
+  "esquema.";
 
 /** ¿Lo rechazó una clave foránea? Al borrar: algo todavía lo usa. */
 function isForeignKey(error: unknown): boolean {
@@ -114,6 +119,32 @@ export async function saveScheme(supabase: Db, s: SchemeInput): Promise<SavedSch
     .throwOnError();
   const saved = data as { scheme_id: string; version_id: string; version: number };
   return { schemeId: saved.scheme_id, versionId: saved.version_id, version: saved.version };
+}
+
+/**
+ * Corrige la versión del esquema que rige desde `s.effectiveFrom` (la pantalla manda la de su última versión): la
+ * misma `pay_save_scheme`, que reemplaza la versión de esa fecha si ningún cobro la usa (también en la papelera) y
+ * le deja su número si era la última. Si algún cobro la usa, la base no la toca y se dice por qué: entre que se
+ * abrió la pantalla (que ya lo preguntó) y que se guardó, se registró un cobro con ella.
+ */
+export async function correctScheme(supabase: Db, s: SchemeInput & { schemeId: string }): Promise<SavedScheme> {
+  try {
+    return await saveScheme(supabase, s);
+  } catch (error) {
+    if (isForeignKey(error) && messageOf(error).startsWith("pay_scheme_version_in_use:")) {
+      throw new UserError(VERSION_USED);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Cambia solo el nombre del esquema, sin versión nueva: el nombre no cambia ningún reparto, así que vale también
+ * para un esquema con cobros. Un nombre repetido lo rechaza la base (`pay_schemes_name_uq`).
+ */
+export async function renameScheme(supabase: Db, id: string, name: string): Promise<void> {
+  const { data } = await supabase.from("pay_schemes").update({ name }).eq("id", id).select("id").throwOnError();
+  touched(data, SCHEME_NOT_FOUND);
 }
 
 /** Activa o desactiva el esquema. Uno inactivo no se ofrece al registrar; lo ya repartido no cambia. */
