@@ -101,14 +101,14 @@ isOneToOne: false
                   ]
                 },"pay_company_gateways": {
                   Row: {
-                    "active": boolean,"bank_account_id": string | null,"checkout_url": string | null,"company_id": string,"created_at": string,"dashboard_url": string | null,"default_extra_ids": (string)[] | null,"gateway_id": string,"id": string,"payout_days_override": number | null,"updated_at": string,"user_id": string
+                    "active": boolean,"bank_account_id": string | null,"checkout_url": string | null,"company_id": string,"created_at": string,"dashboard_url": string | null,"default_extra_ids": (string)[] | null,"gateway_id": string,"id": string,"payout_days_override": number | null,"payout_days_override_max": number | null,"updated_at": string,"user_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "active"?: boolean,"bank_account_id"?: string | null,"checkout_url"?: string | null,"company_id": string,"created_at"?: string,"dashboard_url"?: string | null,"default_extra_ids"?: (string)[] | null,"gateway_id": string,"id"?: string,"payout_days_override"?: number | null,"updated_at"?: string,"user_id"?: string
+                    "active"?: boolean,"bank_account_id"?: string | null,"checkout_url"?: string | null,"company_id": string,"created_at"?: string,"dashboard_url"?: string | null,"default_extra_ids"?: (string)[] | null,"gateway_id": string,"id"?: string,"payout_days_override"?: number | null,"payout_days_override_max"?: number | null,"updated_at"?: string,"user_id"?: string
                   }
                   Update: {
-                    "active"?: boolean,"bank_account_id"?: string | null,"checkout_url"?: string | null,"company_id"?: string,"created_at"?: string,"dashboard_url"?: string | null,"default_extra_ids"?: (string)[] | null,"gateway_id"?: string,"id"?: string,"payout_days_override"?: number | null,"updated_at"?: string,"user_id"?: string
+                    "active"?: boolean,"bank_account_id"?: string | null,"checkout_url"?: string | null,"company_id"?: string,"created_at"?: string,"dashboard_url"?: string | null,"default_extra_ids"?: (string)[] | null,"gateway_id"?: string,"id"?: string,"payout_days_override"?: number | null,"payout_days_override_max"?: number | null,"updated_at"?: string,"user_id"?: string
                   }
                   Relationships: [
                     {
@@ -133,14 +133,14 @@ isOneToOne: false
                   ]
                 },"pay_gateway_extras": {
                   Row: {
-                    "active": boolean,"base": string,"created_at": string,"default_on": boolean,"fixed": number,"gateway_id": string,"id": string,"kind": string,"name": string,"payout_days_override": number | null,"pct": number,"sort": number,"updated_at": string,"user_id": string
+                    "active": boolean,"base": string,"created_at": string,"default_on": boolean,"fixed": number,"gateway_id": string,"id": string,"kind": string,"name": string,"payout_days_override": number | null,"payout_days_override_max": number | null,"pct": number,"sort": number,"updated_at": string,"user_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "active"?: boolean,"base"?: string,"created_at"?: string,"default_on"?: boolean,"fixed"?: number,"gateway_id": string,"id"?: string,"kind"?: string,"name": string,"payout_days_override"?: number | null,"pct"?: number,"sort"?: number,"updated_at"?: string,"user_id"?: string
+                    "active"?: boolean,"base"?: string,"created_at"?: string,"default_on"?: boolean,"fixed"?: number,"gateway_id": string,"id"?: string,"kind"?: string,"name": string,"payout_days_override"?: number | null,"payout_days_override_max"?: number | null,"pct"?: number,"sort"?: number,"updated_at"?: string,"user_id"?: string
                   }
                   Update: {
-                    "active"?: boolean,"base"?: string,"created_at"?: string,"default_on"?: boolean,"fixed"?: number,"gateway_id"?: string,"id"?: string,"kind"?: string,"name"?: string,"payout_days_override"?: number | null,"pct"?: number,"sort"?: number,"updated_at"?: string,"user_id"?: string
+                    "active"?: boolean,"base"?: string,"created_at"?: string,"default_on"?: boolean,"fixed"?: number,"gateway_id"?: string,"id"?: string,"kind"?: string,"name"?: string,"payout_days_override"?: number | null,"payout_days_override_max"?: number | null,"pct"?: number,"sort"?: number,"updated_at"?: string,"user_id"?: string
                   }
                   Relationships: [
                     {
@@ -173,14 +173,14 @@ isOneToOne: false
                   ]
                 },"pay_gateways": {
                   Row: {
-                    "active": boolean,"created_at": string,"dispute_fee": number,"id": string,"import_mapping": Json | null,"name": string,"notes": string | null,"payout_day_type": string,"payout_days": number,"refunds_return_fee": boolean,"updated_at": string,"user_id": string
+                    "active": boolean,"created_at": string,"dispute_fee": number,"id": string,"import_mapping": Json | null,"name": string,"notes": string | null,"payout_day_type": string,"payout_days": number,"payout_days_max": number | null,"refunds_return_fee": boolean,"updated_at": string,"user_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "active"?: boolean,"created_at"?: string,"dispute_fee"?: number,"id"?: string,"import_mapping"?: Json | null,"name": string,"notes"?: string | null,"payout_day_type"?: string,"payout_days"?: number,"refunds_return_fee"?: boolean,"updated_at"?: string,"user_id"?: string
+                    "active"?: boolean,"created_at"?: string,"dispute_fee"?: number,"id"?: string,"import_mapping"?: Json | null,"name": string,"notes"?: string | null,"payout_day_type"?: string,"payout_days"?: number,"payout_days_max"?: number | null,"refunds_return_fee"?: boolean,"updated_at"?: string,"user_id"?: string
                   }
                   Update: {
-                    "active"?: boolean,"created_at"?: string,"dispute_fee"?: number,"id"?: string,"import_mapping"?: Json | null,"name"?: string,"notes"?: string | null,"payout_day_type"?: string,"payout_days"?: number,"refunds_return_fee"?: boolean,"updated_at"?: string,"user_id"?: string
+                    "active"?: boolean,"created_at"?: string,"dispute_fee"?: number,"id"?: string,"import_mapping"?: Json | null,"name"?: string,"notes"?: string | null,"payout_day_type"?: string,"payout_days"?: number,"payout_days_max"?: number | null,"refunds_return_fee"?: boolean,"updated_at"?: string,"user_id"?: string
                   }
                   Relationships: [
                     
@@ -327,14 +327,14 @@ isOneToOne: false
                   ]
                 },"pay_transactions": {
                   Row: {
-                    "alloc_base": string | null,"alloc_base_amount": number,"bank_account_id": string | null,"breakdown": NonNullable<Json>,"channel_id": string | null,"company_id": string,"created_at": string,"currency": string,"deleted_at": string | null,"deposited_on": string | null,"dispute_closed_on": string | null,"dispute_opened_on": string | null,"dispute_state": string | null,"estimated_deposit_on": string | null,"estimated_is_manual": boolean,"fee_version_id": string,"fees_total": number,"gateway_id": string,"gross_amount": number,"gross_original": number,"id": string,"net_amount": number,"note": string | null,"occurred_at": string,"occurred_on": string,"receipts_count": number,"reference": string | null,"refunded_amount": number,"scheme_id": string | null,"scheme_version_id": string | null,"status": string,"updated_at": string,"user_id": string
+                    "alloc_base": string | null,"alloc_base_amount": number,"bank_account_id": string | null,"breakdown": NonNullable<Json>,"channel_id": string | null,"company_id": string,"created_at": string,"currency": string,"deleted_at": string | null,"deposited_on": string | null,"dispute_closed_on": string | null,"dispute_opened_on": string | null,"dispute_state": string | null,"estimated_deposit_from": string | null,"estimated_deposit_on": string | null,"estimated_is_manual": boolean,"fee_version_id": string,"fees_total": number,"gateway_id": string,"gross_amount": number,"gross_original": number,"id": string,"net_amount": number,"note": string | null,"occurred_at": string,"occurred_on": string,"receipts_count": number,"reference": string | null,"refunded_amount": number,"scheme_id": string | null,"scheme_version_id": string | null,"status": string,"updated_at": string,"user_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "alloc_base"?: string | null,"alloc_base_amount"?: number,"bank_account_id"?: string | null,"breakdown": NonNullable<Json>,"channel_id"?: string | null,"company_id": string,"created_at"?: string,"currency": string,"deleted_at"?: string | null,"deposited_on"?: string | null,"dispute_closed_on"?: string | null,"dispute_opened_on"?: string | null,"dispute_state"?: string | null,"estimated_deposit_on"?: string | null,"estimated_is_manual"?: boolean,"fee_version_id": string,"fees_total": number,"gateway_id": string,"gross_amount": number,"gross_original": number,"id"?: string,"net_amount": number,"note"?: string | null,"occurred_at": string,"occurred_on": string,"receipts_count"?: number,"reference"?: string | null,"refunded_amount"?: number,"scheme_id"?: string | null,"scheme_version_id"?: string | null,"status"?: string,"updated_at"?: string,"user_id"?: string
+                    "alloc_base"?: string | null,"alloc_base_amount"?: number,"bank_account_id"?: string | null,"breakdown": NonNullable<Json>,"channel_id"?: string | null,"company_id": string,"created_at"?: string,"currency": string,"deleted_at"?: string | null,"deposited_on"?: string | null,"dispute_closed_on"?: string | null,"dispute_opened_on"?: string | null,"dispute_state"?: string | null,"estimated_deposit_from"?: string | null,"estimated_deposit_on"?: string | null,"estimated_is_manual"?: boolean,"fee_version_id": string,"fees_total": number,"gateway_id": string,"gross_amount": number,"gross_original": number,"id"?: string,"net_amount": number,"note"?: string | null,"occurred_at": string,"occurred_on": string,"receipts_count"?: number,"reference"?: string | null,"refunded_amount"?: number,"scheme_id"?: string | null,"scheme_version_id"?: string | null,"status"?: string,"updated_at"?: string,"user_id"?: string
                   }
                   Update: {
-                    "alloc_base"?: string | null,"alloc_base_amount"?: number,"bank_account_id"?: string | null,"breakdown"?: NonNullable<Json>,"channel_id"?: string | null,"company_id"?: string,"created_at"?: string,"currency"?: string,"deleted_at"?: string | null,"deposited_on"?: string | null,"dispute_closed_on"?: string | null,"dispute_opened_on"?: string | null,"dispute_state"?: string | null,"estimated_deposit_on"?: string | null,"estimated_is_manual"?: boolean,"fee_version_id"?: string,"fees_total"?: number,"gateway_id"?: string,"gross_amount"?: number,"gross_original"?: number,"id"?: string,"net_amount"?: number,"note"?: string | null,"occurred_at"?: string,"occurred_on"?: string,"receipts_count"?: number,"reference"?: string | null,"refunded_amount"?: number,"scheme_id"?: string | null,"scheme_version_id"?: string | null,"status"?: string,"updated_at"?: string,"user_id"?: string
+                    "alloc_base"?: string | null,"alloc_base_amount"?: number,"bank_account_id"?: string | null,"breakdown"?: NonNullable<Json>,"channel_id"?: string | null,"company_id"?: string,"created_at"?: string,"currency"?: string,"deleted_at"?: string | null,"deposited_on"?: string | null,"dispute_closed_on"?: string | null,"dispute_opened_on"?: string | null,"dispute_state"?: string | null,"estimated_deposit_from"?: string | null,"estimated_deposit_on"?: string | null,"estimated_is_manual"?: boolean,"fee_version_id"?: string,"fees_total"?: number,"gateway_id"?: string,"gross_amount"?: number,"gross_original"?: number,"id"?: string,"net_amount"?: number,"note"?: string | null,"occurred_at"?: string,"occurred_on"?: string,"receipts_count"?: number,"reference"?: string | null,"refunded_amount"?: number,"scheme_id"?: string | null,"scheme_version_id"?: string | null,"status"?: string,"updated_at"?: string,"user_id"?: string
                   }
                   Relationships: [
                     {
