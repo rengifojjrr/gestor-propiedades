@@ -10,12 +10,7 @@ import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
  * real del stack local que trae lo de E1 (`newUser()`): «Escuela Demo» con su canal al 5 % y el esquema 50/30/20
  * sobre el neto; Stripe 2,9 % + 0,30 con la opción «Pago rápido» (1,5 % del bruto, 0 días), apagada por defecto.
  *
- * El detalle del cobro todavía no existe: lo guardado se comprueba en la base, con la sesión del propio usuario.
- *
- * PENDIENTE (tarea 16, «Cobro — detalle», o la 21): el encargo pide que, al guardar, «el detalle muestre lo mismo y
- * el comprobante». Cuando exista /pasarelas/cobros/[id], la prueba del «Listo cuando» n.º 1 sigue tras «Ver cobro» y
- * comprueba en la pantalla 3,20 / 1,50 / 5,00, comisiones 9,70, neto 90,30, 45,15 / 27,09 / 18,06, la fecha
- * estimada y el comprobante. La excepción de los 404 de las pantallas que faltan es `isPendingRoute`.
+ * Lo guardado se comprueba en la base, con la sesión del propio usuario, y en el detalle del cobro («Ver cobro»).
  */
 
 const MB = 1024 * 1024;
@@ -75,17 +70,6 @@ async function savedWith(client: Db, reference: string) {
   return data;
 }
 
-/**
- * PENDIENTE (tareas 11 a 19): las demás pantallas del módulo todavía no existen. En modo producción Next precarga
- * los enlaces del menú (`/pasarelas/cobros?_rsc=…`) y «Ver cobro» abre `/pasarelas/cobros/<id>`: todos dan 404, que
- * no son errores de esta pantalla. Solo se deja pasar el 404 de una ruta de `/pasarelas/…` que no sea esta; cuando
- * existan todas (tarea 21), esta excepción se quita.
- */
-function isPendingRoute(url: string): boolean {
-  const { pathname } = new URL(url);
-  return pathname.startsWith("/pasarelas/") && !pathname.startsWith("/pasarelas/registrar");
-}
-
 test.describe.serial("registrar cobro", () => {
   let owner: TestUser;
   let ownerDb: Db;
@@ -115,10 +99,8 @@ test.describe.serial("registrar cobro", () => {
       const text = message.text();
       const url = message.location().url;
       if (provokedError !== null && text.includes(provokedError)) return;
-      const failedLoad = text.startsWith("Failed to load resource");
       const expected =
-        failedLoad &&
-        (expectedLoadFailures.some((part) => url.includes(part)) || (text.includes("404") && isPendingRoute(url)));
+        text.startsWith("Failed to load resource") && expectedLoadFailures.some((part) => url.includes(part));
       if (!expected) pageErrors.push(`${text} (${url})`);
     });
   });
@@ -200,7 +182,19 @@ test.describe.serial("registrar cobro", () => {
 
     await toast.getByRole("button", { name: "Ver cobro" }).click();
     await expect(page).toHaveURL(new RegExp(`/pasarelas/cobros/${saved?.id}$`));
-    // PENDIENTE (tarea 16): aquí, el desglose, el reparto, la fecha estimada y el comprobante en el detalle.
+    // El detalle muestra lo mismo que la vista previa, y el comprobante.
+    const lines = page.getByRole("list", { name: "Comisiones" });
+    await expect(lines.getByRole("listitem").filter({ hasText: "Stripe" })).toContainText("$3,20");
+    await expect(lines.getByRole("listitem").filter({ hasText: "Pago rápido" })).toContainText("$1,50");
+    await expect(lines.getByRole("listitem").filter({ hasText: "Inscripciones en línea" })).toContainText("$5,00");
+    await expect(page.getByTestId("comisiones")).toHaveText("$9,70");
+    await expect(page.getByTestId("neto")).toHaveText("$90,30");
+    const detailShares = page.getByRole("list", { name: "Reparto" });
+    await expect(detailShares.getByRole("listitem").filter({ hasText: "Grupo A" })).toContainText("$45,15");
+    await expect(detailShares.getByRole("listitem").filter({ hasText: "Grupo B" })).toContainText("$27,09");
+    await expect(detailShares.getByRole("listitem").filter({ hasText: "Grupo C" })).toContainText("$18,06");
+    await expect(page.getByTestId("fecha-estimada").locator("time")).toHaveAttribute("datetime", estimated ?? "");
+    await expect(page.getByRole("list", { name: "Comprobantes" }).getByRole("listitem")).toContainText("recibo-demo.png");
   });
 
   test("Foco 1: un doble toque en «Guardar» deja un solo cobro", async ({ page }) => {
