@@ -40,12 +40,29 @@ El dueño pidió construir «de corrido», sin parar a aprobar este plan.
   tarea 2), crea tus propios usuarios de prueba y usa tu propio puerto (`3100 + número de tarea`).
 - Verificación de cada tarea, desde `pasarelas/`: `npm run typecheck`, `npm run lint`, `npm test`, y lo que la tarea
   indique (`npm run test:int`, `npm run test:e2e -- <archivo>`).
-- **Pantallas (tareas 10 a 19):** Server Components que llaman a `requireSession()` y leen por `queries/`; filtros
-  en `searchParams`; `loading.tsx` y `error.tsx` por ruta; vacíos con `EmptyState`; avisos con `notify`; formularios
-  con etiquetas y errores por campo; todo usable a 390 px. Cada tarea deja su `e2e/<nombre>.spec.ts` (a 390×844, con
-  `newUser()`, terminando en `expectNoSeriousAxe`) y lo corre contra su propio servidor. Las acciones nuevas van en
-  `src/server/pasarelas/{ops,actions}/<dominio>.ts`, con pruebas de integración de sus `ops`. No se editan archivos
-  de otras tareas (ni `nav.ts`, ni `e2e/helpers.ts`, ni `package.json`): si falta algo ahí, se reporta.
+- **Pantallas (tareas 10 a 19):**
+  - Server Components que llaman a `requireSession()` (de `@/lib/auth/session`) y leen por `queries/` con el
+    cliente de `@/lib/supabase/server`; la configuración, con `getPayConfig()`. Filtros en `searchParams`;
+    `loading.tsx` y `error.tsx` por ruta; vacíos con `EmptyState`; avisos pasajeros con `notify`.
+  - Las mutaciones van por Server Actions hechas con `runAction` (sesión + Zod + `ops` + revalidar). Las `ops`
+    reciben el cliente y tienen pruebas de integración. Cada dominio en sus propios archivos:
+    `src/server/pasarelas/{ops,actions,queries}/<dominio>.ts`.
+  - Formularios con `Field` (un solo control por campo) y errores por campo; el error general que aparece tras
+    una acción va en `<Alert tone="danger" announce>`. React 19 vacía los campos no controlados al terminar la
+    acción de un `<form>`: devuelve los valores en el estado o usa campos controlados.
+  - Solo tokens del kit (los colores de Tailwind están apagados). Dinero, porcentajes y fechas con `Money`,
+    `Percent`, `DateText` y `DateTimeText`, que **lanzan** con un valor nulo: la pantalla decide antes qué pintar.
+  - Archivos compartidos — `nav.ts`, `e2e/helpers.ts`, `e2e/axe.ts`, `package.json`, el kit
+    (`src/components/ui/**`), el motor (`src/lib/pasarelas/**`) y `src/server/pasarelas/{action,errors,zod,dto}.ts`
+    — no se editan salvo que la tarea lo diga. Si falta algo, se añade lo mínimo **al final** del archivo y se
+    declara en el informe, para poder juntar los cambios de varias tareas.
+  - Cada tarea deja su `e2e/<nombre>.spec.ts`: entra con `newUser()` y `login()`, y en cada estado importante de
+    la pantalla pasa `expectNoSeriousAxe` y `expectNoHorizontalOverflow`. Se corre contra el servidor propio
+    mientras se itera y **una vez al final en modo producción**
+    (`E2E_PORT=<puerto> npx playwright test --trace off e2e/<archivo>`).
+  - Antes de informar, quien implementa **mira** su pantalla: capturas a 390×844 (claro y oscuro) y a 1280×800,
+    guardadas fuera del repo, y revisadas: jerarquía, desborde, estados vacíos, textos cortados, lo que no se
+    entiende sin explicación.
 
 ## Foco de revisión
 
