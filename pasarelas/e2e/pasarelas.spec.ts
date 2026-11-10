@@ -1,33 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
 import { expect, test, type Page } from "@playwright/test";
 import { ZONE, addDays, todayNY, wallTimeToInstant } from "../src/lib/pasarelas/dates";
 import { signInAal1, type Db } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
 import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
+import { serverData } from "./server-data";
 
 /**
  * Pasarelas: la lista, el alta de «PayPal Demo» con su opción, y el «Listo cuando» n.º 3 (una tarifa «vigente desde
  * mañana» no mueve lo ya registrado). Corre en el celular y en el escritorio, con un usuario nuevo en cada uno.
  */
-
-type TransactionsOps = typeof import("../src/server/pasarelas/ops/transactions");
-type TransactionsQueries = typeof import("../src/server/pasarelas/queries/transactions");
-
-/**
- * La capa de datos de los cobros (`createTx`, `getSnapshots`), con el cliente del usuario: lo mismo que usan las
- * acciones. Esos módulos importan `server-only`, que lanza fuera de un Server Component; aquí no hay React, así que
- * se deja cargado vacío antes de traerlos (es lo que hace `vitest.setup.ts` en las pruebas de integración).
- */
-function serverData(): TransactionsOps & TransactionsQueries {
-  const load = createRequire(__filename);
-  const serverOnly = load.resolve("server-only");
-  load.cache[serverOnly] ??= { id: serverOnly, filename: serverOnly, loaded: true, exports: {} } as NodeJS.Module;
-  return {
-    ...(load("../src/server/pasarelas/ops/transactions") as TransactionsOps),
-    ...(load("../src/server/pasarelas/queries/transactions") as TransactionsQueries),
-  };
-}
 
 let user: TestUser;
 let client: Db;
