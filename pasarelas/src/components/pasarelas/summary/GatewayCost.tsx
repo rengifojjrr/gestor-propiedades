@@ -1,8 +1,8 @@
 import { Money, Percent, TBody, THead, Table, Td, Th, Tr } from "@/components/ui";
-import { cmp } from "@/lib/pasarelas/money";
 import type { CurrencySummary } from "@/lib/pasarelas/stats";
 import type { Currency } from "@/lib/pasarelas/types";
 import { ChartFrame } from "./ChartFrame";
+import { gatewaysByCost } from "./gateway-cost";
 
 export type GatewayCostProps = {
   summary: CurrencySummary;
@@ -14,43 +14,40 @@ export type GatewayCostProps = {
 /**
  * Lo que de verdad costó cada pasarela en el período: sus comisiones (con opciones, plataforma, reembolsos y
  * disputas) sobre su bruto. De la más cara a la más barata; una sin bruto (todo reembolsado) no tiene costo
- * efectivo y va al final.
+ * efectivo: no se dibuja (no es un 0 %), va al final de la tabla con «—» y el resumen lo dice.
  */
 export function GatewayCost({ summary, currency, nameOf }: GatewayCostProps) {
-  const gateways = [...summary.byGateway].sort((a, b) => {
-    if (a.effectiveCostPct === null || b.effectiveCostPct === null) {
-      return Number(a.effectiveCostPct === null) - Number(b.effectiveCostPct === null);
-    }
-    return cmp(b.effectiveCostPct, a.effectiveCostPct);
-  });
-  const costed = gateways.filter((gateway) => gateway.effectiveCostPct !== null);
+  const { costed, uncosted } = gatewaysByCost(summary.byGateway);
   const dearest = costed[0];
   const cheapest = costed.at(-1);
+  const withoutGross =
+    uncosted.length === 0 || dearest === undefined
+      ? null
+      : ` ${uncosted.map((gateway) => nameOf(gateway.gatewayId)).join(", ")} no ${
+          uncosted.length === 1 ? "tiene" : "tienen"
+        } bruto en el período (todo se reembolsó): sin costo efectivo, no se ${uncosted.length === 1 ? "dibuja" : "dibujan"}.`;
   return (
     <ChartFrame
       title="Costo efectivo por pasarela"
       summary={
-        dearest === undefined || dearest.effectiveCostPct === null ? (
-          "Ninguna pasarela tiene bruto en el período."
-        ) : cheapest === undefined || cheapest === dearest || cheapest.effectiveCostPct === null ? (
+        dearest === undefined ? (
+          "Ninguna pasarela tiene bruto en el período: no hay costo efectivo que comparar."
+        ) : cheapest === undefined || cheapest === dearest ? (
           <>
             Las comisiones de {nameOf(dearest.gatewayId)} se llevaron el <Percent value={dearest.effectiveCostPct} /> del
-            bruto (<Money value={dearest.fees} currency={currency} />).
+            bruto (<Money value={dearest.fees} currency={currency} />).{withoutGross}
           </>
         ) : (
           <>
             La más cara es {nameOf(dearest.gatewayId)}: se lleva el <Percent value={dearest.effectiveCostPct} /> del
             bruto (<Money value={dearest.fees} currency={currency} />); la más barata, {nameOf(cheapest.gatewayId)}, el{" "}
-            <Percent value={cheapest.effectiveCostPct} />.
+            <Percent value={cheapest.effectiveCostPct} />.{withoutGross}
           </>
         )
       }
       chart={{
         layout: "bars",
-        rows: gateways.map((gateway) => ({
-          label: nameOf(gateway.gatewayId),
-          values: [gateway.effectiveCostPct ?? "0"],
-        })),
+        rows: costed.map((gateway) => ({ label: nameOf(gateway.gatewayId), values: [gateway.effectiveCostPct] })),
         series: [{ name: "Costo efectivo", color: "brand" }],
         format: { kind: "pct" },
       }}
@@ -65,7 +62,7 @@ export function GatewayCost({ summary, currency, nameOf }: GatewayCostProps) {
             </Tr>
           </THead>
           <TBody>
-            {gateways.map((gateway) => (
+            {[...costed, ...uncosted].map((gateway) => (
               <Tr key={gateway.gatewayId}>
                 <Th scope="row">{nameOf(gateway.gatewayId)}</Th>
                 <Td numeric>
@@ -75,7 +72,7 @@ export function GatewayCost({ summary, currency, nameOf }: GatewayCostProps) {
                   <Money value={gateway.fees} currency={currency} />
                 </Td>
                 <Td numeric>
-                  {gateway.effectiveCostPct === null ? "—" : <Percent value={gateway.effectiveCostPct} />}
+                  {gateway.effectiveCostPct === null ? "Sin bruto" : <Percent value={gateway.effectiveCostPct} />}
                 </Td>
               </Tr>
             ))}
