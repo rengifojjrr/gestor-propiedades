@@ -1,11 +1,12 @@
 "use client";
 
 import { LoaderCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import { ReceiptPicker } from "@/components/pasarelas/receipts/ReceiptPicker";
 import { checkReceiptFile } from "@/components/pasarelas/receipts/check";
 import { receiptFormat, receiptLabel, receiptSize } from "@/components/pasarelas/receipts/label";
-import { uploadReceipt } from "@/components/pasarelas/receipts/upload";
+import { RECEIPT_UNSURE_TEXT, uploadReceipt } from "@/components/pasarelas/receipts/upload";
 import {
   Alert,
   Button,
@@ -20,8 +21,17 @@ import {
 import { receiptUrlAction, removeReceiptAction } from "@/server/pasarelas/actions/receipts";
 import type { TxReceipt } from "@/server/pasarelas/dto";
 import type { ActionResult } from "@/server/pasarelas/result";
+import { callAction } from "../callAction";
 
 const OPEN_FAILED_TEXT = "No se pudo abrir el comprobante. Revisa la conexión y vuelve a intentarlo.";
+const REMOVE_UNSURE_TEXT =
+  "No se pudo confirmar si el comprobante se quitó por un fallo de conexión. Mira cómo quedó antes de repetirlo.";
+
+/**
+ * Sin refresco automático tras un fallo de red: con mala señal, refrescar recargaría la página entera y se perdería
+ * el aviso. «Ver cómo quedó» refresca cuando la persona lo pide.
+ */
+const noRefresh = () => undefined;
 
 /**
  * Cómo se nombra un comprobante para el lector de pantalla y en el visor: su lugar en la lista, su tipo y su fecha.
@@ -50,14 +60,20 @@ export type ReceiptsCardProps = {
  * visor, un PDF en otra pestaña), agregar otro (se comprueba, se achica, se sube directo a Storage y se registra,
  * como en «Registrar cobro») y quitarlos (se borran el archivo y su fila). Cada uno se reconoce por su tipo, su
  * fecha y su tamaño.
+ *
+ * Si no se sabe cómo terminó agregar o quitar uno (la respuesta no volvió), el aviso sale en la tarjeta con «Ver cómo
+ * quedó», que refresca la pantalla. Mientras tanto no se puede subir otro: el mismo archivo quedaría dos veces.
  */
 export function ReceiptsCard({ transactionId, receipts, editable }: ReceiptsCardProps) {
+  const router = useRouter();
   const titleId = useId();
   const [viewing, setViewing] = useState<{ receipt: TxReceipt; name: string } | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [removing, setRemoving] = useState<TxReceipt | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Agregar o quitar uno terminó sin respuesta: hasta ver cómo quedó, el aviso y «Ver cómo quedó» en lugar del selector.
+  const [unsure, setUnsure] = useState<string | null>(null);
   // Cambiarla vuelve a montar el selector: así olvida el archivo ya subido.
   const [pickerKey, setPickerKey] = useState(0);
   const [uploading, setUploading] = useState(false);
@@ -107,6 +123,11 @@ export function ReceiptsCard({ transactionId, receipts, editable }: ReceiptsCard
     setUploading(true);
     const result = await uploadReceipt(file, transactionId);
     setUploading(false);
+    if (!result.ok && result.error === RECEIPT_UNSURE_TEXT) {
+      setFileError(null);
+      setUnsure(result.error);
+      return;
+    }
     if (!result.ok) {
       setFileError(result.error);
       return;
@@ -119,14 +140,29 @@ export function ReceiptsCard({ transactionId, receipts, editable }: ReceiptsCard
     if (removing === null) return;
     const { id } = removing;
     startTransition(async () => {
-      const result = await removeReceiptAction({ id });
+      const result = await callAction(() => removeReceiptAction({ id }), noRefresh, REMOVE_UNSURE_TEXT);
       setRemoving(null);
+      if (!result.ok && result.error === REMOVE_UNSURE_TEXT) {
+        setUnsure(result.error);
+        return;
+      }
       if (!result.ok) {
         setError(result.error);
         return;
       }
       notify.success("Comprobante quitado.");
     });
+  }
+
+  /** Refresca la pantalla para enseñar cómo quedó, y vuelve a dejar subir uno nuevo (con el selector vacío). */
+  function seeHowItWent() {
+    setUnsure(null);
+    setPickerKey((key) => key + 1);
+    try {
+      router.refresh();
+    } catch {
+      // Si tampoco llega, la persona puede volver a intentarlo.
+    }
   }
 
   return (
@@ -171,7 +207,7 @@ export function ReceiptsCard({ transactionId, receipts, editable }: ReceiptsCard
           </ul>
         )}
 
-        {editable ? (
+        {editable && unsure === null ? (
           <div className="flex flex-col gap-2 border-t border-rule pt-4">
             <ReceiptPicker key={pickerKey} onPick={(file) => void add(file)} error={fileError} />
             {uploading ? (
@@ -187,6 +223,15 @@ export function ReceiptsCard({ transactionId, receipts, editable }: ReceiptsCard
           <Alert tone="danger" announce>
             {error}
           </Alert>
+        ) : null}
+
+        {unsure ? (
+          <div className="flex flex-col items-start gap-2 border-t border-rule pt-4">
+            <Alert tone="danger" announce>
+              {unsure}
+            </Alert>
+            <Button onClick={seeHowItWent}>Ver cómo quedó</Button>
+          </div>
         ) : null}
       </CardBody>
 

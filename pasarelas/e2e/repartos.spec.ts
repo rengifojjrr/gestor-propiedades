@@ -3,6 +3,7 @@ import { crc32, deflateSync } from "node:zlib";
 import { expect, test, type Page } from "@playwright/test";
 import { receiptLabel } from "../src/components/pasarelas/receipts/label";
 import { ZONE, todayNY, wallTimeToInstant } from "../src/lib/pasarelas/dates";
+import { SETTLEMENT_ALREADY_SAVED_TEXT } from "../src/components/pasarelas/splits/settlementText";
 import { SCHEME_ISSUE_TEXT } from "../src/lib/pasarelas/schemes";
 import { adminClient, e1Item, saveTransactions, signInAal1 } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
@@ -253,6 +254,25 @@ test("registrar una liquidación de 45,15 al Grupo A con comprobante: su saldo b
   await expectCleanScreen(page);
 });
 
+/**
+ * Corta la respuesta de la primera Server Action que se mande desde `url`: llega al servidor y se aplica, pero la
+ * respuesta no vuelve al navegador. Devuelve cuántas cortó.
+ */
+async function cutFirstActionResponse(page: Page, url: string): Promise<() => number> {
+  let cut = 0;
+  await page.route(`**${url}`, async (route) => {
+    const request = route.request();
+    if (request.method() === "POST" && request.headers()["next-action"] !== undefined && cut === 0) {
+      cut += 1;
+      await route.fetch();
+      await route.abort("connectionreset");
+      return;
+    }
+    await route.continue();
+  });
+  return () => cut;
+}
+
 /** Un beneficiario propio de este proyecto (celular o escritorio), sin movimientos. Devuelve su id. */
 async function freshBeneficiary(name: string): Promise<string> {
   const { data } = await admin
@@ -371,6 +391,96 @@ test("si la respuesta se corta al registrar, se avisa sin perder el formulario; 
   await expectCleanScreen(page);
 });
 
+test("si tras un corte se reintenta con otro monto, se dice que quedó la del primer intento y la lista lo enseña", async ({
+  page,
+}, testInfo) => {
+  const name = `Socio Reintento ${testInfo.project.name}`;
+  const id = await freshBeneficiary(name);
+  const url = `/pasarelas/repartos/beneficiarios/${id}`;
+  await page.goto(url);
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+  const form = page.getByRole("region", { name: "Registrar liquidación" });
+  const settlements = page.getByRole("region", { name: "Liquidaciones" });
+  const submit = form.getByRole("button", { name: "Registrar liquidación" });
+  await form.getByLabel("Monto").fill("500,00");
+
+  const cuts = await cutFirstActionResponse(page, url);
+  await submit.click();
+  await expect(form.getByRole("alert")).toContainText("No se pudo confirmar si la liquidación quedó registrada.");
+  expect(cuts()).toBe(1);
+  await expect(settlements).not.toContainText("$500,00");
+
+  // Cree que no quedó y corrige el monto: no se da por bueno, y la lista enseña la que sí quedó.
+  await form.getByLabel("Monto").fill("50,00");
+  await submit.click();
+  await expect(form.getByRole("alert")).toHaveText(SETTLEMENT_ALREADY_SAVED_TEXT);
+  await expect(settlements).toContainText("$500,00");
+  await expect(page.getByText("Liquidación registrada")).toBeHidden();
+  expect((await settlementsOf(id)).map((row) => row.amount)).toEqual(["500.00"]);
+  await expectCleanScreen(page);
+
+  // Registrar otra vez ya es otra liquidación: la de 50,00 se guarda aparte.
+  await submit.click();
+  await expect(page.getByText("Liquidación registrada")).toBeVisible();
+  await expect(settlements).toContainText("$50,00");
+  expect((await settlementsOf(id)).map((row) => row.amount)).toEqual(["500.00", "50.00"]);
+});
+
+test("el PDF de una liquidación se firma al tocar «Ver comprobante» y se abre en otra pestaña", async ({
+  page,
+}, testInfo) => {
+  const name = `Socio PDF ${testInfo.project.name}`;
+  const id = await freshBeneficiary(name);
+  await page.goto(`/pasarelas/repartos/beneficiarios/${id}`);
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+  const form = page.getByRole("region", { name: "Registrar liquidación" });
+  await form.getByLabel("Monto").fill("8,00");
+  await form.getByLabel("Elegir archivo").setInputFiles({
+    name: "pago-demo.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.7\n%demo\n"),
+  });
+  await form.getByRole("button", { name: "Registrar liquidación" }).click();
+  await expect(page.getByText("Liquidación registrada")).toBeVisible();
+  const [saved] = await settlementsOf(id);
+
+  const settlements = page.getByRole("region", { name: "Liquidaciones" });
+  const signed = page
+    .context()
+    .waitForEvent("request", (request) => request.url().includes("/storage/v1/object/sign/comprobantes/"));
+  const popup = page.waitForEvent("popup");
+  await settlements.getByRole("button", { name: "Ver comprobante (se abre en otra pestaña)" }).click();
+  expect((await signed).url()).toContain(saved?.receipt_path ?? "sin ruta");
+  await (await popup).close();
+  await expectCleanScreen(page);
+});
+
+test("si la respuesta se corta al borrar una liquidación, se avisa ahí mismo y «Ver cómo quedó» lo enseña", async ({
+  page,
+}, testInfo) => {
+  const name = `Socio Borrar ${testInfo.project.name}`;
+  const id = await freshBeneficiary(name);
+  await admin
+    .from("pay_settlements")
+    .insert({ user_id: user.id, beneficiary_id: id, paid_on: "2026-11-14", currency: "USD", amount: "9.00" })
+    .throwOnError();
+  const url = `/pasarelas/repartos/beneficiarios/${id}`;
+  await page.goto(url);
+  const settlements = page.getByRole("region", { name: "Liquidaciones" });
+  await expect(settlements).toContainText("$9,00");
+
+  const cuts = await cutFirstActionResponse(page, url);
+  await settlements.getByRole("button", { name: /^Borrar el pago de \$9,00 del / }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Borrar liquidación" }).click();
+  await expect(settlements.getByRole("alert")).toContainText("No se pudo confirmar si la liquidación se borró");
+  expect(cuts()).toBe(1);
+  expect(await settlementsOf(id)).toEqual([]);
+  await expectCleanScreen(page);
+
+  await settlements.getByRole("button", { name: "Ver cómo quedó" }).click();
+  await expect(settlements).toContainText("Todavía no se le ha pagado nada.");
+});
+
 test.describe("los comprobantes de un cobro", () => {
   /** Un PDF mínimo: va tal cual a Storage (las fotos se recodifican), con un nombre que no debe guardarse. */
   const pdf = (name: string) => ({ name, mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.7\n%demo\n") });
@@ -443,10 +553,12 @@ test.describe("los comprobantes de un cobro", () => {
     });
     await card.getByLabel("Elegir archivo").setInputFiles(pdf("Factura demo.pdf"));
 
-    await expect(card).toContainText(
+    await expect(card.getByRole("alert")).toContainText(
       "No se pudo confirmar si el comprobante quedó guardado. Revisa los comprobantes antes de volver a subirlo.",
     );
     expect(cut).toBe(1);
+    // Hasta ver cómo quedó no se puede volver a subir: el mismo archivo quedaría dos veces.
+    await expect(card.getByLabel("Elegir archivo")).toHaveCount(0);
     // Quedó registrado y su archivo sigue en Storage.
     const rows = await receipts();
     expect(rows).toHaveLength(before + 1);
@@ -456,9 +568,38 @@ test.describe("los comprobantes de un cobro", () => {
     expect(files?.map((file) => file.name)).toContain(last.slice(folder.length + 1));
     await expectCleanScreen(page);
 
-    // Al recargar, se ve.
+    // «Ver cómo quedó» lo enseña, y ya se puede subir otro.
     await page.unroute(`**${url}`);
-    await page.reload();
+    await card.getByRole("button", { name: "Ver cómo quedó" }).click();
     await expect(card.getByRole("list", { name: "Comprobantes" }).getByRole("listitem")).toHaveCount(before + 1);
+    await expect(card.getByLabel("Elegir archivo")).toBeVisible();
+    await expect(card.getByRole("alert")).toHaveCount(0);
+  });
+
+  test("si la respuesta se corta al quitar uno, se avisa en la tarjeta y «Ver cómo quedó» lo enseña", async ({
+    page,
+  }) => {
+    const url = `/pasarelas/cobros/${receiptTxId}`;
+    await page.goto(url);
+    const card = page.getByRole("region", { name: "Comprobantes" });
+    const items = card.getByRole("list", { name: "Comprobantes" }).getByRole("listitem");
+    // Uno propio, para no depender de lo que dejaron las pruebas anteriores.
+    await card.getByLabel("Elegir archivo").setInputFiles(pdf("Recibo para quitar.pdf"));
+    await expect(page.getByText("Comprobante agregado.")).toBeVisible();
+    const before = (await receipts()).length;
+    await expect(items).toHaveCount(before);
+
+    const cuts = await cutFirstActionResponse(page, url);
+    await items.first().getByRole("button", { name: /^Quitar / }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Quitar comprobante" }).click();
+    await expect(card.getByRole("alert")).toContainText("No se pudo confirmar si el comprobante se quitó");
+    expect(cuts()).toBe(1);
+    expect(await receipts()).toHaveLength(before - 1);
+    await expectCleanScreen(page);
+
+    await page.unroute(`**${url}`);
+    await card.getByRole("button", { name: "Ver cómo quedó" }).click();
+    await expect(items).toHaveCount(before - 1);
+    await expect(card.getByRole("alert")).toHaveCount(0);
   });
 });

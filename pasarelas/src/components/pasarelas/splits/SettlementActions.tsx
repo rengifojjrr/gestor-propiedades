@@ -1,13 +1,26 @@
 "use client";
 
 import { FileText, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Alert, Button, ConfirmDialog, Dialog, notify } from "@/components/ui";
 import { deleteSettlement, settlementReceiptUrl } from "@/server/pasarelas/actions/settlements";
+import { callAction } from "../callAction";
+
+const OPEN_FAILED_TEXT = "No se pudo abrir el comprobante. Revisa la conexión y vuelve a intentarlo.";
+const DELETE_UNSURE_TEXT =
+  "No se pudo confirmar si la liquidación se borró por un fallo de conexión. Mira cómo quedó antes de repetirlo.";
 
 /**
- * Ver el comprobante de una liquidación (con una URL firmada de 60 segundos que se pide al abrirlo) y borrar la
- * liquidación, que se lleva su comprobante.
+ * Sin refresco automático tras un fallo de red: con mala señal, refrescar recargaría la página entera y se perdería
+ * el aviso. «Ver cómo quedó» refresca cuando la persona lo pide.
+ */
+const noRefresh = () => undefined;
+
+/**
+ * Ver el comprobante de una liquidación y borrar la liquidación, que se lleva su comprobante. La URL firmada (vale
+ * 60 segundos) se pide al tocar «Ver comprobante»: una imagen se ve en un visor y un PDF se abre en otra pestaña.
+ * Si la llamada no vuelve, el aviso sale aquí mismo; si era el borrado, con «Ver cómo quedó».
  */
 export function SettlementActions({
   id,
@@ -20,26 +33,51 @@ export function SettlementActions({
   /** Qué se borra, dicho en claro: «el pago de $45,15 del vie 13 nov 2026». */
   description: string;
 }) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [url, setUrl] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pdf = receiptMime === "application/pdf";
 
-  function open() {
+  const signedUrl = () => callAction(() => settlementReceiptUrl({ id }), noRefresh, OPEN_FAILED_TEXT);
+
+  function view() {
+    setError(null);
     startTransition(async () => {
-      const result = await settlementReceiptUrl({ id });
+      const result = await signedUrl();
       if (!result.ok) {
         setError(result.error);
         return;
       }
-      setError(null);
       setUrl(result.data.url);
+    });
+  }
+
+  /**
+   * Un PDF se abre en otra pestaña con una URL firmada pedida en ese momento. La pestaña se abre en el mismo toque,
+   * porque abierta tras esperar al servidor el navegador la bloquearía, y después se lleva al PDF. Si el navegador
+   * no la dejó abrir, el PDF se abre en esta.
+   */
+  function openPdf() {
+    setError(null);
+    const tab = window.open("", "_blank");
+    if (tab !== null) tab.opener = null;
+    startTransition(async () => {
+      const result = await signedUrl();
+      if (!result.ok) {
+        tab?.close();
+        setError(result.error);
+        return;
+      }
+      if (tab !== null) tab.location.href = result.data.url;
+      else window.location.assign(result.data.url);
     });
   }
 
   function remove() {
     startTransition(async () => {
-      const result = await deleteSettlement({ id });
+      const result = await callAction(() => deleteSettlement({ id }), noRefresh, DELETE_UNSURE_TEXT);
       setConfirming(false);
       if (!result.ok) {
         setError(result.error);
@@ -49,13 +87,23 @@ export function SettlementActions({
     });
   }
 
+  function seeHowItWent() {
+    setError(null);
+    try {
+      router.refresh();
+    } catch {
+      // Si tampoco llega, la persona puede volver a intentarlo.
+    }
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-2">
         {receiptMime ? (
-          <Button onClick={open} disabled={pending}>
+          <Button onClick={pdf ? openPdf : view} disabled={pending}>
             <FileText aria-hidden className="size-5" />
             Ver comprobante
+            {pdf ? <span className="sr-only"> (se abre en otra pestaña)</span> : null}
           </Button>
         ) : null}
         <Button
@@ -76,17 +124,13 @@ export function SettlementActions({
           {error}
         </Alert>
       ) : null}
+      {error === DELETE_UNSURE_TEXT ? (
+        <Button variant="secondary" className="self-start" onClick={seeHowItWent}>
+          Ver cómo quedó
+        </Button>
+      ) : null}
       <Dialog open={url !== null} onClose={() => setUrl(null)} title="Comprobante">
-        {url === null ? null : receiptMime === "application/pdf" ? (
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-h-11 items-center font-semibold text-brand underline"
-          >
-            Abrir el PDF (el enlace vale un minuto)
-          </a>
-        ) : (
+        {url === null ? null : (
           // Una URL firmada de Storage: `<img>` normal, nunca next/image optimizado.
           // eslint-disable-next-line @next/next/no-img-element
           <img

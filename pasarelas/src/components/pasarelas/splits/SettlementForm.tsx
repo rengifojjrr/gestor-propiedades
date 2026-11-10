@@ -1,6 +1,7 @@
 "use client";
 
 import { LoaderCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useId, useState, useTransition, type FormEvent } from "react";
 import { ReceiptPicker } from "@/components/pasarelas/receipts/ReceiptPicker";
 import { ReceiptFileError, checkReceiptFile } from "@/components/pasarelas/receipts/check";
@@ -22,6 +23,7 @@ import {
 } from "@/components/ui";
 import type { Currency, ISODate } from "@/lib/pasarelas/types";
 import { saveSettlement } from "@/server/pasarelas/actions/settlements";
+import { SETTLEMENT_ALREADY_SAVED_TEXT } from "./settlementText";
 
 const UPLOAD_TEXT = "No se pudo subir el comprobante. Inténtalo de nuevo.";
 const UNSURE_TEXT =
@@ -39,6 +41,9 @@ type Receipt = { path: string; mime: string; sizeBytes: number };
  * - Si el servidor la rechaza, el comprobante subido se borra.
  * - Si la respuesta no llega (se cortó la conexión), no se sabe si quedó: se conservan el id y el comprobante, y se
  *   pide revisar la lista. Reintentar manda el mismo id con el mismo archivo ya subido: no la duplica.
+ * - Si ese reintento llega con otros datos (otro monto, tipo, moneda, fecha, o con o sin comprobante), el servidor no
+ *   lo da por bueno: dice que quedó la del primer intento, la lista se refresca para enseñarla y el formulario pasa a
+ *   una liquidación nueva (otro id), con lo escrito y sin el archivo, por si de verdad era otra.
  * - Lo que se ve es lo que se guarda: el formulario no usa `<form action>`, que React vacía al terminar (el «Tipo»
  *   volvería a «Pago» en pantalla y la liquidación siguiente se guardaría con el tipo anterior).
  */
@@ -51,6 +56,7 @@ export function SettlementForm({
   defaultCurrency: Currency;
   today: ISODate;
 }) {
+  const router = useRouter();
   const titleId = useId();
   const [pending, startTransition] = useTransition();
   // Un id por liquidación: el mismo mientras no se sepa que se guardó, uno nuevo después.
@@ -108,6 +114,17 @@ export function SettlementForm({
       if (fresh !== null) setUploaded(null);
       setError(result.error);
       setErrors(result.fieldErrors);
+      if (result.error === SETTLEMENT_ALREADY_SAVED_TEXT) {
+        // La que quedó es la del primer intento, con su archivo: lo que siga es otra liquidación.
+        setSettlementId(crypto.randomUUID());
+        setUploaded(null);
+        setFile(null);
+        try {
+          router.refresh();
+        } catch {
+          // El aviso ya dice que la revise en la lista.
+        }
+      }
       return;
     }
     notify.success("Liquidación registrada");

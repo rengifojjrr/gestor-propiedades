@@ -15,7 +15,8 @@ const RECEIPTS_BUCKET = "comprobantes";
 
 const UPLOAD_TEXT = "No se pudo subir el comprobante. Inténtalo de nuevo.";
 const NO_SESSION_TEXT = "Tu sesión terminó. Vuelve a entrar.";
-const UNSURE_TEXT =
+/** Lo que devuelve `uploadReceipt` cuando no se sabe si el comprobante quedó: quien lo muestra lo reconoce por él. */
+export const RECEIPT_UNSURE_TEXT =
   "No se pudo confirmar si el comprobante quedó guardado. Revisa los comprobantes antes de volver a subirlo.";
 
 /**
@@ -80,6 +81,6 @@ export async function uploadReceipt(file: File, transactionId: string): Promise<
   try {
     return await saveUploaded(uploaded.path, () => registerReceiptAction({ transactionId, ...uploaded }));
   } catch {
-    return { ok: false, error: UNSURE_TEXT };
+    return { ok: false, error: RECEIPT_UNSURE_TEXT };
   }
 }
