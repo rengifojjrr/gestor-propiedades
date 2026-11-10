@@ -106,7 +106,9 @@ export function errorMessage(e: unknown): string {
   if (e instanceof UserError) return e.message;
   if (e instanceof PayStateError) return PAY_STATE_TEXT[e.code];
   if (e instanceof PayRuleError) return PAY_RULE_TEXT[e.code];
-  if (e instanceof ZodError) return e.issues[0]?.message ?? "Revisa los datos e inténtalo de nuevo.";
+  // Un ZodError LANZADO es un fallo interno (un desglose guardado que no se deja leer, una respuesta de la base con
+  // otra forma): su texto no es para la persona. Lo que ella escribe se valida con `safeParse` en `runAction`.
+  if (e instanceof ZodError) return GENERIC_TEXT;
   if (!isRecord(e)) return GENERIC_TEXT;
   // Storage primero: sus errores traen además un `code` propio («KeyAlreadyExists») que no es un SQLSTATE.
   if (typeof e.statusCode === "string") return STORAGE_TEXT[e.statusCode] ?? GENERIC_TEXT;

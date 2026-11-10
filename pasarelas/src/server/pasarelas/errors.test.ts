@@ -47,18 +47,17 @@ describe("errores esperados: su mensaje se enseña tal cual", () => {
     }
   });
 
-  test("ZodError: el mensaje del primer problema", () => {
-    const schema = z.object({
-      monto: z.string().regex(/^\d+$/, { error: "Monto no válido" }),
-      fecha: z.string().regex(/^\d{4}/, { error: "Fecha no válida" }),
-    });
-    const result = schema.safeParse({ monto: "abc", fecha: "ayer" });
-    expect(result.success).toBe(false);
-    expect(errorMessage(result.error)).toBe("Monto no válido");
-  });
+});
 
-  test("ZodError sin problemas dentro: un mensaje propio", () => {
-    expect(errorMessage(new z.ZodError([]))).toBe("Revisa los datos e inténtalo de nuevo.");
+describe("un ZodError lanzado es un fallo interno", () => {
+  // La entrada de la persona no llega aquí: `runAction` la valida con `safeParse` y devuelve los errores por
+  // campo. Un ZodError lanzado viene de algo guardado que no se deja leer o de una respuesta con otra forma.
+  test("da el mensaje general, sin enseñar el texto de Zod", () => {
+    const schema = z.object({ monto: z.string().regex(/^\d+$/, { error: "Monto no válido" }) });
+    const result = schema.safeParse({ monto: "abc" });
+    expect(result.success).toBe(false);
+    expect(errorMessage(result.error)).toBe(GENERIC);
+    expect(errorMessage(new z.ZodError([]))).toBe(GENERIC);
   });
 });
 
