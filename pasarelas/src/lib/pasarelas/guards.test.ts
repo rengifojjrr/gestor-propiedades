@@ -32,6 +32,8 @@ describe("looksLikeCardNumber", () => {
     "pedido 1234",
     "4111 1111 y luego 1111 1111", // dos tramos separados por texto
     "4111/1111/1111/1111", // otro separador: son cuatro tramos cortos
+    "4111,1111,1111,1111",
+    "4111\n1111\n1111\n1111", // el salto de línea no une grupos
   ])("no parece una tarjeta: «%s»", (text) => {
     expect(looksLikeCardNumber(text)).toBe(false);
   });
@@ -39,6 +41,78 @@ describe("looksLikeCardNumber", () => {
   test("basta un tramo que lo parezca, aunque haya otros números", () => {
     expect(looksLikeCardNumber("pedido 1234, cobro del 2026-11-09, tarjeta 4000000000006")).toBe(true);
     expect(looksLikeCardNumber("4111111111111112 y 4111111111111111")).toBe(true);
+  });
+
+  // Así se apuntan de verdad los datos de una tarjeta: con el CVV, el vencimiento u otro número al lado.
+  test.each([
+    "4111 1111 1111 1111 123", // + CVV
+    "4111-1111-1111-1111 123",
+    "4111111111111111 123",
+    "4111 1111 1111 1111 12/27", // + vencimiento
+    "4111 1111 1111 1111 12-27",
+    "4111111111111111 2026-11-09", // + fecha
+    "12 4111 1111 1111 1111", // un número delante
+    "pedido 7 4111-1111-1111-1111",
+    "12 4111 1111 1111 1111 123", // delante y detrás
+    "1 2 3 4 5 6 4111 1111 1111 1111",
+    "5555 5555 5555 4444 321",
+    "3782 822463 10005 1234", // 15 dígitos en 4-6-5 y un código de 4
+    "4000000000006 99", // 13 dígitos y algo más
+    "4000000000000000006 123", // 19 dígitos y algo más
+    "4111.1111.1111.1111 123",
+    "12.4111.1111.1111.1111",
+  ])("parece una tarjeta aunque lleve otro número pegado: «%s»", (text) => {
+    expect(looksLikeCardNumber(text)).toBe(true);
+  });
+
+  test.each([
+    ["dos espacios", "4111  1111  1111  1111"],
+    ["tabulador", "4111\t1111\t1111\t1111"],
+    ["espacio duro", "4111 1111 1111 1111"],
+    ["espacio duro estrecho", "4111 1111 1111 1111"],
+    ["punto", "4111.1111.1111.1111"],
+    ["guion entre espacios", "4111 - 1111 - 1111 - 1111"],
+    ["dos guiones", "4111--1111--1111--1111"],
+    ["raya corta", "4111–1111–1111–1111"],
+    ["de todo un poco", "4111 \t1111 - 1111  1111"],
+  ])("parece una tarjeta con los grupos separados por %s", (_separator, text) => {
+    expect(looksLikeCardNumber(text)).toBe(true);
+  });
+
+  test("un dígito por grupo también cuenta, hasta los 19", () => {
+    expect(looksLikeCardNumber("4 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1")).toBe(true);
+    // Inventado para que solo pasen Luhn los 19 dígitos juntos: ningún trozo de 13 a 18, ni con el 7 o el 3.
+    expect(looksLikeCardNumber("4174179866154434292")).toBe(true);
+    expect(looksLikeCardNumber("4 1 7 4 1 7 9 8 6 6 1 5 4 4 3 4 2 9 2")).toBe(true);
+    expect(looksLikeCardNumber("7 4 1 7 4 1 7 9 8 6 6 1 5 4 4 3 4 2 9 2 3")).toBe(true);
+  });
+
+  // Los grupos se prueban enteros: no se busca una tarjeta a medio grupo ni se pasa de 19 dígitos.
+  test.each([
+    "4111 1111 1111 1112 123", // 16 dígitos que no pasan Luhn, con o sin el vecino
+    "4111111111111112 123",
+    "12 4111 1111 1111 1112",
+    "4111111111111111123", // tarjeta y CVV sin separar: es un solo número de 19 que no pasa
+    "40000000000000000002 1", // 20 dígitos seguidos
+    "4000 0000 0000 0000 0002", // 20 dígitos en grupos: pasan Luhn juntos, pero ninguna ventana de 13–19
+    "400000000002 1", // 12 dígitos que pasan Luhn; con el vecino ya no
+    "4000 0000 0002",
+    "del 2026-11-03 al 2026-11-28",
+    "tel. 212-555-0100 212-555-0101",
+    "cuotas 100 200 300 1500 250",
+    "factura 1001 1002 1003",
+    "09.11.2026 10.11.2026",
+  ])("no parece una tarjeta: «%s»", (text) => {
+    expect(looksLikeCardNumber(text)).toBe(false);
+  });
+
+  test("el punto no se mezcla con espacios ni guiones: una lista de montos no es una tarjeta", () => {
+    // Mezclándolos, «100 00 200 00 300 00 150» serían 17 dígitos seguidos que pasan Luhn.
+    expect(looksLikeCardNumber("pagos: 100.00 200.00 300.00 150.00")).toBe(false);
+    expect(looksLikeCardNumber("pagos: 917.42 136.58 407.67 772.43")).toBe(false);
+    expect(looksLikeCardNumber("1.234.567,89 2.345.678,90")).toBe(false);
+    // El precio: una tarjeta escrita mitad con puntos y mitad con espacios no se detecta.
+    expect(looksLikeCardNumber("4111.1111 1111.1111")).toBe(false);
   });
 });
 
