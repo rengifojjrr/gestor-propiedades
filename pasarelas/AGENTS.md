@@ -133,6 +133,10 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
   `formatPct`; las fechas, con `<DateText value />` y `<DateTimeText value />`, que llaman a `formatDate` y
   `formatDateTime` (hora de Nueva York). No se formatea a mano en una pantalla. Los cuatro **lanzan** con un valor
   que no sea válido: si puede venir `null` (un depósito sin fecha), la pantalla decide qué pintar antes de llamarlos.
+- `<Alert>` no interrumpe al lector de pantalla por defecto (`role="status"`). El error general de un formulario, que
+  aparece como respuesta a lo que la persona acaba de hacer, se pinta con `<Alert tone="danger" announce>`
+  (`role="alert"`). El error de un campo va en `error` de su `<Field>`, que lo enlaza al control.
+- `<Field>` lleva **un solo control** como hijo directo; si ese control trae su propio `id`, la etiqueta apunta a él.
 - axe se pasa con `expectNoSeriousAxe` de `e2e/axe.ts` (concilia los tipos de las dos versiones de `playwright-core`
   del lockfile). Si hace falta desde otro archivo de ayuda, se reexporta de ahí: no se duplica.
 
