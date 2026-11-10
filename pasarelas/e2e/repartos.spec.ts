@@ -302,7 +302,10 @@ test("borrar un beneficiario sin historia lleva a Repartos y ya no aparece", asy
   await page.getByRole("alertdialog", { name: `¿Borrar «${name}»?` }).getByRole("button", { name: "Borrar" }).click();
   await expect(page).toHaveURL((target) => target.pathname === "/pasarelas/repartos");
   await expect(page.getByRole("heading", { level: 1, name: "Repartos" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Beneficiarios" }).getByRole("link", { name })).toHaveCount(0);
+  // La lista tiene que estar (no la pantalla de error, que también se titula «Repartos»), y sin él.
+  const beneficiaries = page.getByRole("region", { name: "Beneficiarios" });
+  await expect(beneficiaries).toBeVisible();
+  await expect(beneficiaries.getByRole("link", { name })).toHaveCount(0);
   const { data } = await admin.from("pay_beneficiaries").select("id").eq("id", id).throwOnError();
   expect(data).toEqual([]);
 });
