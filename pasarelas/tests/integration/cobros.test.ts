@@ -1245,7 +1245,12 @@ describe("getTx, getSnapshots y lastTx", () => {
         createdAt: expect.any(String) as string,
       },
     ]);
-    expect(detail?.events.map((event) => event.kind)).toEqual(["depositado", "en_transito", "creado"]);
+    expect(detail?.events.map((event) => event.kind)).toEqual([
+      "depositado",
+      "en_transito",
+      "comprobante_agregado",
+      "creado",
+    ]);
     expect(detail?.events[0]).toMatchObject({
       summary: "Depositado el mar 17 nov 2026",
       data: { antes: { estado: "en_transito" }, despues: { estado: "depositado", depositadoEl: MARTES } },

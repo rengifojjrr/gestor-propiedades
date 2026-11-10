@@ -19,8 +19,14 @@ export const LIST_LIMIT = 1000;
 
 const NOT_FOUND_TEXT = "Ese comprobante ya no existe.";
 
-/** ¿Está ese archivo en Storage? Lo que el usuario no puede ver cuenta como que no está. */
-async function fileExists(supabase: Db, path: string): Promise<boolean> {
+/** Lo que Storage sabe de un archivo: su tipo y su tamaño. */
+type StoredFile = { mime: string; sizeBytes: number };
+
+/**
+ * El archivo, como lo lista Storage, o `null` si no está. Lo que el usuario no puede ver cuenta como que no está.
+ * Un archivo sin tipo o sin tamaño en sus metadatos se da con tipo vacío y tamaño 0: no pasa ninguna comprobación.
+ */
+async function storedFile(supabase: Db, path: string): Promise<StoredFile | null> {
   const cut = path.lastIndexOf("/");
   const name = path.slice(cut + 1);
   const { data, error } = await supabase.storage
@@ -28,25 +34,74 @@ async function fileExists(supabase: Db, path: string): Promise<boolean> {
     .list(path.slice(0, cut), { limit: LIST_LIMIT, search: name });
   if (error) throw error;
   // `search` trae los nombres que se parecen: vale solo el que es igual. Una carpeta viene con `id` nulo.
-  return data.some((entry) => entry.name === name && entry.id !== null);
+  const entry = data.find((file) => file.name === name && file.id !== null);
+  if (entry === undefined) return null;
+  const { mimetype, size } = (entry.metadata ?? {}) as { mimetype?: unknown; size?: unknown };
+  return {
+    mime: typeof mimetype === "string" ? mimetype : "",
+    sizeBytes: typeof size === "number" ? size : 0,
+  };
 }
 
-/** La ruta del archivo de un comprobante registrado. */
-async function pathOf(supabase: Db, id: string): Promise<string> {
+/** Un comprobante registrado: su archivo, de qué cobro es, y su tipo y tamaño (los que dio Storage). */
+type ReceiptRecord = { transactionId: string; path: string; mime: string; sizeBytes: number };
+
+/** El comprobante registrado con ese id. Si no existe (o es de otro usuario), un error para la persona. */
+async function receiptOf(supabase: Db, id: string): Promise<ReceiptRecord> {
   const { data } = await supabase
     .from("pay_transaction_receipts")
-    .select("path")
+    .select("transaction_id, path, mime, size_bytes")
     .eq("id", id)
     .maybeSingle()
     .throwOnError();
   if (data === null) throw new UserError(NOT_FOUND_TEXT);
-  return data.path;
+  return { transactionId: data.transaction_id, path: data.path, mime: data.mime, sizeBytes: data.size_bytes };
+}
+
+/** Lo que no se admite de un tipo y un tamaño: el mensaje para la persona, o `null` si los dos valen. */
+function fileProblem(mime: string, sizeBytes: number): string | null {
+  if (!ALLOWED_MIMES.has(mime)) return "Ese tipo de archivo no se admite: solo JPG, PNG, WebP o PDF.";
+  if (!Number.isInteger(sizeBytes) || sizeBytes <= 0) return "El tamaño del archivo no es válido.";
+  if (sizeBytes > MAX_BYTES) return "El archivo pesa más de 10 MB.";
+  return null;
+}
+
+/** Cómo se nombra cada tipo en el historial. */
+const TYPE_LABEL: Record<string, string> = {
+  "image/jpeg": "JPG",
+  "image/png": "PNG",
+  "image/webp": "WebP",
+  "application/pdf": "PDF",
+};
+
+/**
+ * Deja en el historial del cobro que se agregó o se quitó un comprobante. Solo dice el tipo: el nombre original
+ * del archivo puede traer datos de otra persona y no va en el historial.
+ */
+async function logReceipt(
+  supabase: Db,
+  kind: "comprobante_agregado" | "comprobante_quitado",
+  receipt: { id: string; transactionId: string; mime: string; sizeBytes: number },
+): Promise<void> {
+  const verb = kind === "comprobante_agregado" ? "agregado" : "quitado";
+  await supabase
+    .from("pay_transaction_events")
+    .insert({
+      transaction_id: receipt.transactionId,
+      kind,
+      summary: `Comprobante ${verb} (${TYPE_LABEL[receipt.mime] ?? receipt.mime})`,
+      data: { receiptId: receipt.id, mime: receipt.mime, sizeBytes: receipt.sizeBytes },
+    })
+    .throwOnError();
 }
 
 /**
  * Registra un comprobante que el navegador ya subió y devuelve el id de su fila. Antes comprueba, del lado del
  * servidor, que la ruta es un archivo de la carpeta de ese cobro de ese usuario (`{userId}/{transactionId}/…`), que
  * el tipo y el tamaño declarados se admiten y que el archivo de verdad está en Storage.
+ *
+ * Lo que se guarda es el tipo y el tamaño que dice Storage, no lo que declara el navegador. Si lo de Storage no se
+ * admite, borra el archivo y rechaza. Deja en el historial del cobro el evento `comprobante_agregado`.
  */
 export async function registerReceipt(
   supabase: Db,
@@ -56,45 +111,53 @@ export async function registerReceipt(
   const folder = `${userId}/${a.transactionId}/`;
   const name = a.path.startsWith(folder) ? a.path.slice(folder.length) : "";
   if (name === "" || name.includes("/")) throw new UserError("El comprobante no corresponde a ese cobro.");
-  if (!ALLOWED_MIMES.has(a.mime)) throw new UserError("Ese tipo de archivo no se admite: solo JPG, PNG, WebP o PDF.");
-  if (!Number.isInteger(a.sizeBytes) || a.sizeBytes <= 0) throw new UserError("El tamaño del archivo no es válido.");
-  if (a.sizeBytes > MAX_BYTES) throw new UserError("El archivo pesa más de 10 MB.");
-  if (!(await fileExists(supabase, a.path))) {
-    throw new UserError("El archivo no llegó a subirse. Vuelve a intentarlo.");
+  // Lo declarado se mira primero porque no cuesta ir a Storage; lo que decide es lo que diga Storage.
+  const declared = fileProblem(a.mime, a.sizeBytes);
+  if (declared !== null) throw new UserError(declared);
+  const stored = await storedFile(supabase, a.path);
+  if (stored === null) throw new UserError("El archivo no llegó a subirse. Vuelve a intentarlo.");
+  const real = fileProblem(stored.mime, stored.sizeBytes);
+  if (real !== null) {
+    // Lo que no se admite no se queda en Storage. Si no se puede borrar, se rechaza igual.
+    await supabase.storage.from(RECEIPTS_BUCKET).remove([a.path]);
+    throw new UserError(real);
   }
   const { data } = await supabase
     .from("pay_transaction_receipts")
     .insert({
       transaction_id: a.transactionId,
       path: a.path,
-      mime: a.mime,
-      size_bytes: a.sizeBytes,
+      mime: stored.mime,
+      size_bytes: stored.sizeBytes,
       original_name: a.originalName,
     })
     .select("id")
     .single()
     .throwOnError();
+  await logReceipt(supabase, "comprobante_agregado", { id: data.id, transactionId: a.transactionId, ...stored });
   return data.id;
 }
 
 /**
  * Quita un comprobante: primero el archivo y después su fila (al revés, un fallo dejaría un archivo que ya nadie
- * ve). Si el archivo ya no estaba —un borrado anterior que quedó a medias—, quita la fila igual.
+ * ve). Si el archivo ya no estaba —un borrado anterior que quedó a medias—, quita la fila igual. Deja en el
+ * historial del cobro el evento `comprobante_quitado`.
  */
 export async function removeReceipt(supabase: Db, id: string): Promise<void> {
-  const path = await pathOf(supabase, id);
-  const { data, error } = await supabase.storage.from(RECEIPTS_BUCKET).remove([path]);
+  const receipt = await receiptOf(supabase, id);
+  const { data, error } = await supabase.storage.from(RECEIPTS_BUCKET).remove([receipt.path]);
   if (error) throw error;
   // Storage no da error cuando no borra: dice qué borró. Si no borró nada y el archivo sigue ahí, no se pudo.
-  if (data.length === 0 && (await fileExists(supabase, path))) {
+  if (data.length === 0 && (await storedFile(supabase, receipt.path)) !== null) {
     throw new UserError("No se pudo borrar el archivo del comprobante. Inténtalo de nuevo.");
   }
   await supabase.from("pay_transaction_receipts").delete().eq("id", id).throwOnError();
+  await logReceipt(supabase, "comprobante_quitado", { id, ...receipt });
 }
 
 /** Una URL firmada para ver el comprobante. Dura 60 segundos: se pide al abrirlo, no se guarda. */
 export async function receiptSignedUrl(supabase: Db, id: string): Promise<string> {
-  const path = await pathOf(supabase, id);
+  const { path } = await receiptOf(supabase, id);
   const { data, error } = await supabase.storage.from(RECEIPTS_BUCKET).createSignedUrl(path, SIGNED_URL_SECONDS);
   if (error) throw error;
   return data.signedUrl;
