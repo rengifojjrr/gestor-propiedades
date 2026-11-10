@@ -6,6 +6,7 @@
 -- Reglas que esta migración hace cumplir en la base (no solo en la app):
 --   · Cada fila es de un usuario (user_id) y solo él la ve y la escribe (RLS).
 --   · Si el usuario tiene un segundo factor verificado, la sesión debe ser aal2 (política restrictiva).
+--   · Una sesión que Auth ya cerró no lee ni escribe, aunque su token todavía no haya caducado.
 --   · Una fila no puede apuntar a datos de otro usuario (claves foráneas compuestas con user_id).
 --   · Un cobro siempre cuadra: neto = bruto vigente − comisiones, y su reparto suma exactamente su base.
 --   · Un esquema de reparto no pasa de 100 % y, si suma menos, tiene que tener «Resto».
@@ -18,10 +19,15 @@
 create schema if not exists private;
 grant usage on schema private to authenticated, service_role;
 
--- ¿Cumple la sesión con el segundo factor? Verdadero si la sesión es aal2, o si es aal1 y el usuario no tiene
--- ningún factor verificado. Es la política oficial de Supabase («MFA solo para quien lo activó») envuelta en una
--- función. SECURITY DEFINER porque el rol authenticated no puede leer auth.mfa_factors (guarda los secretos
--- TOTP): no recibe parámetros y solo responde por el usuario de la sesión.
+-- ¿Sigue abierta la sesión y cumple con el segundo factor? Verdadero si la sesión del token sigue en auth.sessions
+-- y, además, es aal2, o es aal1 y el usuario no tiene ningún factor verificado.
+--   · Lo segundo es la política oficial de Supabase («MFA solo para quien lo activó») envuelta en una función.
+--   · Lo primero cierra la puerta en cuanto Auth cierra la sesión (cambio de contraseña, «cerrar sesión en todos»
+--     o en ese dispositivo): Auth borra su fila, pero el token sigue firmado hasta que caduca (1 h) y, sin esto, la
+--     RLS lo seguía dejando leer y escribir.
+-- SECURITY DEFINER porque el rol authenticated no puede leer auth.mfa_factors (guarda los secretos TOTP) ni
+-- auth.sessions: no recibe parámetros y solo responde por la sesión y el usuario del token. Las políticas la llaman
+-- como `(select private.pay_mfa_ok())`, que se evalúa una vez por sentencia, no por fila.
 create or replace function private.pay_mfa_ok()
 returns boolean
 language sql
@@ -29,12 +35,18 @@ stable
 security definer
 set search_path = ''
 as $$
-  select array[(select auth.jwt() ->> 'aal')] <@ (
-    select case when count(f.id) > 0 then array['aal2'] else array['aal1', 'aal2'] end
-    from auth.mfa_factors as f
-    where f.user_id = (select auth.uid())
-      and f.status = 'verified'
-  );
+  select exists (
+      select 1
+      from auth.sessions as s
+      where s.id = (select (auth.jwt() ->> 'session_id')::uuid)
+        and s.user_id = (select auth.uid())
+    )
+    and array[(select auth.jwt() ->> 'aal')] <@ (
+      select case when count(f.id) > 0 then array['aal2'] else array['aal1', 'aal2'] end
+      from auth.mfa_factors as f
+      where f.user_id = (select auth.uid())
+        and f.status = 'verified'
+    );
 $$;
 
 revoke all on function private.pay_mfa_ok() from public, anon;

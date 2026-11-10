@@ -218,7 +218,10 @@ function PasswordChange({ email }: { email: string }) {
   return (
     <section className={SECTION}>
       <h3 className={SECTION_TITLE}>Contraseña</h3>
-      <p className="text-ink-soft">Al cambiarla se cierran tus sesiones en los demás dispositivos.</p>
+      <p className="text-ink-soft">
+        Al cambiarla se cierran tus sesiones en los demás dispositivos: pierden el acceso a tus datos de inmediato,
+        aunque una pantalla que ya esté abierta puede tardar en notarlo.
+      </p>
       <form action={submit} className="flex max-w-sm flex-col gap-3">
         {/* Para que el gestor de contraseñas sepa de qué cuenta es la contraseña nueva. */}
         <input type="text" name="username" autoComplete="username" value={email} readOnly hidden />
@@ -257,9 +260,11 @@ function SessionEnd({ email }: { email: string }) {
           Cerrar sesión en todos los dispositivos
         </Button>
       </form>
-      {/* La sesión de otro dispositivo se cierra en Auth, pero su token sigue firmado hasta que caduca (1 h). */}
+      {/* Auth cierra la sesión de los otros dispositivos y la base deja de responderles en el acto, aunque su
+          token siga firmado hasta que caduca (1 h): lo que puede tardar es que su pantalla abierta lo note. */}
       <p id={EVERYWHERE_HINT_ID} className="text-sm text-ink-soft">
-        Otro dispositivo puede tardar hasta una hora en quedar fuera.
+        Los demás dispositivos pierden el acceso a tus datos de inmediato, aunque una pantalla que ya esté abierta
+        puede tardar en notarlo.
       </p>
     </section>
   );
