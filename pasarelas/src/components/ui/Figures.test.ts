@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -79,33 +77,70 @@ describe("Percent", () => {
   });
 });
 
-describe("DateText y DateTimeText", () => {
-  it("son un <time> con la fecha para la máquina y el texto que les pasen para la persona", () => {
-    const date = createElement(DateText, { value: "2026-11-13", formatted: "vie 13 nov 2026" });
+describe("DateText", () => {
+  it("pinta la fecha con formatDate y la deja en ISO para la máquina", () => {
+    const date = createElement(DateText, { value: "2026-11-13" });
     expect(html(date)).toMatch(/^<time datetime="2026-11-13"/i);
     expect(text(date)).toBe("vie 13 nov 2026");
+    expect(text(createElement(DateText, { value: "2026-02-01" }))).toBe("dom 1 feb 2026");
+    expect(text(createElement(DateText, { value: "2027-12-31" }))).toBe("vie 31 dic 2027");
+  });
 
-    const instant = createElement(DateTimeText, { value: "2026-11-13T15:30:00Z", formatted: "vie 13 nov 2026, 10:30" });
+  it("usa cifras tabulares, no se parte en dos líneas y lleva la clase que le pasen", () => {
+    const markup = html(createElement(DateText, { value: "2026-11-13", className: "text-sm" }));
+    expect(markup).toContain("cifra");
+    expect(markup).toContain("whitespace-nowrap");
+    expect(markup).toContain("text-sm");
+  });
+
+  it("una fecha que no existe no se pinta: falla en vez de mostrar otro día", () => {
+    expect(() => html(createElement(DateText, { value: "2026-02-30" }))).toThrow(RangeError);
+    expect(() => html(createElement(DateText, { value: "2026-11-13T15:30:00Z" }))).toThrow(RangeError);
+    expect(() => html(createElement(DateText, { value: "" }))).toThrow(RangeError);
+  });
+});
+
+describe("DateTimeText", () => {
+  it("pinta el instante con formatDateTime, en hora de Nueva York, y lo deja tal cual para la máquina", () => {
+    const instant = createElement(DateTimeText, { value: "2026-11-13T15:30:00Z" });
     expect(html(instant)).toMatch(/^<time datetime="2026-11-13T15:30:00Z"/i);
     expect(text(instant)).toBe("vie 13 nov 2026, 10:30");
   });
 
-  it("sin texto pintan la fecha tal cual (ISO), que nunca engaña", () => {
-    expect(text(createElement(DateText, { value: "2026-11-13" }))).toBe("2026-11-13");
-    expect(text(createElement(DateTimeText, { value: "2026-11-13T15:30:00Z" }))).toBe("2026-11-13T15:30:00Z");
+  it("el día es el de Nueva York, no el de UTC, en invierno y en verano", () => {
+    // 03:30 UTC del sábado 14 todavía es viernes 13 en Nueva York (EST, −5).
+    expect(text(createElement(DateTimeText, { value: "2026-11-14T03:30:00Z" }))).toBe("vie 13 nov 2026, 22:30");
+    // En verano el desfase es −4 (EDT).
+    expect(text(createElement(DateTimeText, { value: "2026-07-01T03:30:00Z" }))).toBe("mar 30 jun 2026, 23:30");
   });
 
-  /*
-   * Recordatorio que se cobra solo: `formatDate` y `formatDateTime` son de `dates.ts` (tarea 4), que todavía no
-   * está junto al kit. El día que ese archivo exista, esta prueba falla hasta que `Figures.tsx` lo use.
-   */
-  it("en cuanto exista dates.ts, las fechas se formatean con formatDate y formatDateTime", () => {
-    const datesModule = fileURLToPath(new URL("../../lib/pasarelas/dates.ts", import.meta.url));
-    if (!existsSync(datesModule)) return;
-    const figures = readFileSync(fileURLToPath(new URL("./Figures.tsx", import.meta.url)), "utf8");
-    expect(
-      figures,
-      "Ya existe src/lib/pasarelas/dates.ts: DateText debe llamar a formatDate(value) y DateTimeText a formatDateTime(value); quita la prop `formatted` y actualiza esta prueba y la galería.",
-    ).toMatch(/import \{[^}]*\bformatDate\b[^}]*\bformatDateTime\b[^}]*\} from "@\/lib\/pasarelas\/dates"/);
+  it("lee el instante como lo entrega la base, con desfase en vez de Z", () => {
+    const fromDatabase = createElement(DateTimeText, { value: "2026-11-13T15:30:00.123456+00:00" });
+    expect(text(fromDatabase)).toBe("vie 13 nov 2026, 10:30");
+    expect(html(fromDatabase)).toMatch(/^<time datetime="2026-11-13T15:30:00.123456\+00:00"/i);
+  });
+
+  it("usa cifras tabulares y lleva la clase que le pasen", () => {
+    const markup = html(createElement(DateTimeText, { value: "2026-11-13T15:30:00Z", className: "text-sm" }));
+    expect(markup).toContain("cifra");
+    expect(markup).toContain("whitespace-nowrap");
+    expect(markup).toContain("text-sm");
+  });
+
+  it("un texto sin zona no es un instante: falla en vez de adivinarle la hora", () => {
+    expect(() => html(createElement(DateTimeText, { value: "2026-11-13T15:30" }))).toThrow(RangeError);
+    expect(() => html(createElement(DateTimeText, { value: "2026-11-13" }))).toThrow(RangeError);
+    expect(() => html(createElement(DateTimeText, { value: "ayer" }))).toThrow(RangeError);
+  });
+});
+
+describe("las fechas ya no aceptan un texto hecho a mano", () => {
+  it("`formatted` no es una prop: aunque llegue, el texto sale del formateador", () => {
+    // @ts-expect-error — `formatted` ya no existe en DateTextProps.
+    const date = createElement(DateText, { value: "2026-11-13", formatted: "13/11/2026" });
+    expect(text(date)).toBe("vie 13 nov 2026");
+    // @ts-expect-error — `formatted` ya no existe en DateTimeTextProps.
+    const instant = createElement(DateTimeText, { value: "2026-11-13T15:30:00Z", formatted: "13/11/2026 15:30" });
+    expect(text(instant)).toBe("vie 13 nov 2026, 10:30");
   });
 });

@@ -189,14 +189,15 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
         <Spec
           name="DateText · DateTimeText"
           props={[
-            ["value: string", "la fecha (\"2026-11-13\") o el instante en ISO; va en el atributo datetime"],
-            ["formatted?: string", "provisional: el texto a pintar. Sin él se pinta value. Desaparece cuando el kit use formatDate y formatDateTime"],
+            ["DateText value: ISODate", "la fecha de calendario (\"2026-11-13\"); se escribe con formatDate y va en el atributo datetime"],
+            ["DateTimeText value: string", "el instante en ISO con zona (\"2026-11-13T15:30:00Z\"); se escribe con formatDateTime, en hora de Nueva York"],
             ["className?: string", "clases de más"],
           ]}
         >
           <p className="flex flex-col gap-1">
-            <DateText value="2026-11-13" formatted="vie 13 nov 2026" />
-            <DateTimeText value="2026-11-13T15:30:00Z" formatted="vie 13 nov 2026, 10:30" />
+            <DateText value="2026-11-13" />
+            <DateTimeText value="2026-11-13T15:30:00Z" />
+            <DateTimeText value="2026-11-14T03:30:00Z" />
           </p>
         </Spec>
         <Spec
@@ -369,11 +370,11 @@ export default async function KitPage({ searchParams }: PageProps<"/kit">) {
             </CardHeader>
             <CardBody className="flex flex-col gap-3">
               <p className="flex items-baseline justify-between gap-3">
-                <DateText value="2026-11-17" formatted="mar 17 nov 2026" />
+                <DateText value="2026-11-17" />
                 <Money value="90.30" currency="USD" />
               </p>
               <p className="flex items-baseline justify-between gap-3">
-                <DateText value="2026-11-18" formatted="mié 18 nov 2026" />
+                <DateText value="2026-11-18" />
                 <Money value="32.06" currency="USD" />
               </p>
             </CardBody>

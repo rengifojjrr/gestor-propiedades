@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from "@/lib/pasarelas/dates";
 import { dec, toMoney } from "@/lib/pasarelas/decimal";
 import { formatMoney, formatPct } from "@/lib/pasarelas/money";
 import type { Currency, ISODate, Money as MoneyValue, Pct } from "@/lib/pasarelas/types";
@@ -54,43 +55,39 @@ export function Percent({ value, className }: PercentProps) {
   );
 }
 
-/*
- * PROVISIONAL — las fechas. `formatDate` y `formatDateTime` son de `src/lib/pasarelas/dates.ts`, que todavía no
- * está junto al kit. Hasta entonces el texto se puede pasar en `formatted`; sin él se pinta la fecha ISO tal cual.
- * Cuando exista `dates.ts`: importar los dos formateadores, pintar `formatDate(value)` / `formatDateTime(value)` y
- * quitar `formatted`. `Figures.test.ts` falla a propósito ese día hasta que se haga.
- */
-
 export type DateTextProps = {
   /** La fecha de calendario: `"2026-11-13"`. */
   value: ISODate;
-  /** Provisional: el texto a pintar (`"vie 13 nov 2026"`). Sin él se pinta `value`. */
-  formatted?: string | undefined;
   className?: string;
 };
 
-/** Una fecha, como `<time>`: la máquina lee `value`; la persona, el texto. */
-export function DateText({ value, formatted, className }: DateTextProps) {
+/**
+ * Una fecha de calendario, escrita con `formatDate` (`vie 13 nov 2026`), como `<time>`: la máquina lee `value`;
+ * la persona, el texto. Una fecha de calendario no tiene zona: no se corre de día. Si `value` no es una fecha que
+ * exista (`2026-02-30`, un instante con hora), lanza `RangeError`: mejor un error que otro día.
+ */
+export function DateText({ value, className }: DateTextProps) {
   return (
     <time dateTime={value} className={cn("cifra whitespace-nowrap", className)}>
-      {formatted ?? value}
+      {formatDate(value)}
     </time>
   );
 }
 
 export type DateTimeTextProps = {
-  /** El instante en ISO: `"2026-11-13T15:30:00Z"`. */
+  /** El instante en ISO 8601 **con zona**: `"2026-11-13T15:30:00Z"`, o con desfase como lo entrega la base. */
   value: string;
-  /** Provisional: el texto a pintar, en hora de Nueva York (`"vie 13 nov 2026, 10:30"`). Sin él se pinta `value`. */
-  formatted?: string | undefined;
   className?: string;
 };
 
-/** Una fecha con hora, como `<time>`. */
-export function DateTimeText({ value, formatted, className }: DateTimeTextProps) {
+/**
+ * Un instante, escrito con `formatDateTime` en hora de Nueva York y 24 horas (`vie 13 nov 2026, 10:30`), como
+ * `<time>` con el instante original. Un texto sin zona no es un instante: lanza `RangeError` en vez de adivinarla.
+ */
+export function DateTimeText({ value, className }: DateTimeTextProps) {
   return (
     <time dateTime={value} className={cn("cifra whitespace-nowrap", className)}>
-      {formatted ?? value}
+      {formatDateTime(value)}
     </time>
   );
 }
