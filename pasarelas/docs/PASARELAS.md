@@ -123,8 +123,8 @@ cobro anterior.
 [(w)](#decisiones-tomadas-y-por-confirmar)); la fecha de un depósito ya hecho se cambia en el detalle del cobro,
 con **«Cambiar la fecha del depósito»**.
 
-**Registrar un reembolso o una disputa.** En Cobros, abrir el cobro. En el celular, el detalle enseña primero los
-datos; la acción más esperada queda a la vista y las demás, en **«Más acciones»**:
+**Registrar un reembolso o una disputa.** En Cobros, abrir el cobro. Arriba van el monto, el estado y la acción más
+esperada; las demás quedan plegadas en **«Más acciones»**, y debajo vienen los datos y el desglose:
 
 - **«Registrar reembolso»**: monto y fecha. Antes de confirmar se ve el antes y el después. Si ya hubo un
   reembolso parcial, dentro se elige entre «Agregar un reembolso» y «Corregir el total reembolsado» (fija el total
