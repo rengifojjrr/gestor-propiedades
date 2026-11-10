@@ -1184,18 +1184,45 @@ extraIds, useReportedFee, rows: ImportRow[] }` en lotes de 500 → `{ created, d
       usuario; sin `--reset` se niega si ya hay datos.
 - [ ] `npm run seed` deja el Resumen lleno; correrlo dos veces con `--reset` da los mismos totales.
 
-### Task 21: Punta a punta, axe y capturas
+### Task 21: «Listo cuando» de punta a punta y verificación completa
 
-**Archivos:** `e2e/listo-cuando.spec.ts`, `e2e/accesibilidad.spec.ts`, `scripts/capturas.ts`,
-`docs/capturas/*.webp`.
+**Archivos:** crear `e2e/listo-cuando.spec.ts`; modificar `e2e/registrar.spec.ts` y cualquier otra prueba que
+todavía deje pasar errores de consola por rutas «pendientes» (ya existen todas).
 
-- [ ] `listo-cuando.spec.ts` recorre de corrido, a 390×844 y contra `next build && next start`, los siete «Listo
-      cuando» del encargo, incluido «el comprobante lo veo solo yo» (otro usuario no puede abrirlo ni con la ruta).
-- [ ] `accesibilidad.spec.ts`: cada ruta del spec §8, con datos de la semilla, en claro y oscuro y en los dos
-      tamaños: sin violaciones serias ni críticas, sin desbordamiento horizontal.
-- [ ] Capturas de cada pantalla en el celular con datos demo, para el resumen del dueño.
-- [ ] `npm run lint && npm run typecheck && npm test && npm run test:int && npm run build && npm run test:e2e`
-      en verde; cobertura del motor 100 %.
+- [ ] `listo-cuando.spec.ts` recorre de corrido, a 390×844 y contra `next build && next start`, por las pantallas
+      (sin atajos por la base salvo para preparar datos que no son el objeto de la prueba), los siete «Listo cuando»
+      del encargo:
+  1. Registrar E1 desde «Registrar cobro» (Escuela Demo, canal al 5 %, Stripe con pago rápido, 100): la vista previa
+     muestra `9,70`, `90,30`, `45,15` / `27,09` / `18,06` y la fecha estimada; guardado, el detalle muestra lo mismo.
+  2. La foto del comprobante se sube desde el celular y **solo la ve el dueño**: otro usuario no abre el detalle del
+     cobro, no puede firmar la ruta del archivo en Storage con su sesión, y el enlace firmado del dueño caduca.
+  3. Una tarifa de Stripe «vigente desde mañana» (3,5 %) no mueve el cobro viejo (sigue en `3,20`) y la vista previa
+     de un cobro con fecha de mañana muestra `3,80`.
+  4. El Resumen dice cuánto facturó cada empresa, las comisiones por pasarela, qué cae en los próximos 14 días y en
+     qué cuenta, y cuánto se le debe a cada grupo.
+  5. Marcar depositados varios cobros de una vez desde Cobros actualiza el tiempo promedio de la pasarela en su
+     pantalla.
+  6. Un reembolso parcial de 40 sobre E1 deja todo cuadrado al centavo (`60,00`, `1,16`, `52,90`, `26,45` / `15,87` /
+     `10,58`).
+  7. Nada público: sin sesión, cada ruta del módulo manda a la entrada; con segundo factor y sin el código, a
+     `/login/verificar`, y la base no le devuelve filas a esa sesión.
+- [ ] Ninguna prueba deja pasar errores de consola por rutas que «todavía no existen».
+- [ ] Verificación completa desde `pasarelas/`: `npm run lint`, `npm run typecheck`, `npm run coverage` (100 % del
+      motor), `npm run test:int`, `npm run build` (todo lo privado `ƒ (Dynamic)`) y `npm run test:e2e` entero en
+      verde y con la salida limpia.
+
+### Task 29: Accesibilidad en todas las pantallas y capturas
+
+**Archivos:** crear `e2e/accesibilidad.spec.ts`, `scripts/capturas.ts` y `docs/capturas/*`.
+
+- [ ] `accesibilidad.spec.ts`: cada ruta del spec §8 (también las de detalle, edición y alta, la entrada, el código y
+      Ajustes), con un usuario sembrado con `seedDemo`, en claro y en oscuro y en los dos tamaños: sin violaciones
+      serias ni críticas de axe, sin desbordamiento horizontal y con los objetivos táctiles de al menos 44 px.
+- [ ] `scripts/capturas.ts`: capturas de cada pantalla en el celular (390×844, escala 2) con los datos de la semilla,
+      en claro (y el Resumen también en oscuro), en `docs/capturas/` con nombres que digan qué pantalla son. Solo
+      datos inventados. Livianas (WebP si hay con qué convertir sin dependencias nuevas; si no, PNG optimizado).
+- [ ] Lo que las capturas o axe revelen (textos cortados, cifras que no caben, contraste) se arregla en la pantalla
+      que corresponda, con su prueba.
 
 ### Task 22: Documentación, revisión y entrega
 
