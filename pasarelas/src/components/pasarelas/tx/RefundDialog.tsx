@@ -1,11 +1,13 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useId, useState, useTransition, type FormEvent } from "react";
 import { Alert, Button, Dialog, Field, Input, MoneyInput, Textarea, notify } from "@/components/ui";
 import { formatAmount, parseMoney } from "@/lib/pasarelas/money";
 import type { ISODate, TxSnapshot } from "@/lib/pasarelas/types";
 import { planRefund, planRefundTotal } from "@/lib/pasarelas/write";
 import { refundTransaction, setRefundTotal } from "@/server/pasarelas/actions/transactions";
+import { callAction } from "../callAction";
 import { previewChange } from "./preview";
 import { ChangesTable } from "./RecalcDialog";
 
@@ -31,6 +33,10 @@ export type RefundDialogProps = {
 /**
  * Un reembolso: el monto, la fecha y una nota; o, si ya hubo, corregir el total reembolsado. Antes de confirmar se
  * ve el antes y el después del desglose, calculado con el mismo plan del motor que usará el servidor.
+ *
+ * El diálogo se queda con el cobro tal como estaba al abrirlo y manda su versión (`expectedUpdatedAt`): si el cobro
+ * cambió desde entonces —otra pestaña, o este mismo reembolso, que llegó aunque se perdiera la respuesta—, el
+ * servidor da conflicto en vez de aplicar una vista previa que ya no vale o de sumar el reembolso dos veces.
  */
 export function RefundDialog({ tx, modes, open, onClose, today }: RefundDialogProps) {
   return (
@@ -48,7 +54,10 @@ export function RefundDialog({ tx, modes, open, onClose, today }: RefundDialogPr
 
 type FieldErrors = Partial<Record<"amount" | "on" | "note" | "total", string>>;
 
-function RefundForm({ tx, modes, onClose, today }: Omit<RefundDialogProps, "open">) {
+function RefundForm({ tx: current, modes, onClose, today }: Omit<RefundDialogProps, "open">) {
+  const router = useRouter();
+  // Lo que vio la persona al abrir: aunque la pantalla se refresque detrás, la vista previa y la versión son esas.
+  const [tx] = useState(current);
   const name = useId();
   const [mode, setMode] = useState<Mode>(modes[0] ?? "agregar");
   const [amount, setAmount] = useState("");
@@ -80,10 +89,14 @@ function RefundForm({ tx, modes, onClose, today }: Omit<RefundDialogProps, "open
     }
     setErrors({});
     startTransition(async () => {
-      const result =
-        mode === "agregar"
-          ? await refundTransaction({ id: tx.id, amount, on, note })
-          : await setRefundTotal({ id: tx.id, total });
+      const seen = { id: tx.id, expectedUpdatedAt: tx.updatedAt };
+      const result = await callAction(
+        () =>
+          mode === "agregar"
+            ? refundTransaction({ ...seen, amount, on, note })
+            : setRefundTotal({ ...seen, total }),
+        router.refresh,
+      );
       if (!result.ok) {
         setError(result.error);
         const fields = result.fieldErrors ?? {};

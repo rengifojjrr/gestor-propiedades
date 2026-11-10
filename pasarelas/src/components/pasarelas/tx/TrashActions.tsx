@@ -1,8 +1,10 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Alert, Button, ConfirmDialog, notify } from "@/components/ui";
 import { purgeTransactions, restoreTransactions } from "@/server/pasarelas/actions/transactions";
+import { callAction } from "../callAction";
 import { cobros } from "./plural";
 
 /** Lo más que borra `purgeTransactions` de una vez (el tope de un lote de cobros en el servidor). */
@@ -13,6 +15,7 @@ const LOST_TEXT = "con su reparto, su historial y también sus comprobantes. No 
 
 /** «Restaurar» y «Borrar del todo» de un cobro de la papelera. `label` lo nombra para el lector de pantalla. */
 export function TrashRowActions({ id, label }: { id: string; label: string }) {
+  const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -20,7 +23,7 @@ export function TrashRowActions({ id, label }: { id: string; label: string }) {
   function restore() {
     setError(null);
     startTransition(async () => {
-      const result = await restoreTransactions({ ids: [id] });
+      const result = await callAction(() => restoreTransactions({ ids: [id] }), router.refresh);
       if (!result.ok) {
         setError(result.error);
         return;
@@ -32,7 +35,7 @@ export function TrashRowActions({ id, label }: { id: string; label: string }) {
   function purge() {
     setError(null);
     startTransition(async () => {
-      const result = await purgeTransactions({ ids: [id] });
+      const result = await callAction(() => purgeTransactions({ ids: [id] }), router.refresh);
       setConfirming(false);
       if (!result.ok) {
         setError(result.error);
@@ -76,6 +79,7 @@ export function TrashRowActions({ id, label }: { id: string; label: string }) {
  * dice cuántos alcanzó a borrar.
  */
 export function EmptyTrashButton({ ids }: { ids: string[] }) {
+  const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -85,7 +89,8 @@ export function EmptyTrashButton({ ids }: { ids: string[] }) {
     startTransition(async () => {
       let purged = 0;
       for (let start = 0; start < ids.length; start += PURGE_BATCH) {
-        const result = await purgeTransactions({ ids: ids.slice(start, start + PURGE_BATCH) });
+        const batch = ids.slice(start, start + PURGE_BATCH);
+        const result = await callAction(() => purgeTransactions({ ids: batch }), router.refresh);
         if (!result.ok) {
           setConfirming(false);
           setError(purged === 0 ? result.error : `${result.error} Se alcanzaron a borrar ${cobros(purged)}.`);

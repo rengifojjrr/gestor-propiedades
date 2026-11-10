@@ -1,6 +1,8 @@
 "use client";
 
-import { useId, useState, useTransition, type FormEvent } from "react";
+import { ChevronDown } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Fragment, useId, useState, useSyncExternalStore, useTransition, type FormEvent, type ReactNode } from "react";
 import { Alert, Button, ButtonLink, Card, CardBody, ConfirmDialog, Dialog, Field, Input, notify } from "@/components/ui";
 import type { ISODate, TxSnapshot } from "@/lib/pasarelas/types";
 import type { ActionResult } from "@/server/pasarelas/result";
@@ -13,7 +15,8 @@ import {
   setEstimatedDate,
   trashTransactions,
 } from "@/server/pasarelas/actions/transactions";
-import { allowedActions } from "./allowed";
+import { callAction } from "../callAction";
+import { allowedActions, primaryAction, type TxAction } from "./allowed";
 import { DepositDialog } from "./DepositDialog";
 import { DisputeDialog } from "./DisputeDialog";
 import { RecalcDialog } from "./RecalcDialog";
@@ -25,6 +28,9 @@ const STALE_TEXT = "El cobro ya no admitía ese cambio. Vuelve a cargar la pági
 const changedNone = (data: unknown): boolean =>
   typeof data === "object" && data !== null && "count" in data && data.count === 0;
 
+/** `useSyncExternalStore` sin nada que escuchar: solo distingue el HTML del servidor de la página ya hidratada. */
+const noSubscription = () => () => {};
+
 type Open = "fecha" | "deposito" | "reembolso" | "disputa" | "recalcular" | "revertir" | "fallido" | "papelera" | null;
 
 export type TxActionsProps = {
@@ -35,13 +41,21 @@ export type TxActionsProps = {
 
 /**
  * Lo que se puede hacer con el cobro, según su estado: solo las acciones que el motor acepta (`allowedActions`).
- * Las que cambian números (reembolso, disputa, recalcular) enseñan antes el antes y el después; las que cuestan
- * deshacer piden confirmación. Tras cada una, el servidor vuelve a pintar el detalle.
+ * La principal para ese estado (`primaryAction`) queda a la vista; las demás, en «Más acciones», para que en el
+ * celular los datos y el desglose aparezcan enseguida. Las que cambian números (reembolso, disputa, recalcular)
+ * enseñan antes el antes y el después; las que cuestan deshacer piden confirmación. Las de un solo cobro mandan la
+ * versión que se está viendo (`updatedAt`). Tras cada una, el servidor vuelve a pintar el detalle.
  */
 export function TxActions({ tx, today }: TxActionsProps) {
+  const router = useRouter();
   const titleId = useId();
+  const moreId = useId();
   const can = new Set(allowedActions(tx));
+  const primary = primaryAction(tx);
   const [open, setOpen] = useState<Open>(null);
+  const [more, setMore] = useState(false);
+  // Antes de hidratar, «Más acciones» no respondería: se ve, pero desactivado.
+  const hydrated = useSyncExternalStore(noSubscription, () => true, () => false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const close = () => setOpen(null);
@@ -58,7 +72,7 @@ export function TxActions({ tx, today }: TxActionsProps) {
   function run(action: () => Promise<ActionResult<unknown>>, done: string) {
     setError(null);
     startTransition(async () => {
-      const result = await action();
+      const result = await callAction(action, router.refresh);
       setOpen(null);
       if (!result.ok) {
         setError(result.error);
@@ -73,10 +87,96 @@ export function TxActions({ tx, today }: TxActionsProps) {
   }
 
   const ids = [tx.id];
+  const seen = { id: tx.id, expectedUpdatedAt: tx.updatedAt };
   const refundModes = [
     ...(can.has("reembolso") ? (["agregar"] as const) : []),
     ...(can.has("corregir_reembolso") ? (["corregir"] as const) : []),
   ];
+  const variant = (action: TxAction) => (action === primary ? "primary" : "secondary");
+  const depositLabel = tx.status === "depositado" ? "Cambiar la fecha del depósito" : "Marcar depositado";
+
+  /** Cada acción como botón (o enlace), en el orden de `allowedActions`. La de reembolso cubre sus dos modos. */
+  const buttons: Partial<Record<TxAction, ReactNode>> = {
+    restaurar: (
+      <Button
+        variant={variant("restaurar")}
+        onClick={() => run(() => restoreTransactions({ ids }), "Cobro restaurado.")}
+        disabled={pending}
+      >
+        Restaurar
+      </Button>
+    ),
+    depositado: (
+      <Button variant={variant("depositado")} onClick={() => show("deposito")} disabled={pending}>
+        {depositLabel}
+      </Button>
+    ),
+    en_transito: (
+      <Button onClick={() => run(() => markInTransit({ ids }), "Cobro en tránsito.")} disabled={pending}>
+        Marcar en tránsito
+      </Button>
+    ),
+    revertir_deposito: (
+      <Button onClick={() => show("revertir")} disabled={pending}>
+        Revertir depósito
+      </Button>
+    ),
+    editar: (
+      <ButtonLink variant={variant("editar")} href={`/pasarelas/cobros/${tx.id}/editar`}>
+        Editar
+      </ButtonLink>
+    ),
+    fecha_estimada: (
+      <Button onClick={() => show("fecha")} disabled={pending}>
+        Cambiar fecha estimada
+      </Button>
+    ),
+    reembolso: (
+      <Button onClick={() => show("reembolso")} disabled={pending}>
+        Registrar reembolso
+      </Button>
+    ),
+    corregir_reembolso: can.has("reembolso") ? null : (
+      <Button onClick={() => show("reembolso")} disabled={pending}>
+        Corregir reembolso
+      </Button>
+    ),
+    abrir_disputa: (
+      <Button onClick={() => show("disputa")} disabled={pending}>
+        Abrir disputa
+      </Button>
+    ),
+    resolver_disputa: (
+      <Button variant={variant("resolver_disputa")} onClick={() => show("disputa")} disabled={pending}>
+        Resolver disputa
+      </Button>
+    ),
+    recalcular: (
+      <Button onClick={() => show("recalcular")} disabled={pending}>
+        Recalcular
+      </Button>
+    ),
+    reabrir: (
+      <Button
+        variant={variant("reabrir")}
+        onClick={() => run(() => reopenTransaction(seen), "Cobro reabierto.")}
+        disabled={pending}
+      >
+        Reabrir
+      </Button>
+    ),
+    fallido: (
+      <Button onClick={() => show("fallido")} disabled={pending}>
+        Marcar fallido
+      </Button>
+    ),
+    papelera: (
+      <Button variant="danger" onClick={() => show("papelera")} disabled={pending}>
+        A la papelera
+      </Button>
+    ),
+  };
+  const rest = allowedActions(tx).filter((action) => action !== primary && buttons[action]);
 
   return (
     <Card role="region" aria-labelledby={titleId}>
@@ -85,72 +185,26 @@ export function TxActions({ tx, today }: TxActionsProps) {
           Acciones
         </h2>
         <div className="flex flex-wrap gap-2">
-          {can.has("restaurar") ? (
+          {buttons[primary]}
+          {rest.length > 0 ? (
             <Button
-              variant="primary"
-              onClick={() => run(() => restoreTransactions({ ids }), "Cobro restaurado.")}
-              disabled={pending}
+              aria-expanded={more}
+              aria-controls={moreId}
+              disabled={!hydrated}
+              onClick={() => setMore((value) => !value)}
             >
-              Restaurar
-            </Button>
-          ) : null}
-          {can.has("depositado") ? (
-            <Button variant="primary" onClick={() => show("deposito")} disabled={pending}>
-              {tx.status === "depositado" ? "Cambiar fecha del depósito" : "Marcar depositado"}
-            </Button>
-          ) : null}
-          {can.has("en_transito") ? (
-            <Button onClick={() => run(() => markInTransit({ ids }), "Cobro en tránsito.")} disabled={pending}>
-              Marcar en tránsito
-            </Button>
-          ) : null}
-          {can.has("revertir_deposito") ? (
-            <Button onClick={() => show("revertir")} disabled={pending}>
-              Revertir depósito
-            </Button>
-          ) : null}
-          {can.has("editar") ? <ButtonLink href={`/pasarelas/cobros/${tx.id}/editar`}>Editar</ButtonLink> : null}
-          {can.has("fecha_estimada") ? (
-            <Button onClick={() => show("fecha")} disabled={pending}>
-              Cambiar fecha estimada
-            </Button>
-          ) : null}
-          {refundModes.length > 0 ? (
-            <Button onClick={() => show("reembolso")} disabled={pending}>
-              {can.has("reembolso") ? "Registrar reembolso" : "Corregir reembolso"}
-            </Button>
-          ) : null}
-          {can.has("abrir_disputa") ? (
-            <Button onClick={() => show("disputa")} disabled={pending}>
-              Abrir disputa
-            </Button>
-          ) : null}
-          {can.has("resolver_disputa") ? (
-            <Button onClick={() => show("disputa")} disabled={pending}>
-              Resolver disputa
-            </Button>
-          ) : null}
-          {can.has("recalcular") ? (
-            <Button onClick={() => show("recalcular")} disabled={pending}>
-              Recalcular
-            </Button>
-          ) : null}
-          {can.has("reabrir") ? (
-            <Button onClick={() => run(() => reopenTransaction({ id: tx.id }), "Cobro reabierto.")} disabled={pending}>
-              Reabrir
-            </Button>
-          ) : null}
-          {can.has("fallido") ? (
-            <Button onClick={() => show("fallido")} disabled={pending}>
-              Marcar fallido
-            </Button>
-          ) : null}
-          {can.has("papelera") ? (
-            <Button variant="danger" onClick={() => show("papelera")} disabled={pending}>
-              A la papelera
+              Más acciones
+              <ChevronDown aria-hidden className={more ? "size-5 rotate-180" : "size-5"} />
             </Button>
           ) : null}
         </div>
+        {rest.length > 0 ? (
+          <div id={moreId} hidden={!more} className="flex flex-wrap gap-2 border-t border-rule pt-3">
+            {rest.map((action) => (
+              <Fragment key={action}>{buttons[action]}</Fragment>
+            ))}
+          </div>
+        ) : null}
         {error ? (
           <Alert tone="danger" announce>
             {error}
@@ -165,7 +219,16 @@ export function TxActions({ tx, today }: TxActionsProps) {
         open={open === "fecha"}
         onClose={close}
       />
-      <DepositDialog ids={ids} open={open === "deposito"} onClose={close} defaultDate={tx.depositedOn ?? today} />
+      <DepositDialog
+        ids={ids}
+        open={open === "deposito"}
+        onClose={close}
+        title={depositLabel}
+        defaultDate={tx.depositedOn ?? today}
+        today={today}
+        earliest={tx.occurredOn}
+        onlyPending={false}
+      />
       <RefundDialog tx={tx} modes={refundModes} open={open === "reembolso"} onClose={close} today={today} />
       <DisputeDialog
         tx={tx}
@@ -178,7 +241,7 @@ export function TxActions({ tx, today }: TxActionsProps) {
       <ConfirmDialog
         open={open === "revertir"}
         onClose={close}
-        onConfirm={() => run(() => revertDeposit({ id: tx.id }), "Depósito revertido.")}
+        onConfirm={() => run(() => revertDeposit(seen), "Depósito revertido.")}
         title="¿Revertir el depósito?"
         description="El cobro vuelve a «En tránsito» y se borra la fecha real del depósito."
         confirmLabel="Revertir depósito"
@@ -187,7 +250,7 @@ export function TxActions({ tx, today }: TxActionsProps) {
       <ConfirmDialog
         open={open === "fallido"}
         onClose={close}
-        onConfirm={() => run(() => failTransaction({ id: tx.id }), "Cobro marcado como fallido.")}
+        onConfirm={() => run(() => failTransaction(seen), "Cobro marcado como fallido.")}
         title="¿Marcar el cobro como fallido?"
         description="Sus comisiones, su neto y su reparto quedan en cero y deja de contar en los totales. Puedes reabrirlo después."
         confirmLabel="Marcar fallido"
@@ -231,7 +294,10 @@ function EstimatedDialog({ tx, canAutomatic, today, open, onClose }: EstimatedDi
   );
 }
 
-function EstimatedForm({ tx, canAutomatic, today, onClose }: Omit<EstimatedDialogProps, "open">) {
+function EstimatedForm({ tx: current, canAutomatic, today, onClose }: Omit<EstimatedDialogProps, "open">) {
+  const router = useRouter();
+  // La versión que se vio al abrir: aunque la pantalla se refresque detrás, se manda esa.
+  const [tx] = useState(current);
   const [date, setDate] = useState(tx.estimatedDepositOn ?? today);
   const [dateError, setDateError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -239,7 +305,10 @@ function EstimatedForm({ tx, canAutomatic, today, onClose }: Omit<EstimatedDialo
 
   function save(next: ISODate | null) {
     startTransition(async () => {
-      const result = await setEstimatedDate({ id: tx.id, date: next });
+      const result = await callAction(
+        () => setEstimatedDate({ id: tx.id, expectedUpdatedAt: tx.updatedAt, date: next }),
+        router.refresh,
+      );
       if (!result.ok) {
         setError(result.error);
         setDateError(result.fieldErrors?.date?.[0] ?? null);

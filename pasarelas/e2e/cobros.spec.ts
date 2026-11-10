@@ -92,6 +92,14 @@ async function expectCleanScreen(page: Page): Promise<void> {
   await expectNoSeriousAxe(page);
 }
 
+/** Abre un `<details>` por el texto de su `<summary>`, si está cerrado. */
+async function openDetails(page: Page, summary: string): Promise<void> {
+  const details = page.locator("details", { has: page.locator("summary", { hasText: summary }) });
+  if (!(await details.evaluate((element: HTMLDetailsElement) => element.open))) {
+    await page.locator("summary", { hasText: summary }).click();
+  }
+}
+
 /** Abre «Más filtros» si está cerrado. */
 async function openMoreFilters(page: Page): Promise<void> {
   const more = page.locator("details", { has: page.getByText("Más filtros") });
@@ -161,8 +169,27 @@ test("«Listo cuando» n.º 5: tres cobros de Stripe depositados en lote, «Sin 
   }
   await expect(cobro(page, isMobile, "pi_lc5_con")).toContainText("Registrado");
   await expect(page.getByText(/seleccionados/)).toBeHidden();
+  // La barra se fue con el botón pulsado: el foco queda en el contador de la lista, no perdido.
+  await expect(page.getByText(/^Cobros 1–4 de 4$/)).toBeFocused();
   // El tiempo real de la pasarela: depositados hoy, cobrados hace 2, 3 y 4 días.
   expect(await gatewayTotals()).toEqual({ deposited_count: 3, avg_days: "3.00" });
+
+  // Toda la página en lote, con otra fecha: solo se marca lo que está por caer; los ya depositados conservan la suya.
+  const yesterday = addDays(today, -1);
+  await page.getByRole("checkbox", { name: "Seleccionar todos los cobros de esta página" }).check();
+  await expect(page.getByText("4 seleccionados")).toBeVisible();
+  await page.getByRole("button", { name: "Marcar depositado" }).click();
+  await expect(dialog).toContainText("Solo se marcan los que están por caer");
+  await dialog.getByLabel("Fecha del depósito").fill(yesterday);
+  await dialog.getByRole("button", { name: "Marcar depositado" }).click();
+  await expect(
+    page.getByText(
+      "1 cobro marcado como depositado. Se saltaron 3: 3 ya estaban depositados (conservan su fecha).",
+    ),
+  ).toBeVisible();
+  await expect(cobro(page, isMobile, "pi_lc5_con")).toContainText("Depositado");
+  // Cobrados hace 2, 3 y 4 días y depositados hoy; el de hace 1, ayer: 0 días.
+  expect(await gatewayTotals()).toEqual({ deposited_count: 4, avg_days: "2.25" });
 
   // «Sin comprobante» los encuentra (y deja fuera el que tiene uno).
   await openMoreFilters(page);
@@ -172,7 +199,8 @@ test("«Listo cuando» n.º 5: tres cobros de Stripe depositados en lote, «Sin 
   for (const reference of three) await expect(cobro(page, isMobile, reference)).toContainText("Depositado");
   await expectCleanScreen(page);
 
-  // El CSV (en español) de ese filtro: sus referencias y sus montos con coma.
+  // El CSV (en español) de ese filtro: sus referencias y sus montos con coma. Está en el menú «Exportar CSV».
+  await openDetails(page, "Exportar CSV");
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     page.getByRole("link", { name: "CSV en español" }).click(),
@@ -211,6 +239,13 @@ test("los totales son de todo el filtro (no de la página) y no mezclan monedas"
   await login(page, user);
   await page.goto("/pasarelas/cobros?periodo=30d&q=tot_");
   const totals = page.getByRole("region", { name: "Totales del filtro" });
+  // Plegados, con una línea de resumen por moneda: la lista aparece enseguida.
+  await expect(totals.getByText("USD: 51 cobros · neto $4.605,30")).toBeVisible();
+  await expect(totals.getByText("MXN: 1 cobro · neto 90,30 MXN")).toBeVisible();
+  await expect(totals.getByText("Todos los cobros del filtro, sin los fallidos.")).toBeHidden();
+  await expectCleanScreen(page);
+  await openDetails(page, "Totales del filtro");
+  await expect(totals.getByText("Todos los cobros del filtro, sin los fallidos.")).toBeVisible();
   await expect(totals).toContainText("USD · 51 cobros");
   await expect(totals).toContainText("$5.100,00");
   await expect(totals).toContainText("$4.605,30");

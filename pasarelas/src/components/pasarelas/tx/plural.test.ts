@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { batchDone, cobros } from "./plural";
+import { batchDone, cobros, depositDone } from "./plural";
 
 const DEPOSITED = { one: "marcado como depositado", many: "marcados como depositados" };
 
@@ -20,5 +20,30 @@ describe("batchDone", () => {
   it("y cuántos de los elegidos no admitían el cambio", () => {
     expect(batchDone(2, 3, DEPOSITED)).toBe("2 cobros marcados como depositados. 1 no admitía el cambio.");
     expect(batchDone(0, 4, DEPOSITED)).toBe("0 cobros marcados como depositados. 4 no admitían el cambio.");
+  });
+});
+
+describe("depositDone", () => {
+  const none = { deposited: 0, notPending: 0, other: 0 };
+
+  it("sin saltados, como batchDone", () => {
+    expect(depositDone({ count: 3, skipped: none })).toBe("3 cobros marcados como depositados.");
+  });
+
+  it("dice cuántos se saltaron y por qué, en singular y en plural", () => {
+    expect(depositDone({ count: 2, skipped: { deposited: 1, notPending: 1, other: 1 } })).toBe(
+      "2 cobros marcados como depositados. Se saltaron 3: 1 ya estaba depositado (conserva su fecha), " +
+        "1 no está por caer (disputa abierta o reembolso total) y 1 no admitía el cambio.",
+    );
+    expect(depositDone({ count: 0, skipped: { deposited: 40, notPending: 0, other: 0 } })).toBe(
+      "0 cobros marcados como depositados. Se saltaron 40: 40 ya estaban depositados (conservan su fecha).",
+    );
+    expect(depositDone({ count: 1, skipped: { deposited: 0, notPending: 2, other: 3 } })).toBe(
+      "1 cobro marcado como depositado. Se saltaron 5: 2 no están por caer (disputa abierta o reembolso total) " +
+        "y 3 no admitían el cambio.",
+    );
+    expect(depositDone({ count: 1, skipped: { deposited: 0, notPending: 0, other: 1 } })).toBe(
+      "1 cobro marcado como depositado. Se saltó 1: 1 no admitía el cambio.",
+    );
   });
 });

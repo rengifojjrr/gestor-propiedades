@@ -385,6 +385,10 @@ test.describe.serial("«Listo cuando»", () => {
     await login(page, owner);
     await page.goto(`/pasarelas/cobros/${e1Id}`);
     const actions = page.getByRole("region", { name: "Acciones" });
+    // A la vista, la acción principal; el reembolso está en «Más acciones» (se habilita al hidratarse la página).
+    const more = actions.getByRole("button", { name: "Más acciones" });
+    await expect(more).toBeEnabled();
+    await more.click();
     await actions.getByRole("button", { name: "Registrar reembolso" }).click();
     const refund = page.getByRole("dialog", { name: "Reembolso" });
     await refund.getByLabel("Monto del reembolso").fill("40");

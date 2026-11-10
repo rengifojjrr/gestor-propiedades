@@ -79,6 +79,32 @@ const history = (page: Page): Locator => page.getByRole("list", { name: "Histori
 /** El sello del estado del cobro con ese texto (no el mismo texto en el historial). */
 const stamp = (page: Page, text: string): Locator => page.locator("[data-stamp]").getByText(text, { exact: true });
 
+/** Despliega «Más acciones» del detalle, si lo hay y está plegado. */
+async function openMoreActions(page: Page): Promise<void> {
+  const more = page.getByRole("region", { name: "Acciones" }).getByRole("button", { name: "Más acciones" });
+  if ((await more.count()) === 0 || (await more.getAttribute("aria-expanded")) === "true") return;
+  // Se habilita al hidratarse la página: antes, tocarlo no haría nada.
+  await expect(more).toBeEnabled();
+  await more.click();
+  await expect(more).toHaveAttribute("aria-expanded", "true");
+}
+
+/**
+ * Un botón de las acciones del detalle. La principal está a la vista; las demás, en «Más acciones»: se despliega
+ * antes de buscarlas (si ya está desplegado, se queda así), para que «no se ofrece» no sea solo «está plegado».
+ */
+async function action(page: Page, name: string): Promise<Locator> {
+  await openMoreActions(page);
+  return page.getByRole("region", { name: "Acciones" }).getByRole("button", { name, exact: true });
+}
+
+/** ¿Cabe la tabla del antes y el después sin desplazarse a lo ancho? */
+const fitsWidth = (table: Locator): Promise<boolean> => table.evaluate((el) => el.scrollWidth <= el.clientWidth);
+
+/** Las llamadas a Server Actions (POST con la cabecera `Next-Action`). */
+const isAction = (request: { method(): string; headers(): Record<string, string> }): boolean =>
+  request.method() === "POST" && request.headers()["next-action"] !== undefined;
+
 /** Los archivos de la carpeta del cobro en Storage, como los ve su dueño. */
 async function storedFiles(client: Db, userId: string, txId: string): Promise<string[]> {
   const { data, error } = await client.storage.from(BUCKET).list(`${userId}/${txId}`);
@@ -189,10 +215,15 @@ test.describe.serial("detalle del cobro", () => {
   test("«Listo cuando» n.º 6: reembolso parcial, disputa, papelera y borrar del todo", async ({ page }) => {
     await login(page, user);
     await page.goto(`/pasarelas/cobros/${e1Id}`);
+    // Lo primero son los datos y el desglose: de las acciones, solo la principal y «Más acciones» a la vista.
     const actions = page.getByRole("region", { name: "Acciones" });
+    await expect(actions.getByRole("button", { name: "Marcar depositado" })).toBeVisible();
+    await expect(actions.getByRole("button", { name: "Más acciones" })).toHaveAttribute("aria-expanded", "false");
+    await expect(actions.getByRole("button", { name: "Registrar reembolso" })).toBeHidden();
+    await expectCleanScreen(page);
 
     // Reembolso parcial de 40,00: antes de confirmar se ve el antes y el después.
-    await actions.getByRole("button", { name: "Registrar reembolso" }).click();
+    await (await action(page, "Registrar reembolso")).click();
     const refund = page.getByRole("dialog", { name: "Reembolso" });
     await refund.getByLabel("Monto del reembolso").fill("40");
     await refund.getByLabel("Nota").fill("Devolución de una clase");
@@ -201,6 +232,8 @@ test.describe.serial("detalle del cobro", () => {
     await expect(changes.getByRole("row").filter({ hasText: "Bruto" })).toContainText("$60,00");
     await expect(changes.getByRole("row").filter({ hasText: "Costo del reembolso" })).toContainText("$1,16");
     await expect(changes.getByRole("row").filter({ hasText: "Neto" })).toContainText("$52,90");
+    // El antes y el después cabe entero, también a 390 px.
+    expect(await fitsWidth(changes)).toBe(true);
     await expectCleanScreen(page);
     await refund.getByRole("button", { name: "Registrar reembolso" }).click();
     await expect(refund).toBeHidden();
@@ -219,7 +252,7 @@ test.describe.serial("detalle del cobro", () => {
     await expectCleanScreen(page);
 
     // Abrir la disputa suma su costo (15,00, el de Stripe congelado en el cobro).
-    await actions.getByRole("button", { name: "Abrir disputa" }).click();
+    await (await action(page, "Abrir disputa")).click();
     const opening = page.getByRole("dialog", { name: "Abrir disputa" });
     await expect(opening).toContainText("$15,00");
     await expect(opening.getByRole("region", { name: "Antes y después" }).getByRole("row").filter({ hasText: "Neto" })).toContainText(
@@ -232,10 +265,10 @@ test.describe.serial("detalle del cobro", () => {
     await expect(page.getByTestId("comisiones")).toHaveText("$22,10");
     await expect(page.getByTestId("neto")).toHaveText("$37,90");
     await expect(stamp(page, "En disputa")).toBeVisible();
-    await expect(actions.getByRole("button", { name: "Abrir disputa" })).toHaveCount(0);
+    await expect((await action(page, "Abrir disputa"))).toHaveCount(0);
 
     // Ganarla la revierte.
-    await actions.getByRole("button", { name: "Resolver disputa" }).click();
+    await (await action(page, "Resolver disputa")).click();
     const resolving = page.getByRole("dialog", { name: "Resolver disputa" });
     await resolving.getByLabel("Ganada").check();
     await expectCleanScreen(page);
@@ -247,7 +280,7 @@ test.describe.serial("detalle del cobro", () => {
     await expect(history(page)).toContainText("Disputa ganada");
 
     // Corregir el total reembolsado de 40,00 a 30,00: reemplaza lo reembolsado, no le suma.
-    await actions.getByRole("button", { name: "Registrar reembolso" }).click();
+    await (await action(page, "Registrar reembolso")).click();
     await refund.getByLabel("Corregir el total reembolsado").check();
     const totalField = refund.getByLabel("Total reembolsado", { exact: true });
     await expect(totalField).toHaveValue("40,00");
@@ -272,14 +305,14 @@ test.describe.serial("detalle del cobro", () => {
     await expectToast(page, "Total reembolsado corregido");
 
     // Reembolsado del todo ya no admite otro reembolso: el botón pasa a «Corregir reembolso», solo con el total.
-    await actions.getByRole("button", { name: "Registrar reembolso" }).click();
+    await (await action(page, "Registrar reembolso")).click();
     await refund.getByLabel("Monto del reembolso").fill("70");
     await refund.getByRole("button", { name: "Registrar reembolso" }).click();
     await expect(refund).toBeHidden();
     await expect(page.getByTestId("bruto")).toHaveText("$0,00");
     await expect(stamp(page, "Reembolsado")).toBeVisible();
-    await expect(actions.getByRole("button", { name: "Registrar reembolso" })).toHaveCount(0);
-    await actions.getByRole("button", { name: "Corregir reembolso" }).click();
+    await expect((await action(page, "Registrar reembolso"))).toHaveCount(0);
+    await (await action(page, "Corregir reembolso")).click();
     await expect(refund.getByRole("radio")).toHaveCount(0);
     await expect(refund.getByLabel("Total reembolsado", { exact: true })).toHaveValue("100,00");
     await refund.getByLabel("Total reembolsado", { exact: true }).fill("30");
@@ -292,14 +325,14 @@ test.describe.serial("detalle del cobro", () => {
     await expect(page.getByTestId("bruto")).toHaveText("$70,00");
     await expect(page.getByTestId("neto")).toHaveText("$62,25");
     await expect(stamp(page, "Reembolso parcial")).toBeVisible();
-    await expect(actions.getByRole("button", { name: "Registrar reembolso" })).toBeVisible();
+    await expect((await action(page, "Registrar reembolso"))).toBeVisible();
 
     // A la papelera: sale de la lista; restaurarlo lo devuelve.
-    await actions.getByRole("button", { name: "A la papelera" }).click();
+    await (await action(page, "A la papelera")).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Enviar a la papelera" }).click();
     await expect(page.getByText("Este cobro está en la papelera")).toBeVisible();
-    await expect(actions.getByRole("button", { name: "Restaurar" })).toBeVisible();
-    await expect(actions.getByRole("button", { name: "Registrar reembolso" })).toHaveCount(0);
+    await expect((await action(page, "Restaurar"))).toBeVisible();
+    await expect((await action(page, "Registrar reembolso"))).toHaveCount(0);
     await page.goto(`/pasarelas/cobros?q=${e1Reference}`);
     await expect(page.getByText("No hay cobros con estos filtros")).toBeVisible();
 
@@ -315,7 +348,7 @@ test.describe.serial("detalle del cobro", () => {
     // Borrar del todo se lleva también el comprobante de Storage.
     expect(await storedFiles(client, user.id, e1Id)).toHaveLength(1);
     await page.goto(`/pasarelas/cobros/${e1Id}`);
-    await actions.getByRole("button", { name: "A la papelera" }).click();
+    await (await action(page, "A la papelera")).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Enviar a la papelera" }).click();
     await expect(page.getByText("Este cobro está en la papelera")).toBeVisible();
     await page.goto("/pasarelas/papelera");
@@ -369,21 +402,20 @@ test.describe.serial("detalle del cobro", () => {
     const id = await charge(`CAMINO-${randomUUID().slice(0, 8)}`);
     await login(page, user);
     await page.goto(`/pasarelas/cobros/${id}`);
-    const actions = page.getByRole("region", { name: "Acciones" });
-    await expect(actions.getByRole("button", { name: "Revertir depósito" })).toHaveCount(0);
-    await expect(actions.getByRole("button", { name: "Reabrir" })).toHaveCount(0);
+    await expect((await action(page, "Revertir depósito"))).toHaveCount(0);
+    await expect((await action(page, "Reabrir"))).toHaveCount(0);
 
     // La fecha estimada a mano, y de vuelta a la automática.
     const estimated = page.getByTestId("fecha-estimada");
     const automatic = await estimated.locator("time").getAttribute("datetime");
-    await actions.getByRole("button", { name: "Cambiar fecha estimada" }).click();
+    await (await action(page, "Cambiar fecha estimada")).click();
     const dateDialog = page.getByRole("dialog", { name: "Fecha estimada" });
     await dateDialog.getByLabel("Fecha estimada del depósito").fill("2031-01-15");
     await dateDialog.getByRole("button", { name: "Guardar" }).click();
     await expect(dateDialog).toBeHidden();
     await expect(estimated.locator("time")).toHaveAttribute("datetime", "2031-01-15");
     await expect(estimated).toContainText("puesta a mano");
-    await actions.getByRole("button", { name: "Cambiar fecha estimada" }).click();
+    await (await action(page, "Cambiar fecha estimada")).click();
     await expectCleanScreen(page);
     await dateDialog.getByRole("button", { name: "Volver a la automática" }).click();
     await expect(dateDialog).toBeHidden();
@@ -391,33 +423,108 @@ test.describe.serial("detalle del cobro", () => {
     await expect(estimated).not.toContainText("puesta a mano");
 
     // En tránsito → depositado → revertir.
-    await actions.getByRole("button", { name: "Marcar en tránsito" }).click();
+    await (await action(page, "Marcar en tránsito")).click();
     await expect(stamp(page, "En tránsito")).toBeVisible();
-    await expect(actions.getByRole("button", { name: "Marcar en tránsito" })).toHaveCount(0);
-    await actions.getByRole("button", { name: "Marcar depositado" }).click();
+    await expect((await action(page, "Marcar en tránsito"))).toHaveCount(0);
+    await (await action(page, "Marcar depositado")).click();
     const deposit = page.getByRole("dialog", { name: "Marcar depositado" });
-    await deposit.getByLabel("Fecha del depósito").fill("2026-11-02");
+    const today = todayNY(new Date());
+    // Ni antes del cobro ni un día que todavía no llegó.
+    await deposit.getByLabel("Fecha del depósito").fill("2026-01-02");
     await deposit.getByRole("button", { name: "Marcar depositado" }).click();
-    await expect(page.getByTestId("depositado-el").locator("time")).toHaveAttribute("datetime", "2026-11-02");
-    await expect(actions.getByRole("button", { name: "Marcar fallido" })).toHaveCount(0);
-    await actions.getByRole("button", { name: "Revertir depósito" }).click();
+    await expect(deposit.getByText("La fecha del depósito no puede ser anterior a la del cobro.")).toBeVisible();
+    await deposit.getByLabel("Fecha del depósito").fill("2099-01-02");
+    await deposit.getByRole("button", { name: "Marcar depositado" }).click();
+    await expect(deposit.getByText("La fecha del depósito no puede ser futura.")).toBeVisible();
+    await deposit.getByLabel("Fecha del depósito").fill(today);
+    await deposit.getByRole("button", { name: "Marcar depositado" }).click();
+    await expect(page.getByTestId("depositado-el").locator("time")).toHaveAttribute("datetime", today);
+    // Ya depositado, el detalle (y solo el detalle) puede cambiar la fecha del depósito.
+    await expect(await action(page, "Cambiar la fecha del depósito")).toBeVisible();
+    await expect((await action(page, "Marcar fallido"))).toHaveCount(0);
+    await (await action(page, "Revertir depósito")).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Revertir depósito" }).click();
     await expect(page.getByTestId("depositado-el")).toHaveCount(0);
-    await expect(actions.getByRole("button", { name: "Marcar fallido" })).toBeVisible();
+    await expect((await action(page, "Marcar fallido"))).toBeVisible();
 
     // Fallido: todo en cero, y se puede reabrir.
-    await actions.getByRole("button", { name: "Marcar fallido" }).click();
+    await (await action(page, "Marcar fallido")).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Marcar fallido" }).click();
     await expect(stamp(page, "Fallido")).toBeVisible();
     await expect(page.getByTestId("neto")).toHaveText("$0,00");
-    await expect(actions.getByRole("button", { name: "Registrar reembolso" })).toHaveCount(0);
-    await expect(actions.getByRole("button", { name: "Abrir disputa" })).toHaveCount(0);
+    await expect((await action(page, "Registrar reembolso"))).toHaveCount(0);
+    await expect((await action(page, "Abrir disputa"))).toHaveCount(0);
     await expectToast(page, "Cobro marcado como fallido");
     await expectCleanScreen(page);
-    await actions.getByRole("button", { name: "Reabrir" }).click();
+    await (await action(page, "Reabrir")).click();
     await expect(page.getByTestId("neto")).not.toHaveText("$0,00");
     await expect(history(page)).toContainText("Marcado como fallido");
     await expect(history(page)).toContainText("Reabierto");
+  });
+
+  test("un reembolso que se guardó aunque se perdió la respuesta: el diálogo lo dice y reintentarlo no lo suma otra vez", async ({
+    page,
+  }) => {
+    const id = await charge(`CORTE-${randomUUID().slice(0, 8)}`);
+    await login(page, user);
+    await page.goto(`/pasarelas/cobros/${id}`);
+    await (await action(page, "Registrar reembolso")).click();
+    const refund = page.getByRole("dialog", { name: "Reembolso" });
+    await refund.getByLabel("Monto del reembolso").fill("30");
+
+    // El servidor recibe la acción y la guarda, pero la respuesta no vuelve.
+    await page.route("**/*", async (route) => {
+      if (!isAction(route.request())) return route.fallback();
+      await route.fetch();
+      await route.abort();
+    });
+    await refund.getByRole("button", { name: "Registrar reembolso" }).click();
+    const unsure = refund.getByRole("alert");
+    await expect(unsure).toContainText("Puede que se haya guardado");
+    await expect(unsure).toContainText("revisa el cobro antes de repetirlo");
+    await expect(refund.getByLabel("Monto del reembolso")).toHaveValue("30");
+    // La pantalla se refresca detrás: enseña que el reembolso sí quedó.
+    await expect(page.getByTestId("reembolsado")).toHaveText("$30,00");
+    await expectCleanScreen(page);
+
+    // Repetirlo desde el mismo diálogo da conflicto: no se suma otra vez.
+    await page.unroute("**/*");
+    await refund.getByRole("button", { name: "Registrar reembolso" }).click();
+    await expect(refund.getByRole("alert")).toContainText("Este cobro cambió mientras lo editabas");
+    const [saved] = await serverData().getSnapshots(client, [id]);
+    expect(saved?.refunded).toBe("30.00");
+  });
+
+  test("una comisión informada por la pasarela, tras un reembolso parcial, dice que es proporcional", async ({ page }) => {
+    const id = randomUUID();
+    const today = todayNY(new Date());
+    await serverData().createTx(client, {
+      id,
+      companyId: user.basics.companyId,
+      channelId: null,
+      gatewayId: user.basics.gatewayId,
+      extraIds: [],
+      schemeId: null,
+      occurredOn: today,
+      occurredAt: wallTimeToInstant(`${today}T12:00`, ZONE),
+      currency: "USD",
+      grossOriginal: "100.00",
+      reference: `INFORMADA-${randomUUID().slice(0, 8)}`,
+      note: null,
+      feeOverride: "3.20",
+    });
+    await login(page, user);
+    await page.goto(`/pasarelas/cobros/${id}`);
+    await expect(feeLine(page, "Stripe")).toContainText("Informada por la pasarela");
+
+    await serverData().refundTx(client, id, { amount: "40.00", on: today });
+    await page.reload();
+    await expect(feeLine(page, "Stripe")).toContainText("$1,92");
+    await expect(feeLine(page, "Stripe")).not.toContainText("Informada por la pasarela");
+    await expect(feeLine(page, "Stripe")).toContainText(
+      "Proporcional a lo no reembolsado de la comisión informada ($3,20)",
+    );
+    await expectCleanScreen(page);
   });
 
   test("editar: el monto y la nota se guardan y el desglose se vuelve a calcular", async ({ page }) => {
@@ -426,6 +533,8 @@ test.describe.serial("detalle del cobro", () => {
     await login(page, user);
     await page.goto(`/pasarelas/cobros/${id}`);
     await expect(page.getByTestId("neto")).toHaveText("$96,80");
+    // En un cobro por caer, la principal es «Marcar depositado»: «Editar» va en «Más acciones».
+    await openMoreActions(page);
     await page.getByRole("region", { name: "Acciones" }).getByRole("link", { name: "Editar" }).click();
     await expect(page).toHaveURL(new RegExp(`/pasarelas/cobros/${id}/editar$`));
     await expect(page.getByRole("heading", { level: 1, name: "Editar cobro" })).toBeVisible();

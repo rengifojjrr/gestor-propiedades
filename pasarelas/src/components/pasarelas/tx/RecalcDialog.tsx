@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import {
   Alert,
@@ -19,6 +20,7 @@ import { isISODate } from "@/lib/pasarelas/dates";
 import { isMoney } from "@/lib/pasarelas/decimal";
 import type { Currency, DiffRow } from "@/lib/pasarelas/types";
 import { applyRecalc, previewRecalc } from "@/server/pasarelas/actions/transactions";
+import { callAction } from "../callAction";
 import { batchDone, cobros } from "./plural";
 
 type Mode = "hoy" | "fecha_del_cobro";
@@ -64,6 +66,7 @@ export function RecalcDialog({ transactions, open, onClose, onDone }: RecalcDial
 }
 
 function RecalcForm({ transactions, onClose, onDone }: Omit<RecalcDialogProps, "open">) {
+  const router = useRouter();
   const ids = transactions.map((tx) => tx.id);
   const currencies = new Map(transactions.map((tx) => [tx.id, tx.currency]));
   /** La vista previa solo trae cobros de los que se le pasaron: todos tienen su moneda. */
@@ -87,7 +90,12 @@ function RecalcForm({ transactions, onClose, onDone }: Omit<RecalcDialogProps, "
 
   function showPreview() {
     startTransition(async () => {
-      const result = await previewRecalc({ ids, mode });
+      // Solo lee: si no vuelve, no hay nada que revisar; basta con volver a pedirla.
+      const result = await callAction(
+        () => previewRecalc({ ids, mode }),
+        () => undefined,
+        "No se pudo traer el antes y el después por un fallo de conexión. Inténtalo de nuevo.",
+      );
       setError(result.ok ? null : result.error);
       setPreview(result.ok ? result.data : null);
     });
@@ -95,7 +103,7 @@ function RecalcForm({ transactions, onClose, onDone }: Omit<RecalcDialogProps, "
 
   function apply(changing: string[]) {
     startTransition(async () => {
-      const result = await applyRecalc({ ids: changing, mode });
+      const result = await callAction(() => applyRecalc({ ids: changing, mode }), router.refresh);
       if (!result.ok) {
         setError(result.error);
         return;
@@ -197,23 +205,32 @@ function Value({ row, value, currency }: { row: DiffRow; value: string; currency
 
 /** El antes y el después de un cambio, fila por fila. También lo usan el reembolso y la disputa del detalle. */
 export function ChangesTable({ label, changes, currency }: { label: string; changes: DiffRow[]; currency: Currency }) {
+  // Dentro de un diálogo del celular queda poco ancho: celdas más estrechas y el concepto se parte en líneas,
+  // para que las dos columnas de cifras quepan sin desplazar.
+  const cell = "px-2 sm:px-3";
   return (
-    <Table label={label}>
+    <Table label={label} className="text-sm sm:text-base">
       <THead>
         <Tr>
-          <Th>Concepto</Th>
-          <Th numeric>Antes</Th>
-          <Th numeric>Después</Th>
+          <Th className={cell}>Concepto</Th>
+          <Th numeric className={cell}>
+            Antes
+          </Th>
+          <Th numeric className={cell}>
+            Después
+          </Th>
         </Tr>
       </THead>
       <TBody>
         {changes.map((row) => (
           <Tr key={row.key}>
-            <Th scope="row">{row.label}</Th>
-            <Td numeric>
+            <Th scope="row" className={`${cell} break-words`}>
+              {row.label}
+            </Th>
+            <Td numeric className={cell}>
               <Value row={row} value={row.before} currency={currency} />
             </Td>
-            <Td numeric>
+            <Td numeric className={cell}>
               <Value row={row} value={row.after} currency={currency} />
             </Td>
           </Tr>

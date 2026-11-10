@@ -10,6 +10,7 @@ import { defaultExtraIds } from "@/lib/pasarelas/rules";
 import type { PayConfig, TxSnapshot } from "@/lib/pasarelas/types";
 import { PAY_STATE_TEXT } from "@/lib/pasarelas/write";
 import { editTransaction } from "@/server/pasarelas/actions/transactions";
+import { callAction } from "../callAction";
 
 const NOTE_MAX = 280;
 const FIELDS_TEXT = "Revisa los campos marcados.";
@@ -31,9 +32,14 @@ const sameIds = (a: readonly string[], b: readonly string[]): boolean =>
  * congeladas. Al cambiar de pasarela van también sus opciones; al cambiar de empresa, el canal se vacía (es de
  * otra). La cuenta destino, si no se toca, la vuelve a elegir el motor cuando cambian la empresa o la pasarela; la
  * fecha estimada se cambia aparte, desde el detalle.
+ *
+ * Manda la versión del cobro que se abrió (`expectedUpdatedAt`): si otra pestaña lo cambió entretanto, el servidor
+ * da conflicto y no se pisa lo de la otra.
  */
-export function EditForm({ cfg, tx, occurredLocal: initialLocal }: EditFormProps) {
+export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: EditFormProps) {
   const router = useRouter();
+  // El cobro tal como se abrió: si la pantalla se refresca detrás (tras un fallo de red), se compara con este.
+  const [tx] = useState(current);
   const frozenExtras = tx.breakdown.rules.extras.map((option) => option.id);
   // Lo inactivo no se ofrece, salvo lo que el cobro ya usa.
   const companies = cfg.companies.filter((company) => company.active || company.id === tx.companyId);
@@ -109,7 +115,10 @@ export function EditForm({ cfg, tx, occurredLocal: initialLocal }: EditFormProps
       return;
     }
     startTransition(async () => {
-      const result = await editTransaction({ id: tx.id, ...changed });
+      const result = await callAction(
+        () => editTransaction({ id: tx.id, expectedUpdatedAt: tx.updatedAt, ...changed }),
+        router.refresh,
+      );
       if (!result.ok) {
         setError(result.error);
         setFieldErrors(

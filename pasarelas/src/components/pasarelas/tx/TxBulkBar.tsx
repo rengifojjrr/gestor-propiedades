@@ -1,9 +1,11 @@
 "use client";
 
-import { createContext, use, useState, useTransition, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { createContext, use, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { Alert, Button, Checkbox, ConfirmDialog, notify } from "@/components/ui";
 import type { Currency, ISODate } from "@/lib/pasarelas/types";
 import { markInTransit, trashTransactions } from "@/server/pasarelas/actions/transactions";
+import { callAction } from "../callAction";
 import { DepositDialog } from "./DepositDialog";
 import { batchDone, cobros } from "./plural";
 import { RecalcDialog } from "./RecalcDialog";
@@ -79,22 +81,38 @@ export type TxBulkBarProps = {
   transactions: { id: string; currency: Currency }[];
   /** Hoy en Nueva York: la fecha que propone «Marcar depositado». */
   today: ISODate;
+  /**
+   * El id de lo que recibe el foco cuando, tras una acción que sale bien, la barra desaparece (con ella se va el
+   * botón que se pulsó): el contador de la lista, con `tabIndex={-1}`.
+   */
+  focusAfterId: string;
 };
 
 /**
  * Las acciones sobre los cobros elegidos: marcar en tránsito, marcar depositado (con fecha), recalcular (con el
- * antes y el después) y enviar a la papelera. Solo aparece cuando hay alguno elegido; tras una acción que sale
- * bien, la selección se vacía.
+ * antes y el después) y enviar a la papelera. «Marcar depositado» solo marca lo que está por caer: lo ya depositado
+ * conserva su fecha. Solo aparece cuando hay alguno elegido; tras una acción que sale bien, la selección se vacía y
+ * el foco pasa al contador de la lista (`focusAfterId`).
  */
-export function TxBulkBar({ transactions, today }: TxBulkBarProps) {
+export function TxBulkBar({ transactions, today, focusAfterId }: TxBulkBarProps) {
+  const router = useRouter();
   const { selected, clear } = useTxSelection();
   const [dialog, setDialog] = useState<Dialogs>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   // Mientras un diálogo está abierto, la selección que usa es la del momento en que se abrió.
   const [ids, setIds] = useState<string[]>([]);
+  // Tras una acción que vació la selección: cuando la barra ya no está, el foco va al contador.
+  const refocus = useRef(false);
+  const hidden = selected.length === 0 && dialog === null;
 
-  if (selected.length === 0 && dialog === null) return null;
+  useEffect(() => {
+    if (!refocus.current || !hidden) return;
+    refocus.current = false;
+    document.getElementById(focusAfterId)?.focus();
+  });
+
+  if (hidden) return null;
 
   const open = (which: Exclude<Dialogs, null>) => {
     setError(null);
@@ -105,25 +123,27 @@ export function TxBulkBar({ transactions, today }: TxBulkBarProps) {
   const done = () => {
     setDialog(null);
     clear();
+    refocus.current = true;
   };
 
   function transit() {
     setError(null);
     const chosen = selected;
     startTransition(async () => {
-      const result = await markInTransit({ ids: chosen });
+      const result = await callAction(() => markInTransit({ ids: chosen }), router.refresh);
       if (!result.ok) {
         setError(result.error);
         return;
       }
       notify.success(batchDone(result.data.count, chosen.length, { one: "marcado en tránsito", many: "marcados en tránsito" }));
       clear();
+      refocus.current = true;
     });
   }
 
   function trash() {
     startTransition(async () => {
-      const result = await trashTransactions({ ids });
+      const result = await callAction(() => trashTransactions({ ids }), router.refresh);
       if (!result.ok) {
         setDialog(null);
         setError(result.error);
@@ -172,7 +192,15 @@ export function TxBulkBar({ transactions, today }: TxBulkBarProps) {
         </Alert>
       ) : null}
 
-      <DepositDialog ids={ids} open={dialog === "deposit"} onClose={close} onDone={done} defaultDate={today} />
+      <DepositDialog
+        ids={ids}
+        open={dialog === "deposit"}
+        onClose={close}
+        onDone={done}
+        defaultDate={today}
+        today={today}
+        onlyPending
+      />
       <RecalcDialog transactions={chosenTransactions} open={dialog === "recalc"} onClose={close} onDone={done} />
       <ConfirmDialog
         open={dialog === "trash"}

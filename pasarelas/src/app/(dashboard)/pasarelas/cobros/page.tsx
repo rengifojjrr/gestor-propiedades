@@ -1,4 +1,4 @@
-import { ReceiptText } from "lucide-react";
+import { ChevronDown, ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -20,6 +20,8 @@ export const metadata: Metadata = { title: "Cobros" };
 const PATH = "/pasarelas/cobros";
 const EXPORT_PATH = "/pasarelas/cobros/exportar";
 const PAGE_SIZE = 50;
+/** El contador de la lista: recibe el foco tras una acción en lote (la barra desaparece con el botón pulsado). */
+const COUNTER_ID = "cobros-contador";
 
 /** Los filtros que van en «Más filtros». */
 const MORE_FILTERS = [
@@ -97,8 +99,33 @@ function withNames(cfg: PayConfig) {
 }
 
 /**
- * Cobros: búsqueda, filtros, orden y páginas de 50, todo en la URL; los totales de TODO el filtro por moneda;
- * la selección con sus acciones en lote; y el CSV del filtro. Tabla desde 768 px, tarjetas en el celular.
+ * «Exportar CSV»: un menú plegable con los dos formatos de TODO el filtro (no solo la página). `download`: el
+ * navegador guarda el archivo. Sin `prefetch`: no se arma el CSV sin que nadie lo pida. «En español»: punto y coma y
+ * coma decimal; «estándar»: coma y punto.
+ */
+function ExportMenu({ href }: { href: (formato: string | null) => string }) {
+  return (
+    <details className="group">
+      <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-control border border-rule-strong bg-surface px-4 py-2 font-semibold hover:bg-sunken [&::-webkit-details-marker]:hidden">
+        Exportar CSV
+        <ChevronDown aria-hidden className="size-5 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <ButtonLink href={href(null)} download prefetch={false}>
+          CSV en español
+        </ButtonLink>
+        <ButtonLink href={href("estandar")} download prefetch={false}>
+          CSV estándar
+        </ButtonLink>
+      </div>
+    </details>
+  );
+}
+
+/**
+ * Cobros: búsqueda, filtros, orden y páginas de 50, todo en la URL; los totales de TODO el filtro por moneda
+ * (plegados, con una línea de resumen); la selección con sus acciones en lote; y el CSV del filtro, en un menú.
+ * Tabla desde 768 px, tarjetas en el celular.
  */
 export default async function CobrosPage({ searchParams }: PageProps<"/pasarelas/cobros">) {
   await requireSession();
@@ -118,21 +145,7 @@ export default async function CobrosPage({ searchParams }: PageProps<"/pasarelas
 
   return (
     <>
-      <PageHeader
-        title="Cobros"
-        actions={
-          <>
-            {/* Todo el filtro, no solo la página. `download`: el navegador guarda el archivo. Sin `prefetch`: no se
-                arma el CSV sin que nadie lo pida. «En español»: punto y coma y coma decimal; «estándar»: coma y punto. */}
-            <ButtonLink href={exportHref(null)} download prefetch={false}>
-              CSV en español
-            </ButtonLink>
-            <ButtonLink href={exportHref("estandar")} download prefetch={false}>
-              CSV estándar
-            </ButtonLink>
-          </>
-        }
-      />
+      <PageHeader title="Cobros" actions={<ExportMenu href={exportHref} />} />
       <div className="flex flex-col gap-5">
         <TxFilters
           {...filterOptions(cfg, filters)}
@@ -172,12 +185,16 @@ export default async function CobrosPage({ searchParams }: PageProps<"/pasarelas
           />
         ) : (
           <div className="flex flex-col gap-3">
-            <p className="text-ink-soft">
+            <p id={COUNTER_ID} tabIndex={-1} className="text-ink-soft">
               Cobros {first}–{first + rows.length - 1} de {list.total}
             </p>
             {/* Con otros filtros u otra página, la selección empieza de cero. */}
             <TxSelectionProvider key={query.toString()} ids={rows.map((tx) => tx.id)}>
-              <TxBulkBar transactions={rows.map(({ id, currency }) => ({ id, currency }))} today={today} />
+              <TxBulkBar
+                transactions={rows.map(({ id, currency }) => ({ id, currency }))}
+                today={today}
+                focusAfterId={COUNTER_ID}
+              />
               <div className="md:hidden">
                 <TxCards rows={rows} today={today} />
               </div>

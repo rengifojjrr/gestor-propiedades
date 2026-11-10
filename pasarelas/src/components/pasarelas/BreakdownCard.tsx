@@ -9,9 +9,22 @@ import type { Breakdown, BreakdownLine } from "@/lib/pasarelas/types";
  * «Registrar cobro» que para el desglose congelado del detalle. Sin estado: se puede usar desde el servidor.
  */
 
-/** Cómo se calculó una línea: «2,9 % + $0,30 de $100,00». Lo informado o fijo no lleva cuenta. */
-function LineRule({ line, currency }: { line: BreakdownLine; currency: string }) {
-  if (line.baseKind === "informado") return <>Informada por la pasarela</>;
+/**
+ * Cómo se calculó una línea: «2,9 % + $0,30 de $100,00». Lo fijo no lleva cuenta. La comisión informada por la
+ * pasarela se dice tal cual; con un reembolso ya no es la informada sino su parte de lo no reembolsado, y se dice
+ * de cuánto era la informada.
+ */
+function LineRule({ line, breakdown }: { line: BreakdownLine; breakdown: Breakdown }) {
+  const { currency } = breakdown;
+  if (line.baseKind === "informado") {
+    const informed = breakdown.rules.gateway.feeOverride;
+    if (isZero(breakdown.state.refunded) || informed === undefined) return <>Informada por la pasarela</>;
+    return (
+      <>
+        Proporcional a lo no reembolsado de la comisión informada (<Money value={informed} currency={currency} />)
+      </>
+    );
+  }
   if (line.baseKind === "fijo") return null;
   const hasPct = !isZero(line.pct);
   const hasFixed = !isZero(line.fixed);
@@ -71,7 +84,7 @@ export function BreakdownCard({ breakdown }: { breakdown: Breakdown }) {
                 <span className="flex min-w-0 flex-col">
                   <span>{line.name}</span>
                   <span className="text-sm text-ink-soft">
-                    <LineRule line={line} currency={currency} />
+                    <LineRule line={line} breakdown={breakdown} />
                   </span>
                 </span>
                 <Money value={line.amount} currency={currency} />

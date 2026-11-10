@@ -45,7 +45,7 @@ export function allowedActions(tx: AllowedInput): TxAction[] {
     // Si ya es la automática, volver a ella no cambia nada.
     fecha_automatica: tx.estimatedIsManual,
     en_transito: tx.status === "registrado",
-    // Ya depositado, cambia la fecha del depósito.
+    // Ya depositado, cambia la fecha del depósito (solo aquí: el lote salta lo ya depositado).
     depositado: live,
     revertir_deposito: tx.status === "depositado",
     // Queda algo por reembolsar.
@@ -61,4 +61,18 @@ export function allowedActions(tx: AllowedInput): TxAction[] {
     restaurar: false,
   };
   return TX_ACTIONS.filter((action) => can[action]);
+}
+
+/**
+ * La acción que el detalle deja a la vista; las demás van en «Más acciones». Es la que más se espera en ese estado:
+ * restaurar lo que está en la papelera, reabrir un fallido, resolver una disputa abierta, marcar depositado lo que
+ * todavía no lo está y, si no, editar (que todo cobro fuera de la papelera admite).
+ */
+export function primaryAction(tx: AllowedInput): TxAction {
+  const can = allowedActions(tx);
+  if (can.includes("restaurar")) return "restaurar";
+  if (can.includes("reabrir")) return "reabrir";
+  if (can.includes("resolver_disputa")) return "resolver_disputa";
+  if (can.includes("depositado") && tx.status !== "depositado") return "depositado";
+  return "editar";
 }

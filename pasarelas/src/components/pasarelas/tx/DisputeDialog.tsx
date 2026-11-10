@@ -1,11 +1,13 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useId, useState, useTransition, type FormEvent } from "react";
 import { Alert, Button, Dialog, Field, Input, Money, notify } from "@/components/ui";
 import { isZero } from "@/lib/pasarelas/money";
 import type { ISODate, TxSnapshot } from "@/lib/pasarelas/types";
 import { planDispute } from "@/lib/pasarelas/write";
 import { disputeTransaction } from "@/server/pasarelas/actions/transactions";
+import { callAction } from "../callAction";
 import { previewChange } from "./preview";
 import { ChangesTable } from "./RecalcDialog";
 
@@ -35,7 +37,7 @@ export type DisputeDialogProps = {
 /**
  * Abrir una disputa o resolverla. El costo es el de la pasarela, congelado en el desglose del cobro: abrirla lo
  * suma, perderla lo deja (y reembolsa todo) y ganarla o anularla lo revierte. Antes de confirmar se ve el antes y
- * el después.
+ * el después. Como el reembolso, se queda con el cobro que vio la persona al abrirlo y manda su versión.
  */
 export function DisputeDialog({ tx, mode, open, onClose, today }: DisputeDialogProps) {
   const { disputeFee, name } = tx.breakdown.rules.gateway;
@@ -60,7 +62,10 @@ export function DisputeDialog({ tx, mode, open, onClose, today }: DisputeDialogP
   );
 }
 
-function DisputeForm({ tx, mode, onClose, today }: Omit<DisputeDialogProps, "open">) {
+function DisputeForm({ tx: current, mode, onClose, today }: Omit<DisputeDialogProps, "open">) {
+  const router = useRouter();
+  // Lo que vio la persona al abrir: aunque la pantalla se refresque detrás, la vista previa y la versión son esas.
+  const [tx] = useState(current);
   const name = useId();
   const [outcome, setOutcome] = useState<Outcome>("ganar");
   const [on, setOn] = useState(today);
@@ -77,7 +82,10 @@ function DisputeForm({ tx, mode, onClose, today }: Omit<DisputeDialogProps, "ope
       return;
     }
     startTransition(async () => {
-      const result = await disputeTransaction({ id: tx.id, action, on });
+      const result = await callAction(
+        () => disputeTransaction({ id: tx.id, expectedUpdatedAt: tx.updatedAt, action, on }),
+        router.refresh,
+      );
       if (!result.ok) {
         setError(result.error);
         setDateError(result.fieldErrors?.on?.[0] ?? null);

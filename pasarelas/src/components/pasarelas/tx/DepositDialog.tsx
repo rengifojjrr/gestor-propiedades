@@ -1,10 +1,15 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 import { Alert, Button, Dialog, Field, Input, notify } from "@/components/ui";
 import type { ISODate } from "@/lib/pasarelas/types";
+import { PAY_STATE_TEXT } from "@/lib/pasarelas/write";
 import { markDeposited } from "@/server/pasarelas/actions/transactions";
-import { batchDone, cobros } from "./plural";
+import { callAction } from "../callAction";
+import { cobros, depositDone } from "./plural";
+
+const FUTURE_TEXT = "La fecha del depósito no puede ser futura.";
 
 export type DepositDialogProps = {
   /** Los cobros que se marcan (de 1 a 500). */
@@ -14,29 +19,56 @@ export type DepositDialogProps = {
   onClose: () => void;
   /** La fecha que viene puesta: hoy, o la estimada de un grupo del Resumen. */
   defaultDate: ISODate;
+  /** Hoy en Nueva York: el depósito no puede ser de un día que todavía no llegó. */
+  today: ISODate;
+  /**
+   * El lote (la barra de Cobros, los próximos depósitos del Resumen): solo se marca lo que está por caer, y lo ya
+   * depositado conserva su fecha real. El detalle de un cobro manda `false`: ahí se puede cambiar esa fecha.
+   */
+  onlyPending: boolean;
+  /** La fecha del cobro, si es uno solo: el depósito no puede ser anterior. */
+  earliest?: ISODate;
+  /** Por defecto «Marcar depositado»; el detalle de un cobro ya depositado dice «Cambiar la fecha del depósito». */
+  title?: string;
   /** Tras marcar, con cuántos cambiaron (antes de `onClose`). */
   onDone?: (count: number) => void;
 };
 
 /**
- * «Marcar depositado» para uno o varios cobros: pide la fecha real del depósito y llama a `markDeposited`. Los que
- * no admiten el cambio (fallidos) se saltan y el aviso lo dice. Un cobro ya depositado toma la fecha nueva.
+ * «Marcar depositado» para uno o varios cobros: pide la fecha real del depósito y llama a `markDeposited`. El aviso
+ * dice cuántos se marcaron y, de los que se saltaron, por qué: en el lote, los ya depositados (que conservan su
+ * fecha) y los que no están por caer; siempre, los que no admiten el cambio (fallidos, en la papelera).
  */
-export function DepositDialog({ ids, open, onClose, defaultDate, onDone }: DepositDialogProps) {
+export function DepositDialog({ ids, open, onClose, title = "Marcar depositado", ...form }: DepositDialogProps) {
+  const many = new Set(ids).size;
   return (
     <Dialog
       open={open}
       onClose={onClose}
-      title="Marcar depositado"
-      description={`${cobros(ids.length)}. Elige el día en que el dinero llegó a la cuenta.`}
+      title={title}
+      description={
+        form.onlyPending
+          ? `${cobros(many)}. Solo se marcan los que están por caer: los ya depositados conservan su fecha.`
+          : "Elige el día en que el dinero llegó a la cuenta."
+      }
     >
       {/* Solo existe mientras está abierto: cada vez empieza con la fecha propuesta y sin errores. */}
-      <DepositForm ids={ids} defaultDate={defaultDate} onClose={onClose} onDone={onDone} />
+      <DepositForm ids={ids} onClose={onClose} title={title} {...form} />
     </Dialog>
   );
 }
 
-function DepositForm({ ids, defaultDate, onClose, onDone }: Omit<DepositDialogProps, "open">) {
+function DepositForm({
+  ids,
+  defaultDate,
+  today,
+  onlyPending,
+  earliest,
+  title,
+  onClose,
+  onDone,
+}: Omit<DepositDialogProps, "open">) {
+  const router = useRouter();
   const [date, setDate] = useState(defaultDate);
   const [error, setError] = useState<string | null>(null);
   const [dateError, setDateError] = useState<string | null>(null);
@@ -44,23 +76,27 @@ function DepositForm({ ids, defaultDate, onClose, onDone }: Omit<DepositDialogPr
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (date === "") {
-      setDateError("Elige la fecha del depósito.");
+    const problem =
+      date === ""
+        ? "Elige la fecha del depósito."
+        : date > today
+          ? FUTURE_TEXT
+          : earliest !== undefined && date < earliest
+            ? PAY_STATE_TEXT.deposito_antes_del_cobro
+            : null;
+    if (problem !== null) {
+      setDateError(problem);
       return;
     }
+    setError(null);
     startTransition(async () => {
-      const result = await markDeposited({ ids, on: date });
+      const result = await callAction(() => markDeposited({ ids, on: date, onlyPending }), router.refresh);
       if (!result.ok) {
         setError(result.error);
         setDateError(result.fieldErrors?.on?.[0] ?? null);
         return;
       }
-      notify.success(
-        batchDone(result.data.count, new Set(ids).size, {
-          one: "marcado como depositado",
-          many: "marcados como depositados",
-        }),
-      );
+      notify.success(depositDone(result.data));
       onDone?.(result.data.count);
       onClose();
     });
@@ -72,6 +108,8 @@ function DepositForm({ ids, defaultDate, onClose, onDone }: Omit<DepositDialogPr
         <Input
           type="date"
           value={date}
+          min={earliest}
+          max={today}
           onChange={(event) => {
             setDate(event.currentTarget.value);
             setDateError(null);
@@ -89,7 +127,7 @@ function DepositForm({ ids, defaultDate, onClose, onDone }: Omit<DepositDialogPr
           Cancelar
         </Button>
         <Button type="submit" variant="primary" disabled={pending}>
-          Marcar depositado
+          {title}
         </Button>
       </div>
     </form>

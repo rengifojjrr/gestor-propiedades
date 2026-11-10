@@ -19,7 +19,7 @@ import {
   planTrash,
 } from "@/lib/pasarelas/write";
 import type { TxFields, TxSnapshot, TxWrite } from "@/lib/pasarelas/types";
-import { TX_ACTIONS, allowedActions, type TxAction } from "./allowed";
+import { TX_ACTIONS, allowedActions, primaryAction, type TxAction } from "./allowed";
 
 /*
  * El ayudante decide qué acciones enseña el detalle de un cobro. Tiene que decir lo mismo que el motor: para cada
@@ -234,5 +234,26 @@ describe("allowedActions, caso por caso", () => {
     const allowed = allowedActions(lost);
     expect(allowed).not.toContain("reembolso");
     expect(allowed).not.toContain("corregir_reembolso");
+  });
+});
+
+describe("primaryAction: la que queda a la vista en el detalle", () => {
+  test.each<[string, TxAction]>([
+    ["registrado", "depositado"],
+    ["en tránsito", "depositado"],
+    ["con reembolso parcial", "depositado"],
+    ["depositado", "editar"],
+    ["con la disputa abierta", "resolver_disputa"],
+    ["depositado con la disputa abierta", "resolver_disputa"],
+    ["fallido", "reabrir"],
+    ["en la papelera", "restaurar"],
+  ])("%s → %s", (name, action) => {
+    const tx = STATES[name] as TxSnapshot;
+    expect(primaryAction(tx)).toBe(action);
+    expect(allowedActions(tx)).toContain(action);
+  });
+
+  test("en todo estado hay una, y es de las que admite", () => {
+    for (const tx of Object.values(STATES)) expect(allowedActions(tx)).toContain(primaryAction(tx));
   });
 });

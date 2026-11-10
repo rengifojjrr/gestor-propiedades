@@ -27,8 +27,8 @@ export type UpcomingDepositsProps = {
 
 /**
  * Lo que cae en los próximos días, por fecha estimada y cuenta destino, con lo atrasado arriba y en ámbar. «Marcar
- * depositado» marca TODO lo de esa fecha y esa cuenta, con la fecha propuesta: la estimada si ya pasó, hoy si no
- * (no se marca depositado algo con una fecha que todavía no llegó).
+ * depositado» marca TODO lo de esa fecha y esa cuenta que siga por caer, con la fecha propuesta: la estimada si ya
+ * pasó, hoy si no (no se marca depositado algo con una fecha que todavía no llegó).
  */
 export function UpcomingDeposits({ groups, currency, today, window }: UpcomingDepositsProps) {
   const headingId = useId();
@@ -62,6 +62,9 @@ export function UpcomingDeposits({ groups, currency, today, window }: UpcomingDe
         open={open !== null}
         onClose={() => setOpen(null)}
         defaultDate={open !== null && open.date < today ? open.date : today}
+        today={today}
+        // El grupo se armó al pintar el Resumen: lo que entretanto se depositó (en otra pestaña) se salta.
+        onlyPending
       />
     </section>
   );
