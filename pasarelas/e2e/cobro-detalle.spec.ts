@@ -43,6 +43,14 @@ function png(width: number, height: number): Buffer {
 }
 
 async function expectCleanScreen(page: Page): Promise<void> {
+  // Un aviso a medio entrar, a medio pasar detrás del siguiente o a medio irse tiene el texto translúcido y axe lo
+  // mide como falta de contraste: se espera a que los avisos queden quietos.
+  await page.waitForFunction(() =>
+    document.getAnimations().every((animation) => {
+      const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
+      return animation.playState !== "running" || !(target instanceof Element && target.closest("[data-sonner-toaster]"));
+    }),
+  );
   await expectNoHorizontalOverflow(page);
   await expectNoSeriousAxe(page);
 }
@@ -404,6 +412,7 @@ test.describe.serial("detalle del cobro", () => {
     await expect(page.getByTestId("neto")).toHaveText("$0,00");
     await expect(actions.getByRole("button", { name: "Registrar reembolso" })).toHaveCount(0);
     await expect(actions.getByRole("button", { name: "Abrir disputa" })).toHaveCount(0);
+    await expectToast(page, "Cobro marcado como fallido");
     await expectCleanScreen(page);
     await actions.getByRole("button", { name: "Reabrir" }).click();
     await expect(page.getByTestId("neto")).not.toHaveText("$0,00");
