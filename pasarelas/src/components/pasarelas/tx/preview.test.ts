@@ -39,6 +39,7 @@ function savedE1(): TxSnapshot {
     status: "registrado",
     disputeState: null,
     estimatedDepositOn: "2026-11-13",
+    estimatedDepositFrom: null,
     depositedOn: null,
     receiptsCount: 0,
     schemeId: DEMO.schemeId,

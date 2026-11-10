@@ -58,7 +58,10 @@ export type CurrencySummary = {
 
 /** Lo que cae (o debió caer) un mismo día en una misma cuenta y moneda. */
 export type DepositGroup = {
+  /** El día en que cuenta: la fecha estimada (la más tardía de la ventana) de sus cobros. */
   date: ISODate;
+  /** Desde cuándo puede caer: la más temprana de las ventanas de sus cobros (`date` si todas son de un día). */
+  from: ISODate;
   bankAccountId: string | null;
   currency: Currency;
   net: Money;
@@ -243,6 +246,9 @@ export function lagStats(
  * tarjeta «Por caer») y con fecha estimada. Salen por fecha ascendente, así que lo atrasado va primero; a igual
  * fecha, por moneda y luego por cuenta («sin cuenta» al final). `ids` guarda los cobros de cada grupo en el orden
  * en que llegaron.
+ *
+ * La fecha estimada es la más tardía de la ventana de cada cobro: ahí cuenta, y de ella depende lo atrasado. `from`
+ * del grupo es la más temprana de las ventanas de sus cobros.
  */
 export function upcomingDeposits(rows: readonly LeanTx[], today: ISODate, days = 14): DepositGroup[] {
   const lastDay = addDays(today, days - 1);
@@ -253,14 +259,16 @@ export function upcomingDeposits(rows: readonly LeanTx[], today: ISODate, days =
     const overdue = isOverdue(row, today);
     if (!overdue && date > lastDay) continue;
     const key = JSON.stringify([date, row.bankAccountId, row.currency]);
+    const from = row.estimatedDepositFrom ?? date;
     const group = groups.get(key);
     if (group) {
       group.net = add(group.net, row.net);
       group.count += 1;
       group.ids.push(row.id);
+      if (from < group.from) group.from = from;
     } else {
       const { bankAccountId, currency } = row;
-      groups.set(key, { date, bankAccountId, currency, net: add(row.net), count: 1, ids: [row.id], overdue });
+      groups.set(key, { date, from, bankAccountId, currency, net: add(row.net), count: 1, ids: [row.id], overdue });
     }
   }
   return [...groups.values()].sort(

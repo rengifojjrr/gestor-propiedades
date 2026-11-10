@@ -44,12 +44,13 @@ export type Db = SupabaseClient<Database>;
 
 export const COMPANY_COLUMNS = "id, name, currency, default_scheme_id, active";
 export const CHANNEL_COLUMNS = "id, company_id, name, platform_fee_pct::text, platform_fee_fixed::text, active";
-export const GATEWAY_COLUMNS = "id, name, payout_days, payout_day_type, refunds_return_fee, dispute_fee::text, active";
+export const GATEWAY_COLUMNS =
+  "id, name, payout_days, payout_days_max, payout_day_type, refunds_return_fee, dispute_fee::text, active";
 export const FEE_VERSION_COLUMNS = "id, gateway_id, pct::text, fixed::text, effective_from, note";
 export const EXTRA_COLUMNS =
-  "id, gateway_id, name, pct::text, fixed::text, base, default_on, payout_days_override, active, sort, kind";
+  "id, gateway_id, name, pct::text, fixed::text, base, default_on, payout_days_override, payout_days_override_max, active, sort, kind";
 export const COMPANY_GATEWAY_COLUMNS =
-  "id, company_id, gateway_id, bank_account_id, payout_days_override, default_extra_ids, active";
+  "id, company_id, gateway_id, bank_account_id, payout_days_override, payout_days_override_max, default_extra_ids, active";
 export const BANK_ACCOUNT_COLUMNS = "id, alias, last4, currency, active";
 export const BENEFICIARY_COLUMNS = "id, name, kind, active";
 export const SCHEME_COLUMNS = "id, name, active";
@@ -61,7 +62,7 @@ export const SETTLEMENT_COLUMNS =
 
 /** La fila mínima de un cobro: lo que hace falta para totales, resumen y estados. */
 export const LEAN_TX_COLUMNS =
-  "id, occurred_on, company_id, channel_id, gateway_id, bank_account_id, currency, gross_original::text, refunded_amount::text, gross_amount::text, fees_total::text, net_amount::text, status, dispute_state, estimated_deposit_on, deposited_on, receipts_count";
+  "id, occurred_on, company_id, channel_id, gateway_id, bank_account_id, currency, gross_original::text, refunded_amount::text, gross_amount::text, fees_total::text, net_amount::text, status, dispute_state, estimated_deposit_on, estimated_deposit_from, deposited_on, receipts_count";
 /** Lo que pinta la lista de cobros: la fila mínima más sus textos y sus fechas. Sin el desglose. */
 export const TX_LIST_COLUMNS =
   `${LEAN_TX_COLUMNS}, occurred_at, scheme_id, reference, note, estimated_is_manual, dispute_opened_on, dispute_closed_on, deleted_at, updated_at` as const;
@@ -93,6 +94,7 @@ export type GatewayRow = {
   id: string;
   name: string;
   payout_days: number;
+  payout_days_max: number | null;
   payout_day_type: string;
   refunds_return_fee: boolean;
   dispute_fee: string;
@@ -115,6 +117,7 @@ export type ExtraRow = {
   base: string;
   default_on: boolean;
   payout_days_override: number | null;
+  payout_days_override_max: number | null;
   active: boolean;
   sort: number;
   kind: string;
@@ -125,6 +128,7 @@ export type CompanyGatewayRow = {
   gateway_id: string;
   bank_account_id: string | null;
   payout_days_override: number | null;
+  payout_days_override_max: number | null;
   default_extra_ids: string[] | null;
   active: boolean;
 };
@@ -170,6 +174,7 @@ export type LeanTxRow = {
   status: string;
   dispute_state: string | null;
   estimated_deposit_on: string | null;
+  estimated_deposit_from: string | null;
   deposited_on: string | null;
   receipts_count: number;
 };
@@ -340,6 +345,7 @@ export function toExtraCfg(row: ExtraRow): ExtraCfg {
     fixed: money(row.fixed),
     base: known(EXTRA_BASES, row.base, "Base de la opción desconocida"),
     payoutDaysOverride: row.payout_days_override,
+    payoutDaysOverrideMax: row.payout_days_override_max,
     defaultOn: row.default_on,
     active: row.active,
     sort: row.sort,
@@ -357,6 +363,7 @@ export function toGatewayCfg(
     id: row.id,
     name: row.name,
     payoutDays: row.payout_days,
+    payoutDaysMax: row.payout_days_max,
     payoutDayType: known(DAY_TYPES, row.payout_day_type, "Tipo de días desconocido"),
     refundsReturnFee: row.refunds_return_fee,
     disputeFee: money(row.dispute_fee),
@@ -373,6 +380,7 @@ export function toCompanyGatewayCfg(row: CompanyGatewayRow): CompanyGatewayCfg {
     gatewayId: row.gateway_id,
     bankAccountId: row.bank_account_id,
     payoutDaysOverride: row.payout_days_override,
+    payoutDaysOverrideMax: row.payout_days_override_max,
     defaultExtraIds: row.default_extra_ids,
     active: row.active,
   };
@@ -470,6 +478,7 @@ export function toLeanTx(row: LeanTxRow): LeanTx {
     disputeState:
       row.dispute_state === null ? null : known(DISPUTE_STATES, row.dispute_state, "Estado de la disputa desconocido"),
     estimatedDepositOn: row.estimated_deposit_on,
+    estimatedDepositFrom: row.estimated_deposit_from,
     depositedOn: row.deposited_on,
     receiptsCount: row.receipts_count,
   };

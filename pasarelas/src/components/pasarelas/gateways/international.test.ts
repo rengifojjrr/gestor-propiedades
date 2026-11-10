@@ -17,6 +17,7 @@ const extra = (id: string, patch: Partial<ExtraCfg> = {}): ExtraCfg => ({
   fixed: "0.00",
   base: "bruto",
   payoutDaysOverride: null,
+  payoutDaysOverrideMax: null,
   defaultOn: false,
   active: true,
   sort: 0,

@@ -20,6 +20,7 @@ function tx(patch: Partial<LeanTx> = {}): LeanTx {
     status: "registrado",
     disputeState: null,
     estimatedDepositOn: "2026-11-09",
+    estimatedDepositFrom: null,
     depositedOn: null,
     receiptsCount: 0,
     ...patch,

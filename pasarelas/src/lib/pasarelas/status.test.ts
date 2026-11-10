@@ -125,6 +125,14 @@ describe("isOverdue: por caer y con la fecha estimada ya pasada", () => {
     expect(isOverdue(conFecha(patch, "2026-11-10"), HOY)).toBe(false);
     expect(isOverdue(conFecha(patch, null), HOY)).toBe(false);
   });
+
+  test("con una ventana, atrasado solo después de la más tardía: la más temprana ya pasada no basta", () => {
+    // `estimatedDepositOn` es la más tardía de la ventana; la más temprana (`estimatedDepositFrom`) no cuenta aquí.
+    const ventana = (from: string, on: string) => ({ ...conFecha({}, on), estimatedDepositFrom: from });
+    expect(isOverdue(ventana("2026-11-05", HOY), HOY)).toBe(false);
+    expect(isOverdue(ventana("2026-11-05", "2026-11-10"), HOY)).toBe(false);
+    expect(isOverdue(ventana("2026-11-04", "2026-11-08"), HOY)).toBe(true);
+  });
 });
 
 describe("etiquetas", () => {

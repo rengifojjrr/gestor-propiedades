@@ -2,9 +2,12 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   addDays,
   daysBetween,
+  depositWindowOf,
   estimateDepositDate,
+  estimateDepositWindow,
   formatDate,
   formatDateTime,
+  formatWindowShort,
   instantToLocalInput,
   isBusinessDay,
   isISODate,
@@ -15,6 +18,7 @@ import {
   periodRange,
   todayNY,
   wallTimeToInstant,
+  windowDayLabels,
   ZONE,
   type PeriodPreset,
 } from "./dates";
@@ -53,6 +57,90 @@ describe("cuándo cae el dinero (spec §5.4)", () => {
     expect(addDays("2026-10-31", 1)).toBe("2026-11-01");
     expect(addDays("2026-11-01", 1)).toBe("2026-11-02");
     expect(daysBetween("2026-03-07", "2026-03-09")).toBe(2);
+  });
+});
+
+describe("ventanas de depósito: estimateDepositWindow", () => {
+  const H2 = new Set([...H, ...usBankHolidays(2027).map((h) => h.day)]);
+  type Kind = "habiles" | "corridos";
+  const window = (occurredOn: string, days: number, daysMax: number | null, dayType: Kind = "habiles") =>
+    estimateDepositWindow({ occurredOn, days, daysMax, dayType, holidays: H2 });
+
+  test("F1–F3 con un solo valor: la ventana es de un día, el de siempre", () => {
+    expect(window("2026-11-13", 2, null)).toEqual({ from: "2026-11-17", to: "2026-11-17" });
+    expect(window("2026-11-25", 2, null)).toEqual({ from: "2026-11-30", to: "2026-11-30" });
+    expect(window("2026-12-24", 2, null)).toEqual({ from: "2026-12-29", to: "2026-12-29" });
+    // El máximo igual al mínimo es lo mismo que no tenerlo.
+    expect(window("2026-11-13", 2, 2)).toEqual({ from: "2026-11-17", to: "2026-11-17" });
+  });
+
+  test("de 3 a 5 hábiles desde el mar 10 nov, con el feriado del 11 y el fin de semana: del lun 16 al mié 18", () => {
+    expect(window("2026-11-10", 3, 5)).toEqual({ from: "2026-11-16", to: "2026-11-18" });
+  });
+
+  test("F2 como ventana: de 2 a 4 hábiles cruza Acción de Gracias y el fin de semana", () => {
+    expect(window("2026-11-25", 2, 4)).toEqual({ from: "2026-11-30", to: "2026-12-02" });
+  });
+
+  test("F3 como ventana: de 2 a 5 hábiles cruza Navidad, el fin de semana, Año Nuevo y el año", () => {
+    expect(window("2026-12-24", 2, 5)).toEqual({ from: "2026-12-29", to: "2027-01-04" });
+  });
+
+  test("de 0 a 2 hábiles desde un sábado: desde el mismo sábado hasta el martes", () => {
+    expect(window("2026-11-14", 0, 2)).toEqual({ from: "2026-11-14", to: "2026-11-17" });
+  });
+
+  test("corridos: de 7 a 10 días de calendario, sin saltar feriados ni fines de semana", () => {
+    expect(window("2026-11-10", 7, 10, "corridos")).toEqual({ from: "2026-11-17", to: "2026-11-20" });
+  });
+
+  test("un máximo menor que el mínimo, o que no es entero, es un error", () => {
+    for (const daysMax of [2, 2.5, Number.NaN]) expect(() => window("2026-11-10", 3, daysMax)).toThrow(RangeError);
+    expect(() => window("2026-11-10", -1, null)).toThrow(RangeError);
+  });
+});
+
+describe("la ventana de un cobro guardado: depositWindowOf", () => {
+  test("sin «desde», la ventana es de un solo día: la fecha estimada", () => {
+    expect(depositWindowOf({ estimatedDepositFrom: null, estimatedDepositOn: "2026-11-18" })).toEqual({
+      from: "2026-11-18",
+      to: "2026-11-18",
+    });
+  });
+
+  test("con «desde», de ahí a la fecha estimada (la más tardía)", () => {
+    expect(depositWindowOf({ estimatedDepositFrom: "2026-11-16", estimatedDepositOn: "2026-11-18" })).toEqual({
+      from: "2026-11-16",
+      to: "2026-11-18",
+    });
+  });
+
+  test("sin fecha estimada no hay ventana", () => {
+    expect(depositWindowOf({ estimatedDepositFrom: null, estimatedDepositOn: null })).toBeNull();
+  });
+});
+
+describe("textos de una ventana", () => {
+  test("windowDayLabels: las dos puntas sin repetir lo que comparten, o un solo día", () => {
+    expect(windowDayLabels({ from: "2026-11-16", to: "2026-11-18" })).toEqual(["lun 16", "mié 18 nov"]);
+    expect(windowDayLabels({ from: "2026-11-18", to: "2026-11-18" })).toEqual(["mié 18 nov"]);
+    expect(windowDayLabels({ from: "2026-11-30", to: "2026-12-02" })).toEqual(["lun 30 nov", "mié 2 dic"]);
+    expect(windowDayLabels({ from: "2026-12-29", to: "2027-01-04" })).toEqual(["mar 29 dic 2026", "lun 4 ene 2027"]);
+  });
+
+  test("formatWindowShort: la ventana corta para listas", () => {
+    expect(formatWindowShort({ from: "2026-11-16", to: "2026-11-18" })).toBe("16–18 nov");
+    expect(formatWindowShort({ from: "2026-11-18", to: "2026-11-18" })).toBe("18 nov");
+    expect(formatWindowShort({ from: "2026-11-30", to: "2026-12-02" })).toBe("30 nov – 2 dic");
+    expect(formatWindowShort({ from: "2026-12-29", to: "2027-01-04" })).toBe("29 dic 2026 – 4 ene 2027");
+  });
+
+  test("una ventana al revés o con una fecha que no existe es un error", () => {
+    for (const format of [windowDayLabels, formatWindowShort]) {
+      expect(() => format({ from: "2026-11-18", to: "2026-11-16" })).toThrow(RangeError);
+      expect(() => format({ from: "2026-02-30", to: "2026-03-02" })).toThrow(RangeError);
+      expect(() => format({ from: "2026-11-16", to: "2026-11-31" })).toThrow(RangeError);
+    }
   });
 });
 

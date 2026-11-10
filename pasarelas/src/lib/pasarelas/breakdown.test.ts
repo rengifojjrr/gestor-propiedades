@@ -764,6 +764,21 @@ describe("parseBreakdown", () => {
     expect(parseBreakdown(b).net).toBe("90.30");
   });
 
+  test("una opción puede congelar el máximo de su ventana de días (un entero); sin él, como antes", () => {
+    const [rapido] = e1.rules.extras;
+    const windowed = compute(
+      { ...rulesE1(), extras: [{ ...rapido!, payoutDaysOverride: 1, payoutDaysOverrideMax: 3 }] },
+      paid("100.00"),
+      "USD",
+    );
+    expect(parseBreakdown(stored(windowed)).rules.extras[0]?.payoutDaysOverrideMax).toBe(3);
+    expect(parseBreakdown(stored(e1)).rules.extras[0]).not.toHaveProperty("payoutDaysOverrideMax");
+    const extras = (payoutDaysOverrideMax: unknown) => [{ ...rapido, payoutDaysOverrideMax }];
+    for (const bad of [2.5, "3", null]) {
+      expect(() => parseBreakdown({ ...stored(e1), rules: { ...e1.rules, extras: extras(bad) } })).toThrow();
+    }
+  });
+
   test("rechaza v: 2", () => {
     expect(() => parseBreakdown({ ...stored(e1), v: 2 })).toThrow();
     expect(() => parseBreakdown({ ...stored(e1), v: "1" })).toThrow();

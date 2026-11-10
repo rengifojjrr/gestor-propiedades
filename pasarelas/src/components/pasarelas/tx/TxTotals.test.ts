@@ -21,6 +21,7 @@ function lean(patch: Partial<LeanTx>): LeanTx {
     status: "registrado",
     disputeState: null,
     estimatedDepositOn: null,
+    estimatedDepositFrom: null,
     depositedOn: null,
     receiptsCount: 0,
     ...patch,

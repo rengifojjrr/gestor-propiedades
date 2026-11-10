@@ -79,6 +79,7 @@ function withPayPal(cfg: PayConfig): PayConfig {
     id: "gw-paypal",
     name: "PayPal",
     payoutDays: 1,
+    payoutDaysMax: null,
     payoutDayType: "corridos",
     refundsReturnFee: true,
     disputeFee: "20.00",
@@ -119,6 +120,7 @@ const FIELD_NAMES: (keyof TxFields)[] = [
   "disputeOpenedOn",
   "disputeClosedOn",
   "estimatedDepositOn",
+  "estimatedDepositFrom",
   "estimatedIsManual",
   "depositedOn",
   "bankAccountId",
@@ -185,6 +187,11 @@ function expectRowIsSound({ fields: f, allocations }: Row): void {
   else expect(f.allocBase).not.toBeNull();
   // El disparador del reparto: la suma de lo asignado es exactamente la base.
   expect(add(...allocations.map((line) => line.amount))).toBe(f.allocBaseAmount);
+  // pay_transactions_estimated_window_check, y además canónica: un solo día se guarda sin «desde».
+  if (f.estimatedDepositFrom !== null) {
+    expect(f.estimatedDepositOn).not.toBeNull();
+    expect(f.estimatedDepositFrom < (f.estimatedDepositOn ?? "")).toBe(true);
+  }
 }
 
 /** La foto que debe llevar el historial de una fila. */
@@ -199,6 +206,7 @@ function photoOf(f: TxFields): Record<string, unknown> {
     pasarela: f.breakdown.rules.gateway.name,
     versionDeEsquema: f.schemeVersionId,
     fechaEstimada: f.estimatedDepositOn,
+    fechaEstimadaDesde: f.estimatedDepositFrom,
     depositadoEl: f.depositedOn,
   };
 }
@@ -256,6 +264,7 @@ function save(write: TxWrite, prev?: TxSnapshot): TxSnapshot {
     status: f.status,
     disputeState: f.disputeState,
     estimatedDepositOn: f.estimatedDepositOn,
+    estimatedDepositFrom: f.estimatedDepositFrom,
     depositedOn: f.depositedOn,
     receiptsCount: 0,
     schemeId: f.schemeId,
@@ -420,8 +429,9 @@ describe("planCreate", () => {
       disputeState: null,
       disputeOpenedOn: null,
       disputeClosedOn: null,
-      // Pago rápido: 0 días, cae el mismo viernes.
+      // Pago rápido: 0 días, cae el mismo viernes. Un solo día: sin «desde».
       estimatedDepositOn: VIERNES,
+      estimatedDepositFrom: null,
       estimatedIsManual: false,
       depositedOn: null,
       bankAccountId: DEMO.bankAccountId,
@@ -458,6 +468,7 @@ describe("planCreate", () => {
           pasarela: "Stripe",
           versionDeEsquema: DEMO.schemeVersionId,
           fechaEstimada: VIERNES,
+          fechaEstimadaDesde: null,
           depositadoEl: null,
         },
       },
@@ -712,6 +723,7 @@ describe("planEdit", () => {
       gatewayId: "gw-paypal",
       bankAccountId: "ba-paypal",
       payoutDaysOverride: null,
+      payoutDaysOverrideMax: null,
       defaultExtraIds: null,
       active: true,
     });
@@ -936,6 +948,7 @@ describe("planEdit", () => {
         gatewayId: DEMO.gatewayId,
         bankAccountId: "ba-tienda",
         payoutDaysOverride: 5,
+        payoutDaysOverrideMax: null,
         defaultExtraIds: null,
         active: true,
       });
@@ -1721,6 +1734,131 @@ describe("planEstimateRefresh", () => {
 
   test("ya al día, no hay nada que escribir", () => {
     expect(planEstimateRefresh(cfgDemo(), savedE1()).fields).toEqual({});
+  });
+});
+
+// ─── Ventanas de depósito ───────────────────────────────────────────────────────────────────────────────────
+
+describe("ventanas de depósito («de 3 a 5 días»)", () => {
+  /** Martes 10 de noviembre de 2026 a las 10:30 de Nueva York: el miércoles 11 es feriado (Día de los Veteranos). */
+  const MARTES_10 = { occurredAt: "2026-11-10T15:30:00Z", occurredOn: "2026-11-10" };
+  const INTERNATIONAL_ID = "ex-internacional";
+
+  /** Stripe de 3 a 5 días hábiles. */
+  function withWindow(cfg: PayConfig = cfgDemo()): PayConfig {
+    Object.assign(stripe(cfg), { payoutDays: 3, payoutDaysMax: 5 });
+    return cfg;
+  }
+
+  /** El recargo internacional de Stripe: 1,5 % del bruto, de 7 a 10 días hábiles. */
+  function withInternational(cfg: PayConfig): PayConfig {
+    stripe(cfg).extras.push({
+      id: INTERNATIONAL_ID,
+      name: "Pago internacional",
+      pct: "1.5",
+      fixed: "0.00",
+      base: "bruto",
+      payoutDaysOverride: 7,
+      payoutDaysOverrideMax: 10,
+      defaultOn: false,
+      active: true,
+      sort: 1,
+      kind: "internacional",
+    });
+    return cfg;
+  }
+
+  const windowOf = (write: TxWrite) => [write.fields.estimatedDepositFrom, write.fields.estimatedDepositOn];
+
+  test("al registrar el mar 10 con 3 a 5 hábiles (feriado y fin de semana en medio): del lun 16 al mié 18", () => {
+    const write = planCreate(withWindow(), inputE1({ ...MARTES_10, extraIds: [] }));
+    expect(windowOf(write)).toEqual(["2026-11-16", "2026-11-18"]);
+    expect(write.fields.estimatedIsManual).toBe(false);
+    expect(write.event.data?.despues).toMatchObject({ fechaEstimada: "2026-11-18", fechaEstimadaDesde: "2026-11-16" });
+    save(write);
+  });
+
+  test("con «Pago rápido» (0 días), el mismo día: un solo día, sin «desde»", () => {
+    expect(windowOf(planCreate(withWindow(), inputE1(MARTES_10)))).toEqual([null, "2026-11-10"]);
+  });
+
+  test("internacional de 7 a 10 hábiles: su ventana; con «Pago rápido» además, manda la más rápida", () => {
+    const cfg = withInternational(withWindow());
+    const abroad = planCreate(cfg, inputE1({ ...MARTES_10, extraIds: [INTERNATIONAL_ID] }));
+    expect(windowOf(abroad)).toEqual(["2026-11-20", "2026-11-25"]);
+    // El desglose congela la ventana del recargo con él.
+    expect(abroad.fields.breakdown?.rules.extras).toEqual([
+      expect.objectContaining({ id: INTERNATIONAL_ID, payoutDaysOverride: 7, payoutDaysOverrideMax: 10 }),
+    ]);
+    save(abroad);
+    const fast = planCreate(cfg, inputE1({ ...MARTES_10, extraIds: [DEMO.extraId, INTERNATIONAL_ID] }));
+    expect(windowOf(fast)).toEqual([null, "2026-11-10"]);
+  });
+
+  test("la fecha puesta a mano es un solo día: sin «desde»", () => {
+    const write = planCreate(withWindow(), inputE1({ ...MARTES_10, extraIds: [], estimatedDepositOn: "2026-11-30" }));
+    expect(windowOf(write)).toEqual([null, "2026-11-30"]);
+    expect(write.fields.estimatedIsManual).toBe(true);
+  });
+
+  test("al editar se mueven las dos; sin la opción que da la ventana, vuelve a la de la pasarela", () => {
+    const cfg = withInternational(withWindow());
+    const tx = save(planCreate(cfg, inputE1({ ...MARTES_10, extraIds: [INTERNATIONAL_ID] })));
+    const national = planEdit(cfg, tx, { extraIds: [] });
+    expect(windowOf(national)).toEqual(["2026-11-16", "2026-11-18"]);
+    const domestic = save(national, tx);
+    // Un día después (el jueves 12): del martes 17 al jueves 19.
+    const moved = planEdit(cfg, domestic, { occurredAt: "2026-11-12T15:30:00Z" });
+    expect(windowOf(moved)).toEqual(["2026-11-17", "2026-11-19"]);
+    const later = save(moved, domestic);
+    // Con un solo día (sin ventana en la pasarela), «desde» vuelve a vacío.
+    const single = planEdit(cfgDemo(), later, { extraIds: [DEMO.extraId] });
+    expect(windowOf(single)).toEqual([null, "2026-11-12"]);
+    save(single, later);
+  });
+
+  test("a mano borra la ventana; volver a la automática la recupera", () => {
+    const cfg = withWindow();
+    const tx = save(planCreate(cfg, inputE1({ ...MARTES_10, extraIds: [] })));
+    const manual = planEstimated(cfg, tx, "2026-11-30");
+    expect(manual.fields).toEqual({
+      estimatedDepositOn: "2026-11-30",
+      estimatedDepositFrom: null,
+      estimatedIsManual: true,
+    });
+    const fixed = save(manual, tx);
+    const automatic = planEstimated(cfg, fixed, null);
+    expect(automatic.fields).toEqual({
+      estimatedDepositOn: "2026-11-18",
+      estimatedDepositFrom: "2026-11-16",
+      estimatedIsManual: false,
+    });
+    save(automatic, fixed);
+  });
+
+  test("al recalcular por feriados o días: uno de un solo día sin «desde» no se toca; con ventana, cambian las dos", () => {
+    // Un cobro de antes de las ventanas: un solo día (el martes 17), sin «desde».
+    const old = savedE1({ extraIds: [] });
+    expect(old.estimatedDepositFrom).toBeNull();
+    expect(planEstimateRefresh(cfgDemo(), old).fields).toEqual({});
+    // La pasarela pasa a tardar de 3 a 5 días: desde el viernes 13, del miércoles 18 al viernes 20.
+    const write = planEstimateRefresh(withWindow(), old);
+    expect(write.fields).toEqual({ estimatedDepositOn: "2026-11-20", estimatedDepositFrom: "2026-11-18" });
+    expect(write.event.summary).toBe(ESTIMATE_REFRESH_SUMMARY);
+    const widened = save(write, old);
+    // Y si vuelve a un solo día, «desde» se vacía.
+    expect(planEstimateRefresh(cfgDemo(), widened).fields).toEqual({
+      estimatedDepositOn: MARTES,
+      estimatedDepositFrom: null,
+    });
+  });
+
+  test("recalcular con la configuración de ahora también mueve la ventana, salvo la fecha puesta a mano", () => {
+    const cfg = withWindow();
+    const tx = savedE1({ extraIds: [] });
+    expect(windowOf(planRecalc(cfg, tx, "hoy", "2026-11-20").write)).toEqual(["2026-11-18", "2026-11-20"]);
+    const manual = savedE1({ extraIds: [], estimatedDepositOn: "2026-11-30" });
+    expect(windowOf(planRecalc(cfg, manual, "hoy", "2026-11-20").write)).toEqual([undefined, undefined]);
   });
 });
 

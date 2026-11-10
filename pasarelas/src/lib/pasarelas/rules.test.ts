@@ -69,6 +69,7 @@ function extra(id: string, patch: Partial<ExtraCfg> = {}): ExtraCfg {
     fixed: "0.00",
     base: "bruto",
     payoutDaysOverride: null,
+    payoutDaysOverrideMax: null,
     defaultOn: false,
     active: true,
     sort: 0,
@@ -83,6 +84,7 @@ function withPayPal(cfg: PayConfig): PayConfig {
     id: "gw-paypal",
     name: "PayPal",
     payoutDays: 1,
+    payoutDaysMax: null,
     payoutDayType: "corridos",
     refundsReturnFee: true,
     disputeFee: "20.00",
@@ -279,6 +281,23 @@ describe("resolveRules", () => {
       base: "despues_de_comision",
       payoutDaysOverride: 1,
     });
+  });
+
+  test("el máximo de los días de una opción se congela con ella solo si es más que su mínimo", () => {
+    const cfg = cfgDemo();
+    stripe(cfg).extras = [
+      extra("ex-ventana", { sort: 1, payoutDaysOverride: 1, payoutDaysOverrideMax: 3 }),
+      extra("ex-igual", { sort: 2, payoutDaysOverride: 2, payoutDaysOverrideMax: 2 }),
+      extra("ex-un-dia", { sort: 3, payoutDaysOverride: 4 }),
+      extra("ex-sin-dias", { sort: 4 }),
+    ];
+    const rules = resolveRules(cfg, selE1({ extraIds: ["ex-ventana", "ex-igual", "ex-un-dia", "ex-sin-dias"] }));
+    expect(rules.extras.map(({ id, payoutDaysOverride, ...rest }) => [id, payoutDaysOverride, rest])).toEqual([
+      ["ex-ventana", 1, { name: "ex-ventana", pct: "1", fixed: "0.00", base: "bruto", payoutDaysOverrideMax: 3 }],
+      ["ex-igual", 2, { name: "ex-igual", pct: "1", fixed: "0.00", base: "bruto" }],
+      ["ex-un-dia", 4, { name: "ex-un-dia", pct: "1", fixed: "0.00", base: "bruto" }],
+      ["ex-sin-dias", null, { name: "ex-sin-dias", pct: "1", fixed: "0.00", base: "bruto" }],
+    ]);
   });
 
   describe("versiones según la fecha", () => {
@@ -508,18 +527,20 @@ describe("reResolve", () => {
 
 describe("resolvePayout", () => {
   const where = { companyId: DEMO.companyId, gatewayId: DEMO.gatewayId };
-  const option = (payoutDaysOverride: number | null): ExtraRule => ({
-    id: `ex-${payoutDaysOverride}`,
+  const option = (payoutDaysOverride: number | null, payoutDaysOverrideMax?: number): ExtraRule => ({
+    id: `ex-${payoutDaysOverride}-${payoutDaysOverrideMax}`,
     name: "Opción",
     pct: "0",
     fixed: "0.00",
     base: "bruto",
     payoutDaysOverride,
+    ...(payoutDaysOverrideMax === undefined ? {} : { payoutDaysOverrideMax }),
   });
 
   test("una opción encendida que cambia los días manda (pago rápido: 0 días)", () => {
     expect(resolvePayout(cfgDemo(), where, rulesE1().extras)).toEqual({
       days: 0,
+      daysMax: null,
       dayType: "habiles",
       source: "opcion",
       bankAccountId: DEMO.bankAccountId,
@@ -531,11 +552,59 @@ describe("resolvePayout", () => {
     expect([payout.days, payout.source]).toEqual([3, "opcion"]);
   });
 
+  test("una opción con ventana da su ventana: de 1 a 3 días", () => {
+    const payout = resolvePayout(cfgDemo(), where, [option(1, 3)]);
+    expect([payout.days, payout.daysMax, payout.source]).toEqual([1, 3, "opcion"]);
+  });
+
+  test("con varias opciones con ventana, la más rápida por su mínimo y, a igual mínimo, por su máximo", () => {
+    const byMin = resolvePayout(cfgDemo(), where, [option(2, 3), option(1, 9)]);
+    expect([byMin.days, byMin.daysMax]).toEqual([1, 9]);
+    const byMax = resolvePayout(cfgDemo(), where, [option(2, 6), option(2, 4), option(2, 5)]);
+    expect([byMax.days, byMax.daysMax]).toEqual([2, 4]);
+    // Un solo día es más rápido que una ventana con el mismo mínimo.
+    for (const options of [[option(2, 4), option(2)], [option(2), option(2, 4)]]) {
+      const single = resolvePayout(cfgDemo(), where, options);
+      expect([single.days, single.daysMax]).toEqual([2, null]);
+    }
+  });
+
+  test("pago internacional de 7 a 10 días junto con «Pago rápido» (0 días): manda la más rápida, el mismo día", () => {
+    const payout = resolvePayout(cfgDemo(), where, [...rulesE1().extras, option(7, 10)]);
+    expect([payout.days, payout.daysMax, payout.source]).toEqual([0, null, "opcion"]);
+    const alone = resolvePayout(cfgDemo(), where, [option(7, 10)]);
+    expect([alone.days, alone.daysMax, alone.source]).toEqual([7, 10, "opcion"]);
+  });
+
+  test("la ventana de la pasarela: de 3 a 5 días", () => {
+    const cfg = cfgDemo();
+    Object.assign(stripe(cfg), { payoutDays: 3, payoutDaysMax: 5 });
+    expect(resolvePayout(cfg, where, [])).toEqual({
+      days: 3,
+      daysMax: 5,
+      dayType: "habiles",
+      source: "pasarela",
+      bankAccountId: DEMO.bankAccountId,
+    });
+  });
+
+  test("la cuenta de la empresa manda con su ventana; con un solo valor, un solo día aunque la pasarela no", () => {
+    const cfg = cfgDemo();
+    Object.assign(stripe(cfg), { payoutDays: 3, payoutDaysMax: 5 });
+    Object.assign(only(cfg.companyGateways), { payoutDaysOverride: 4, payoutDaysOverrideMax: 6 });
+    const own = resolvePayout(cfg, where, []);
+    expect([own.days, own.daysMax, own.source]).toEqual([4, 6, "cuenta"]);
+    only(cfg.companyGateways).payoutDaysOverrideMax = null;
+    const single = resolvePayout(cfg, where, []);
+    expect([single.days, single.daysMax, single.source]).toEqual([4, null, "cuenta"]);
+  });
+
   test("sin opciones que cambien los días: los de la cuenta de la pasarela de esa empresa", () => {
     const cfg = cfgDemo();
     only(cfg.companyGateways).payoutDaysOverride = 7;
     expect(resolvePayout(cfg, where, [option(null)])).toEqual({
       days: 7,
+      daysMax: null,
       dayType: "habiles",
       source: "cuenta",
       bankAccountId: DEMO.bankAccountId,
@@ -549,6 +618,7 @@ describe("resolvePayout", () => {
   test("si la cuenta no dice nada: los de la pasarela", () => {
     expect(resolvePayout(cfgDemo(), where, [])).toEqual({
       days: 2,
+      daysMax: null,
       dayType: "habiles",
       source: "pasarela",
       bankAccountId: DEMO.bankAccountId,
@@ -560,6 +630,7 @@ describe("resolvePayout", () => {
     only(cfg.companyGateways).payoutDaysOverride = 7;
     expect(resolvePayout(cfg, { companyId: "co-otra", gatewayId: DEMO.gatewayId }, [])).toEqual({
       days: 2,
+      daysMax: null,
       dayType: "habiles",
       source: "pasarela",
       bankAccountId: null,
@@ -567,6 +638,7 @@ describe("resolvePayout", () => {
     // El tipo de día es siempre el de la pasarela.
     expect(resolvePayout(cfg, { companyId: DEMO.companyId, gatewayId: "gw-paypal" }, [])).toEqual({
       days: 1,
+      daysMax: null,
       dayType: "corridos",
       source: "pasarela",
       bankAccountId: null,

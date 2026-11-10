@@ -126,6 +126,7 @@ describe("loadSummary", () => {
     expect(view.deposits).toEqual([
       {
         date: "2026-10-22",
+        from: "2026-10-22",
         bankAccountId: b.bankAccountId,
         currency: "USD",
         net: "90.30",
@@ -136,6 +137,7 @@ describe("loadSummary", () => {
       },
       {
         date: "2026-11-13",
+        from: "2026-11-13",
         bankAccountId: b.bankAccountId,
         currency: "USD",
         net: "10745.70",

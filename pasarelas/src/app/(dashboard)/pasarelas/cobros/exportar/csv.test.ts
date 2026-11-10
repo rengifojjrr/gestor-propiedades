@@ -23,6 +23,7 @@ function e1(patch: Partial<TxListItem> = {}): TxListItem {
     status: "registrado",
     disputeState: null,
     estimatedDepositOn: "2026-11-13",
+    estimatedDepositFrom: null,
     depositedOn: null,
     receiptsCount: 0,
     schemeId: DEMO.schemeId,

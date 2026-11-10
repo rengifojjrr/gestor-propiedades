@@ -8,7 +8,7 @@
  * y las fechas con `RangeError`: validar la forma de lo que entra es cosa de quien llama.
  */
 import { compute, diff, recalc, recompute } from "./breakdown";
-import { estimateDepositDate, formatDate, nyDate } from "./dates";
+import { estimateDepositWindow, formatDate, nyDate, type DateWindow } from "./dates";
 import { ZERO, isMoney } from "./decimal";
 import { add, cmp, formatMoney } from "./money";
 import { reResolve, resolvePayout, resolveRules } from "./rules";
@@ -179,6 +179,7 @@ function columns(tx: TxSnapshot): TxFields {
     disputeOpenedOn: tx.disputeOpenedOn,
     disputeClosedOn: tx.disputeClosedOn,
     estimatedDepositOn: tx.estimatedDepositOn,
+    estimatedDepositFrom: tx.estimatedDepositFrom,
     estimatedIsManual: tx.estimatedIsManual,
     depositedOn: tx.depositedOn,
     bankAccountId: tx.bankAccountId,
@@ -209,6 +210,7 @@ type Photo = {
   pasarela: string;
   versionDeEsquema: string | null;
   fechaEstimada: ISODate | null;
+  fechaEstimadaDesde: ISODate | null;
   depositadoEl: ISODate | null;
 };
 
@@ -224,6 +226,7 @@ function photo(f: TxFields): Photo {
     pasarela: f.breakdown.rules.gateway.name,
     versionDeEsquema: f.schemeVersionId,
     fechaEstimada: f.estimatedDepositOn,
+    fechaEstimadaDesde: f.estimatedDepositFrom,
     depositadoEl: f.depositedOn,
   };
 }
@@ -284,16 +287,30 @@ function requireLive(tx: TxSnapshot): void {
 
 // ─── Fecha estimada y selección ─────────────────────────────────────────────────────────────────────────────
 
-/** Cuándo cae el dinero de un cobro con esas opciones, y a qué cuenta (spec §5.4). */
+/** Cuándo cae el dinero de un cobro con esas opciones (una ventana), y a qué cuenta (spec §5.4). */
 function payout(
   cfg: PayConfig,
   of: Pick<Selection, "companyId" | "gatewayId" | "occurredOn">,
   extras: readonly ExtraRule[],
-): { on: ISODate; bankAccountId: string | null } {
-  const { days, dayType, bankAccountId } = resolvePayout(cfg, of, extras);
+): { window: DateWindow; bankAccountId: string | null } {
+  const { days, daysMax, dayType, bankAccountId } = resolvePayout(cfg, of, extras);
   const holidays = new Set(cfg.holidays);
-  return { on: estimateDepositDate({ occurredOn: of.occurredOn, days, dayType, holidays }), bankAccountId };
+  const window = estimateDepositWindow({ occurredOn: of.occurredOn, days, daysMax, dayType, holidays });
+  return { window, bankAccountId };
 }
+
+/**
+ * Las dos columnas de la fecha estimada automática: la más tardía de la ventana y la más temprana, que se guarda
+ * vacía si es la misma (un solo día). Así un cobro de un solo día queda igual que antes de las ventanas, y volver a
+ * calcularlo no cambia nada.
+ */
+function estimatedColumns(window: DateWindow): Pick<TxFields, "estimatedDepositOn" | "estimatedDepositFrom"> {
+  return { estimatedDepositOn: window.to, estimatedDepositFrom: window.from === window.to ? null : window.from };
+}
+
+/** La fecha estimada puesta a mano: un solo día, sin ventana. */
+const manualColumns = (on: ISODate) =>
+  ({ estimatedDepositOn: on, estimatedDepositFrom: null, estimatedIsManual: true }) satisfies Partial<TxFields>;
 
 /** Lo que se eligió al registrar un cobro guardado. La comisión informada no se arrastra. */
 function selectionOf(tx: TxSnapshot): Selection {
@@ -335,8 +352,7 @@ export function planCreate(cfg: PayConfig, input: NewTxInput, kind: "creado" | "
     status,
     disputeOpenedOn: null,
     disputeClosedOn: null,
-    estimatedDepositOn: manual ?? automatic.on,
-    estimatedIsManual: manual !== null,
+    ...(manual === null ? { ...estimatedColumns(automatic.window), estimatedIsManual: false } : manualColumns(manual)),
     depositedOn,
     bankAccountId: input.bankAccountId ?? automatic.bankAccountId,
     deletedAt: null,
@@ -482,7 +498,7 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
       reference: input.reference,
       note: input.note,
       bankAccountId: movesAccount ? automatic().bankAccountId : input.bankAccountId,
-      estimatedDepositOn: movesDeposit ? automatic().on : undefined,
+      ...(movesDeposit ? estimatedColumns(automatic().window) : {}),
     },
     "editado",
     `Editado: ${labels.join(", ")}`,
@@ -614,10 +630,9 @@ export function planRevertDeposit(tx: TxSnapshot): TxWrite {
 export function planEstimated(cfg: PayConfig, tx: TxSnapshot, date: ISODate | null): TxWrite {
   requireNotTrashed(tx);
   if (date !== null) {
-    const next = { estimatedDepositOn: date, estimatedIsManual: true };
-    return update(tx, next, "fecha_estimada", `Fecha estimada: ${formatDate(date)}`);
+    return update(tx, manualColumns(date), "fecha_estimada", `Fecha estimada: ${formatDate(date)}`);
   }
-  const next = { estimatedDepositOn: payout(cfg, tx, tx.breakdown.rules.extras).on, estimatedIsManual: false };
+  const next = { ...estimatedColumns(payout(cfg, tx, tx.breakdown.rules.extras).window), estimatedIsManual: false };
   return update(tx, next, "fecha_estimada", "Fecha estimada automática");
 }
 
@@ -661,9 +676,9 @@ export function planRecalc(
   const known = new Set(gateway?.extras.map((option) => option.id));
   const sel: Selection = { ...frozen, extraIds: frozen.extraIds.filter((id) => known.has(id)) };
   const next = recalc(tx.breakdown, resolveRules(cfg, sel, mode === "hoy" ? today : tx.occurredOn));
-  const estimatedDepositOn = tx.estimatedIsManual ? undefined : payout(cfg, sel, next.rules.extras).on;
+  const estimated = tx.estimatedIsManual ? {} : estimatedColumns(payout(cfg, sel, next.rules.extras).window);
   return {
-    write: update(tx, { ...derived(next), estimatedDepositOn }, "recalculado", RECALC_SUMMARY[mode]),
+    write: update(tx, { ...derived(next), ...estimated }, "recalculado", RECALC_SUMMARY[mode]),
     changes: diff(tx.breakdown, next),
   };
 }

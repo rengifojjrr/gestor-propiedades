@@ -22,6 +22,7 @@ const tx = (id: string, patch: Partial<LeanTx> = {}): LeanTx => ({
   status: "registrado",
   disputeState: null,
   estimatedDepositOn: null,
+  estimatedDepositFrom: null,
   depositedOn: null,
   receiptsCount: 0,
   ...patch,
@@ -377,6 +378,7 @@ describe("por caer: una sola definición para la tarjeta y para los próximos de
     expect(upcomingDeposits(grupo, HOY)).toEqual([
       {
         date: "2026-11-10",
+        from: "2026-11-10",
         bankAccountId: "cta-a",
         currency: "USD",
         net: "143.20",
@@ -392,6 +394,7 @@ describe("por caer: una sola definición para la tarjeta y para los próximos de
     expect(upcomingDeposits(atrasados, HOY)).toEqual([
       {
         date: "2026-11-05",
+        from: "2026-11-05",
         bankAccountId: "cta-a",
         currency: "USD",
         net: "143.20",
@@ -498,9 +501,9 @@ describe("upcomingDeposits", () => {
 
   test("con las filas a mano: primero el atrasado; fuera el depositado, el fallido y el reembolsado", () => {
     expect(upcomingDeposits(FILAS, HOY)).toEqual([
-      { date: "2026-11-04", bankAccountId: "cta-a", currency: "USD", net: "32.06", count: 1, ids: ["u4"], overdue: true },
-      { date: HOY, bankAccountId: "cta-eur", currency: "EUR", net: "38.54", count: 1, ids: ["e2"], overdue: false },
-      { date: "2026-11-10", bankAccountId: "cta-b", currency: "USD", net: "76.90", count: 1, ids: ["u5"], overdue: false },
+      { date: "2026-11-04", from: "2026-11-04", bankAccountId: "cta-a", currency: "USD", net: "32.06", count: 1, ids: ["u4"], overdue: true },
+      { date: HOY, from: HOY, bankAccountId: "cta-eur", currency: "EUR", net: "38.54", count: 1, ids: ["e2"], overdue: false },
+      { date: "2026-11-10", from: "2026-11-10", bankAccountId: "cta-b", currency: "USD", net: "76.90", count: 1, ids: ["u5"], overdue: false },
     ]);
   });
 
@@ -532,10 +535,10 @@ describe("upcomingDeposits", () => {
     ];
     expect(upcomingDeposits(filas, HOY)).toEqual([
       // A igual fecha: por moneda y luego por cuenta.
-      { date: "2026-11-10", bankAccountId: "cta-a", currency: "EUR", net: "90.30", count: 1, ids: ["otra-moneda"], overdue: false },
-      { date: "2026-11-10", bankAccountId: "cta-a", currency: "USD", net: "122.36", count: 2, ids: ["b", "a"], overdue: false },
-      { date: "2026-11-10", bankAccountId: "cta-b", currency: "USD", net: "90.30", count: 1, ids: ["otra-cuenta"], overdue: false },
-      { date: "2026-11-11", bankAccountId: "cta-a", currency: "USD", net: "90.30", count: 1, ids: ["otra-fecha"], overdue: false },
+      { date: "2026-11-10", from: "2026-11-10", bankAccountId: "cta-a", currency: "EUR", net: "90.30", count: 1, ids: ["otra-moneda"], overdue: false },
+      { date: "2026-11-10", from: "2026-11-10", bankAccountId: "cta-a", currency: "USD", net: "122.36", count: 2, ids: ["b", "a"], overdue: false },
+      { date: "2026-11-10", from: "2026-11-10", bankAccountId: "cta-b", currency: "USD", net: "90.30", count: 1, ids: ["otra-cuenta"], overdue: false },
+      { date: "2026-11-11", from: "2026-11-11", bankAccountId: "cta-a", currency: "USD", net: "90.30", count: 1, ids: ["otra-fecha"], overdue: false },
     ]);
   });
 
@@ -586,7 +589,31 @@ describe("upcomingDeposits", () => {
       porCaer("normal", "2026-11-10", { ...monto("33.33", "1.27", "32.06") }),
     ];
     expect(upcomingDeposits(filas, HOY)).toEqual([
-      { date: "2026-11-10", bankAccountId: "cta-a", currency: "USD", net: "31.95", count: 2, ids: ["cuota-fija", "normal"], overdue: false },
+      { date: "2026-11-10", from: "2026-11-10", bankAccountId: "cta-a", currency: "USD", net: "31.95", count: 2, ids: ["cuota-fija", "normal"], overdue: false },
+    ]);
+  });
+
+  test("una ventana cuenta en el día de su fecha más tardía; el grupo dice desde cuándo puede caer", () => {
+    const filas = [
+      porCaer("un-dia", "2026-11-12"),
+      porCaer("ventana", "2026-11-12", { estimatedDepositFrom: "2026-11-10" }),
+      porCaer("otra-ventana", "2026-11-12", { estimatedDepositFrom: "2026-11-11" }),
+      porCaer("solo-esta", "2026-11-13", { estimatedDepositFrom: "2026-11-11" }),
+    ];
+    expect(upcomingDeposits(filas, HOY).map(({ date, from, ids }) => [date, from, ids])).toEqual([
+      ["2026-11-12", "2026-11-10", ["un-dia", "ventana", "otra-ventana"]],
+      ["2026-11-13", "2026-11-11", ["solo-esta"]],
+    ]);
+  });
+
+  test("atrasado solo después de la más tardía: con la más temprana ya pasada y la más tardía hoy, todavía no", () => {
+    const filas = [
+      porCaer("hoy-la-ultima", HOY, { estimatedDepositFrom: "2026-11-05" }),
+      porCaer("ayer-la-ultima", "2026-11-08", { estimatedDepositFrom: "2026-11-04" }),
+    ];
+    expect(upcomingDeposits(filas, HOY).map(({ ids, from, overdue }) => [ids[0], from, overdue])).toEqual([
+      ["ayer-la-ultima", "2026-11-04", true],
+      ["hoy-la-ultima", "2026-11-05", false],
     ]);
   });
 

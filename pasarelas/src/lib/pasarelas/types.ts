@@ -41,6 +41,11 @@ export type ExtraRule = {
   fixed: Money;
   base: ExtraBase;
   payoutDaysOverride: number | null;
+  /**
+   * El máximo de la ventana con esta opción («de 1 a 3 días»), solo si es mayor que `payoutDaysOverride`. Sin la
+   * clave, un solo día: así quedan los desgloses congelados antes de las ventanas, y así se siguen escribiendo.
+   */
+  payoutDaysOverrideMax?: number;
 };
 
 export type PlatformRule = { channelId: string; name: string; pct: Pct; fixed: Money };
@@ -112,7 +117,9 @@ export type DiffRow = { key: string; label: string; before: string; after: strin
 
 export type FeeVersionCfg = { id: string; pct: Pct; fixed: Money; effectiveFrom: ISODate; note: string | null };
 
-export type ExtraCfg = ExtraRule & {
+export type ExtraCfg = Omit<ExtraRule, "payoutDaysOverrideMax"> & {
+  /** El máximo de sus días propios (`payoutDaysOverride` a 60); `null` = igual al mínimo, un solo día. */
+  payoutDaysOverrideMax: number | null;
   defaultOn: boolean;
   active: boolean;
   sort: number;
@@ -128,6 +135,8 @@ export type GatewayCfg = {
   id: string;
   name: string;
   payoutDays: number;
+  /** El máximo de la ventana («de 3 a 5 días»), de `payoutDays` a 60; `null` = igual al mínimo, un solo día. */
+  payoutDaysMax: number | null;
   payoutDayType: DayType;
   refundsReturnFee: boolean;
   disputeFee: Money;
@@ -159,6 +168,8 @@ export type CompanyGatewayCfg = {
   gatewayId: string;
   bankAccountId: string | null;
   payoutDaysOverride: number | null;
+  /** El máximo de los días propios de esta empresa; `null` = igual al mínimo. Sin mínimo no hay máximo. */
+  payoutDaysOverrideMax: number | null;
   /** null = usar el «encendida por defecto» de cada opción. */
   defaultExtraIds: string[] | null;
   active: boolean;
@@ -220,7 +231,10 @@ export type LeanTx = {
   net: Money;
   status: Lifecycle;
   disputeState: DisputeState | null;
+  /** La fecha estimada: la MÁS TARDÍA de la ventana. Con ella se decide lo atrasado y los próximos depósitos. */
   estimatedDepositOn: ISODate | null;
+  /** La más temprana de la ventana; `null` = la misma que `estimatedDepositOn` (un solo día). */
+  estimatedDepositFrom: ISODate | null;
   depositedOn: ISODate | null;
   receiptsCount: number;
 };
@@ -271,6 +285,8 @@ export type TxFields = {
   disputeOpenedOn: ISODate | null;
   disputeClosedOn: ISODate | null;
   estimatedDepositOn: ISODate | null;
+  /** `null` = la misma que `estimatedDepositOn`: un solo día (también la puesta a mano). */
+  estimatedDepositFrom: ISODate | null;
   estimatedIsManual: boolean;
   depositedOn: ISODate | null;
   bankAccountId: string | null;

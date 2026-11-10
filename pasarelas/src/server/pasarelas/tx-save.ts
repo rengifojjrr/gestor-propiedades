@@ -43,6 +43,7 @@ const COLUMN_OF: Record<keyof TxFields, TxColumn> = {
   disputeOpenedOn: "dispute_opened_on",
   disputeClosedOn: "dispute_closed_on",
   estimatedDepositOn: "estimated_deposit_on",
+  estimatedDepositFrom: "estimated_deposit_from",
   estimatedIsManual: "estimated_is_manual",
   depositedOn: "deposited_on",
   bankAccountId: "bank_account_id",

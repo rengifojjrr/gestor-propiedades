@@ -99,7 +99,16 @@ function extraRules(cfg: PayConfig, sel: Selection): ExtraRule[] {
       fixed: money(option.fixed),
       base: option.base,
       payoutDaysOverride: option.payoutDaysOverride,
+      // Solo una ventana de verdad deja la clave: un solo día se congela como antes de las ventanas.
+      ...(widerThan(option.payoutDaysOverride, option.payoutDaysOverrideMax)
+        ? { payoutDaysOverrideMax: option.payoutDaysOverrideMax }
+        : {}),
     }));
+}
+
+/** ¿Hay un máximo mayor que el mínimo? Es decir: ¿los días son una ventana y no un solo día? */
+function widerThan(min: number | null, max: number | null): max is number {
+  return min !== null && max !== null && max > min;
 }
 
 /** Lo que cobra el canal. La empresa tiene que existir y el canal, si lo hay, ser suyo. */
@@ -199,27 +208,48 @@ export function reResolve(
   };
 }
 
+/** Los días al depósito: un mínimo y, si es una ventana, un máximo (`null` = igual al mínimo, un solo día). */
+export type PayoutDays = { days: number; daysMax: number | null };
+
+/** ¿Llega antes `a` que `b`? Por su mínimo y, a igual mínimo, por su máximo (un solo día gana a una ventana). */
+const fasterThan = (a: PayoutDays, b: PayoutDays): boolean =>
+  a.days !== b.days ? a.days < b.days : (a.daysMax ?? a.days) < (b.daysMax ?? b.days);
+
 /**
- * Cuántos días tarda en caer el dinero y a qué cuenta (spec §5.4): la menor cantidad de días entre las opciones
- * encendidas que los cambian → los de la cuenta de la pasarela de esa empresa → los de la pasarela. Hábiles o
- * corridos según la pasarela. `bankAccountId` es la cuenta destino de esa cuenta de pasarela (o `null`).
+ * Cuántos días tarda en caer el dinero y a qué cuenta (spec §5.4): los de la opción encendida más rápida que los
+ * cambie → los de la cuenta de la pasarela de esa empresa → los de la pasarela. Cada uno es un mínimo y un máximo
+ * opcional (una ventana, «de 3 a 5 días»): manda el que corresponde, entero, sin mezclar el mínimo de uno con el
+ * máximo de otro. Hábiles o corridos según la pasarela. `bankAccountId` es la cuenta destino de esa cuenta de
+ * pasarela (o `null`).
+ *
+ * Entre opciones, la más rápida es la de menor mínimo (la regla de antes de las ventanas) y, a igual mínimo, la de
+ * menor máximo. El recargo internacional es una opción más: si un pago internacional que tarda de 7 a 10 días se
+ * registra además con «Pago rápido» (0 días), manda la más rápida y cae el mismo día. Así lo decide la regla de
+ * siempre: lo que pidió el pago rápido es justamente que llegue antes.
  */
 export function resolvePayout(
   cfg: PayConfig,
   sel: Pick<Selection, "companyId" | "gatewayId">,
   extras: readonly ExtraRule[],
-): { days: number; dayType: DayType; source: "opcion" | "cuenta" | "pasarela"; bankAccountId: string | null } {
+): PayoutDays & { dayType: DayType; source: "opcion" | "cuenta" | "pasarela"; bankAccountId: string | null } {
   const gateway = gatewayOf(cfg, sel.gatewayId);
   const account = cfg.companyGateways.find(
     (link) => link.companyId === sel.companyId && link.gatewayId === sel.gatewayId,
   );
   const rest = { dayType: gateway.payoutDayType, bankAccountId: account?.bankAccountId ?? null };
 
-  const fromOptions = extras.flatMap((option) =>
-    option.payoutDaysOverride === null ? [] : [option.payoutDaysOverride],
+  const fromOptions = extras.flatMap((option): PayoutDays[] =>
+    option.payoutDaysOverride === null
+      ? []
+      : [{ days: option.payoutDaysOverride, daysMax: option.payoutDaysOverrideMax ?? null }],
   );
-  if (fromOptions.length > 0) return { days: Math.min(...fromOptions), source: "opcion", ...rest };
-  const fromAccount = account?.payoutDaysOverride ?? null;
-  if (fromAccount !== null) return { days: fromAccount, source: "cuenta", ...rest };
-  return { days: gateway.payoutDays, source: "pasarela", ...rest };
+  const fastest = fromOptions.reduce<PayoutDays | null>(
+    (best, next) => (best === null || fasterThan(next, best) ? next : best),
+    null,
+  );
+  if (fastest !== null) return { ...fastest, source: "opcion", ...rest };
+  if (account !== undefined && account.payoutDaysOverride !== null) {
+    return { days: account.payoutDaysOverride, daysMax: account.payoutDaysOverrideMax, source: "cuenta", ...rest };
+  }
+  return { days: gateway.payoutDays, daysMax: gateway.payoutDaysMax, source: "pasarela", ...rest };
 }

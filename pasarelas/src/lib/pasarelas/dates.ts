@@ -90,6 +90,41 @@ export function estimateDepositDate(a: {
   return day;
 }
 
+/** Una ventana de fechas de calendario, las dos incluidas: `from` ≤ `to`. Un solo día: `from` = `to`. */
+export type DateWindow = { from: ISODate; to: ISODate };
+
+/**
+ * Cuándo cae el dinero cuando la pasarela promete una ventana («de 3 a 5 días hábiles»): `from` con el mínimo
+ * (`days`) y `to` con el máximo (`daysMax`; `null` = igual al mínimo, un solo día). Cada punta se cuenta como en
+ * `estimateDepositDate`. Un máximo menor que el mínimo, o que no es un entero, es un error.
+ */
+export function estimateDepositWindow(a: {
+  occurredOn: ISODate;
+  days: number;
+  daysMax: number | null;
+  dayType: DayType;
+  holidays: ReadonlySet<ISODate>;
+}): DateWindow {
+  const max = a.daysMax ?? a.days;
+  if (!Number.isInteger(max) || max < a.days) {
+    throw new RangeError(`El máximo de días tiene que ser un entero mayor o igual que el mínimo: ${a.daysMax}`);
+  }
+  const at = (days: number): ISODate => estimateDepositDate({ ...a, days });
+  return { from: at(a.days), to: at(max) };
+}
+
+/**
+ * La ventana de un cobro guardado: de `estimatedDepositFrom` (vacía = la misma) a `estimatedDepositOn`, la más
+ * tardía. Sin fecha estimada no hay ventana.
+ */
+export function depositWindowOf(t: {
+  estimatedDepositFrom: ISODate | null;
+  estimatedDepositOn: ISODate | null;
+}): DateWindow | null {
+  if (t.estimatedDepositOn === null) return null;
+  return { from: t.estimatedDepositFrom ?? t.estimatedDepositOn, to: t.estimatedDepositOn };
+}
+
 // ─── Períodos ───────────────────────────────────────────────────────────────────────────────────────────────
 
 export type PeriodPreset = "este_mes" | "mes_anterior" | "30d" | "90d" | "365d" | "este_anio" | "personalizado";
@@ -232,6 +267,55 @@ export function monthLabel(key: string): string {
 export function formatDate(d: ISODate): string {
   const weekday = WEEKDAYS[weekdayIndex(d)];
   return `${weekday} ${Number(d.slice(8))} ${monthLabel(monthKey(d))}`;
+}
+
+/** Una ventana que se puede leer: dos fechas que existen y en orden. Si no, `RangeError`. */
+function assertWindow(w: DateWindow): void {
+  assertISODate(w.from);
+  assertISODate(w.to);
+  if (w.from > w.to) throw new RangeError(`Ventana al revés: del ${w.from} al ${w.to}`);
+}
+
+/** Lo que una punta de la ventana repite de la otra, y se omite: el mes y el año, o solo el año. */
+type Shared = "mes" | "anio" | "nada";
+
+function sharedOf(w: DateWindow): Shared {
+  assertWindow(w);
+  if (w.from.slice(0, 7) === w.to.slice(0, 7)) return "mes";
+  return w.from.slice(0, 4) === w.to.slice(0, 4) ? "anio" : "nada";
+}
+
+/** `2026-11-16` → `16`, `16 nov` o `16 nov 2026`, según cuánto se diga. */
+function dayText(d: ISODate, say: "dia" | "mes" | "anio"): string {
+  const day = String(Number(d.slice(8)));
+  if (say === "dia") return day;
+  const month = MONTHS[Number(d.slice(5, 7)) - 1];
+  return say === "mes" ? `${day} ${month}` : `${day} ${month} ${d.slice(0, 4)}`;
+}
+
+/**
+ * Las puntas de una ventana para leerlas en una frase («Llega entre el lun 16 y el mié 18 nov»), sin repetir lo
+ * que comparten: `["lun 16", "mié 18 nov"]`, `["lun 30 nov", "mié 2 dic"]` y, solo si cruza el año, con el año:
+ * `["mar 29 dic 2026", "lun 4 ene 2027"]`. Un solo día, una sola: `["mié 18 nov"]`.
+ */
+export function windowDayLabels(w: DateWindow): [string] | [string, string] {
+  const shared = sharedOf(w);
+  const withWeekday = (d: ISODate, say: "dia" | "mes" | "anio") => `${WEEKDAYS[weekdayIndex(d)]} ${dayText(d, say)}`;
+  if (w.from === w.to) return [withWeekday(w.to, "mes")];
+  const last = shared === "nada" ? "anio" : "mes";
+  return [withWeekday(w.from, shared === "mes" ? "dia" : last), withWeekday(w.to, last)];
+}
+
+/**
+ * La ventana corta, para listas: `16–18 nov`, `30 nov – 2 dic`, `29 dic 2026 – 4 ene 2027` o, de un solo día,
+ * `18 nov`.
+ */
+export function formatWindowShort(w: DateWindow): string {
+  const shared = sharedOf(w);
+  if (w.from === w.to) return dayText(w.to, "mes");
+  if (shared === "mes") return `${dayText(w.from, "dia")}–${dayText(w.to, "mes")}`;
+  const say = shared === "anio" ? "mes" : "anio";
+  return `${dayText(w.from, say)} – ${dayText(w.to, say)}`;
 }
 
 /** `2026-11-13T15:30:00Z` → `vie 13 nov 2026, 10:30` (hora de Nueva York, 24 horas). */

@@ -269,6 +269,8 @@ const zBreakdown = z.strictObject({
         fixed: zMoney,
         base: z.enum(["bruto", "despues_de_comision"]),
         payoutDaysOverride: z.int().nullable(),
+        // Solo en los desgloses de una opción con ventana de días («de 1 a 3»); los de antes no la traen.
+        payoutDaysOverrideMax: z.int().optional(),
       }),
     ),
     platform: z.strictObject({ channelId: z.string(), name: z.string(), pct: zPct, fixed: zMoney }).nullable(),
