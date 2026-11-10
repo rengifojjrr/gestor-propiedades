@@ -1154,9 +1154,36 @@ create policy pay_comprobantes_delete on storage.objects
     and (select private.pay_mfa_ok())
   );
 
+-- Las de arriba son permisivas, y las permisivas se suman con OR: si el proyecto ya tiene otra política de
+-- storage.objects sin filtro de bucket (como las de los ejemplos de la documentación), dejaría entrar a
+-- «comprobantes» sin el segundo factor. Estas dos son RESTRICTIVAS y solo miran «comprobantes»: los demás buckets
+-- quedan como estaban.
+-- Van aparte para authenticated y para anon: anon no puede ejecutar pay_mfa_ok() (y no le hace falta: no entra).
+create policy pay_comprobantes_mfa on storage.objects
+  as restrictive for all to authenticated
+  using (
+    bucket_id is distinct from 'comprobantes'
+    or (
+      (storage.foldername(name))[1] = (select auth.uid())::text
+      and (select private.pay_mfa_ok())
+    )
+  )
+  with check (
+    bucket_id is distinct from 'comprobantes'
+    or (
+      (storage.foldername(name))[1] = (select auth.uid())::text
+      and (select private.pay_mfa_ok())
+    )
+  );
+
+create policy pay_comprobantes_anon on storage.objects
+  as restrictive for all to anon
+  using (bucket_id is distinct from 'comprobantes')
+  with check (bucket_id is distinct from 'comprobantes');
+
 -- ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 -- 8. Comprobación final: ninguna tabla pay_ queda sin RLS, sin la política del segundo factor ni sin su
---    unique (id, user_id)
+--    unique (id, user_id), y el bucket «comprobantes» tiene sus políticas restrictivas
 -- ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 do $$
@@ -1193,6 +1220,24 @@ begin
     );
   if v_missing is not null then
     raise exception 'Tablas pay_ sin unique (id, user_id): %', v_missing;
+  end if;
+
+  -- «comprobantes» con su restrictiva para authenticated y para anon (ver la sección 7).
+  select string_agg(r.rolname, ', ') into v_missing
+  from pg_roles r
+  where r.rolname in ('authenticated', 'anon')
+    and not exists (
+      select 1
+      from pg_policy p
+      where p.polrelid = 'storage.objects'::regclass
+        and not p.polpermissive
+        and p.polcmd = '*'
+        and r.oid = any (p.polroles)
+        and pg_get_expr(p.polqual, p.polrelid) like '%comprobantes%'
+        and pg_get_expr(p.polwithcheck, p.polrelid) like '%comprobantes%'
+    );
+  if v_missing is not null then
+    raise exception 'storage.objects sin la política restrictiva de «comprobantes» para: %', v_missing;
   end if;
 end;
 $$;

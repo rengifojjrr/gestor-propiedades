@@ -1,4 +1,6 @@
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { promisify } from "node:util";
 import { beforeAll, describe, expect, it } from "vitest";
 import { adminClient, anonClient, createUser, enrollTotp, signInAal1, type Db, type TestUser } from "./helpers";
 
@@ -176,5 +178,77 @@ describe("con segundo factor verificado", () => {
 
     const anterior = await a.client.storage.from(BUCKET).download(reciboDeA);
     expect(anterior.error).toBeNull();
+  });
+});
+
+/** Los claims del token de la sesión de `client`, tal como los firmó Auth (con su `aal` y su `session_id`). */
+async function claimsDe(client: Db): Promise<Record<string, unknown>> {
+  const token = (await client.auth.getSession()).data.session?.access_token;
+  if (!token) throw new Error("El cliente no tiene sesión");
+  return JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString()) as Record<string, unknown>;
+}
+
+/**
+ * Corre UNA sentencia como `postgres` en la base del stack local, con la CLI de Supabase del proyecto (la que lo
+ * levanta: sin `--remote` nunca sale de la máquina). Va al stack de `supabase/config.toml`; otro stack local se
+ * elige con `SUPABASE_WORKDIR`. La sentencia tiene que terminar en error, y se devuelve su mensaje: así se deshace
+ * entera y nada de lo que crea llega a existir para nadie más.
+ */
+async function mensajeDeError(sql: string): Promise<string> {
+  try {
+    await promisify(execFile)("npx", ["--no-install", "supabase", "db", "query", "--output-format", "json", sql]);
+  } catch (error) {
+    const salida = (error as { stdout?: string }).stdout ?? "";
+    const respuesta = JSON.parse(salida) as { error?: { message?: string } };
+    if (respuesta.error?.message) return respuesta.error.message;
+  }
+  throw new Error("La sentencia debía terminar en error");
+}
+
+describe("aunque el proyecto tenga otra política de storage.objects que deje ver todo", () => {
+  it("con factor, una sesión aal1 no ve nada de «comprobantes» y una aal2 solo lo suyo", async () => {
+    const [c, d] = await Promise.all([createUser(), createUser()]);
+    await enrollTotp(c.client);
+    const cAal1 = await signInAal1(c.email, c.password);
+    for (const [client, id] of [
+      [c.client, c.id],
+      [d.client, d.id],
+    ] as const) {
+      const subida = await subir(client, `${id}/${randomUUID()}/recibo.png`);
+      if (subida.error) throw new Error(`No se pudo subir el comprobante: ${subida.error.message}`);
+    }
+    const sesiones = [await claimsDe(cAal1), await claimsDe(c.client)];
+    expect(sesiones.map((claims) => claims.aal)).toEqual(["aal1", "aal2"]);
+
+    // Todo en una transacción que termina en error a propósito: la política amplia (permisiva, sin bucket, como
+    // las de los ejemplos de la documentación) se crea, se prueba con cada sesión y se deshace.
+    const lista = sesiones.map((claims) => `'${JSON.stringify(claims).replaceAll("'", "''")}'::jsonb`).join(", ");
+    const mensaje = await mensajeDeError(`
+      do $prueba$
+      declare
+        sesion jsonb;
+        visto jsonb := '{}';
+      begin
+        create policy pay_prueba_ver_todo on storage.objects for select to authenticated using (true);
+        perform set_config('role', 'authenticated', true);
+        foreach sesion in array array[${lista}] loop
+          perform set_config('request.jwt.claims', sesion::text, true);
+          visto := visto || jsonb_build_object(sesion ->> 'aal', jsonb_build_object(
+            'propios', (select count(*) from storage.objects o
+                        where o.bucket_id = '${BUCKET}' and o.name like (sesion ->> 'sub') || '/%'),
+            'ajenos', (select count(*) from storage.objects o
+                       where o.bucket_id = '${BUCKET}' and o.name not like (sesion ->> 'sub') || '/%')
+          ));
+        end loop;
+        raise exception 'visto: %', visto;
+      end
+      $prueba$`);
+
+    const visto = mensaje.match(/visto: (\{.*\})/)?.[1];
+    expect(visto, mensaje).toBeDefined();
+    expect(JSON.parse(visto ?? "")).toEqual({
+      aal1: { propios: 0, ajenos: 0 },
+      aal2: { propios: 1, ajenos: 0 },
+    });
   });
 });
