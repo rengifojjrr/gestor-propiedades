@@ -2,12 +2,15 @@ import "server-only";
 import type { Currency, ISODate, Money } from "@/lib/pasarelas";
 import type { Db } from "../dto";
 import { UserError } from "../errors";
-import { LIST_LIMIT, RECEIPTS_BUCKET } from "./receipts";
+import { LIST_LIMIT, RECEIPTS_BUCKET, fileProblem, storedFile } from "./receipts";
 
 /**
  * Las liquidaciones: lo que ya se le pagó a un beneficiario (positivo) o lo que él le devolvió a la empresa
  * (negativo). Su comprobante lo sube el navegador directo a Storage, a la carpeta `{usuario}/{liquidación}/` (por
  * eso el id de la liquidación se genera antes de subir); la base exige que la ruta sea de esa carpeta.
+ *
+ * Registrar una es idempotente por su id: si la respuesta se pierde por el camino, el formulario vuelve a mandar
+ * el mismo id y la liquidación no se duplica.
  */
 
 export type SettlementInput = {
@@ -26,6 +29,7 @@ export type SettlementInput = {
 const NOT_FOUND = "Esa liquidación ya no existe.";
 const BENEFICIARY_NOT_FOUND = "Ese beneficiario ya no existe.";
 const WRONG_FOLDER = "El comprobante no corresponde a esta liquidación.";
+const NOT_UPLOADED = "El archivo no llegó a subirse. Vuelve a intentarlo.";
 const NO_RECEIPT = "Esa liquidación no tiene comprobante.";
 const NOT_REMOVED = "No se pudo borrar el archivo del comprobante. Inténtalo de nuevo.";
 
@@ -40,8 +44,51 @@ const messageOf = (error: unknown): string => {
   return typeof message === "string" ? message : "";
 };
 
-/** Registra la liquidación con su id. Devuelve ese id. */
+/** ¿Falló el alta porque ya hay una liquidación con ese id? */
+function isDuplicateId(error: unknown): boolean {
+  return codeOf(error) === "23505" && messageOf(error).includes('"pay_settlements_pkey"');
+}
+
+/** La liquidación con ese id, o `null` si no existe (o es de otro usuario). */
+async function existing(supabase: Db, id: string): Promise<{ receiptPath: string | null } | null> {
+  const { data } = await supabase
+    .from("pay_settlements")
+    .select("receipt_path")
+    .eq("id", id)
+    .maybeSingle()
+    .throwOnError();
+  return data === null ? null : { receiptPath: data.receipt_path };
+}
+
+/**
+ * El comprobante como lo tiene Storage. Tiene que ser un archivo de la carpeta de la liquidación (la base lo vuelve
+ * a mirar), y lo que se guarda es el tipo y el tamaño que dice Storage, no lo que declara el navegador. Si lo de
+ * Storage no se admite, el archivo se borra y se rechaza.
+ */
+async function storedReceipt(supabase: Db, s: SettlementInput): Promise<SettlementInput["receipt"]> {
+  if (s.receipt === null) return null;
+  const [owner, folder, name, ...rest] = s.receipt.path.split("/");
+  if (!owner || folder !== s.id || !name || rest.length > 0) throw new UserError(WRONG_FOLDER);
+  // Lo declarado se mira primero porque no cuesta ir a Storage; lo que decide es lo que diga Storage.
+  const declared = fileProblem(s.receipt.mime, s.receipt.sizeBytes);
+  if (declared !== null) throw new UserError(declared);
+  const stored = await storedFile(supabase, s.receipt.path);
+  if (stored === null) throw new UserError(NOT_UPLOADED);
+  const real = fileProblem(stored.mime, stored.sizeBytes);
+  if (real !== null) {
+    await supabase.storage.from(RECEIPTS_BUCKET).remove([s.receipt.path]);
+    throw new UserError(real);
+  }
+  return { path: s.receipt.path, ...stored };
+}
+
+/**
+ * Registra la liquidación con su id y devuelve ese id. Si ya hay una con ese id —el mismo envío que llega dos veces,
+ * p. ej. un reintento tras un corte—, no crea otra y devuelve su id. Si ese reintento subió otro comprobante, lo
+ * borra: la liquidación ya tiene el suyo.
+ */
 export async function saveSettlement(supabase: Db, s: SettlementInput): Promise<string> {
+  const receipt = await storedReceipt(supabase, s);
   try {
     await supabase
       .from("pay_settlements")
@@ -53,12 +100,20 @@ export async function saveSettlement(supabase: Db, s: SettlementInput): Promise<
         amount: s.amount,
         method: s.method,
         note: s.note,
-        receipt_path: s.receipt?.path ?? null,
-        receipt_mime: s.receipt?.mime ?? null,
-        receipt_size: s.receipt?.sizeBytes ?? null,
+        receipt_path: receipt?.path ?? null,
+        receipt_mime: receipt?.mime ?? null,
+        receipt_size: receipt?.sizeBytes ?? null,
       })
       .throwOnError();
   } catch (error) {
+    const already = isDuplicateId(error) ? await existing(supabase, s.id) : null;
+    if (already !== null) {
+      // Si no se puede borrar, el archivo de más queda en la carpeta de la liquidación: no se le enseña a nadie.
+      if (receipt !== null && receipt.path !== already.receiptPath) {
+        await supabase.storage.from(RECEIPTS_BUCKET).remove([receipt.path]);
+      }
+      return s.id;
+    }
     if (codeOf(error) === "23503") throw new UserError(BENEFICIARY_NOT_FOUND);
     if (codeOf(error) === "23514" && messageOf(error).includes(RECEIPT_FOLDER_CHECK)) throw new UserError(WRONG_FOLDER);
     throw error;

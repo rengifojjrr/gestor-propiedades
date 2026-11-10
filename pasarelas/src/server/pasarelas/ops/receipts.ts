@@ -59,8 +59,11 @@ async function receiptOf(supabase: Db, id: string): Promise<ReceiptRecord> {
   return { transactionId: data.transaction_id, path: data.path, mime: data.mime, sizeBytes: data.size_bytes };
 }
 
-/** Lo que no se admite de un tipo y un tamaño: el mensaje para la persona, o `null` si los dos valen. */
-function fileProblem(mime: string, sizeBytes: number): string | null {
+/**
+ * Lo que no se admite de un tipo y un tamaño: el mensaje para la persona, o `null` si los dos valen. Lo usan
+ * también los comprobantes de las liquidaciones.
+ */
+export function fileProblem(mime: string, sizeBytes: number): string | null {
   if (!ALLOWED_MIMES.has(mime)) return "Ese tipo de archivo no se admite: solo JPG, PNG, WebP o PDF.";
   if (!Number.isInteger(sizeBytes) || sizeBytes <= 0) return "El tamaño del archivo no es válido.";
   if (sizeBytes > MAX_BYTES) return "El archivo pesa más de 10 MB.";
@@ -102,12 +105,13 @@ async function logReceipt(
  * el tipo y el tamaño declarados se admiten y que el archivo de verdad está en Storage.
  *
  * Lo que se guarda es el tipo y el tamaño que dice Storage, no lo que declara el navegador. Si lo de Storage no se
- * admite, borra el archivo y rechaza. Deja en el historial del cobro el evento `comprobante_agregado`.
+ * admite, borra el archivo y rechaza. El nombre original del archivo no se guarda: puede traer datos de otra
+ * persona (la columna `original_name` queda nula). Deja en el historial del cobro el evento `comprobante_agregado`.
  */
 export async function registerReceipt(
   supabase: Db,
   userId: string,
-  a: { transactionId: string; path: string; mime: string; sizeBytes: number; originalName: string | null },
+  a: { transactionId: string; path: string; mime: string; sizeBytes: number },
 ): Promise<string> {
   const folder = `${userId}/${a.transactionId}/`;
   const name = a.path.startsWith(folder) ? a.path.slice(folder.length) : "";
@@ -130,7 +134,7 @@ export async function registerReceipt(
       path: a.path,
       mime: stored.mime,
       size_bytes: stored.sizeBytes,
-      original_name: a.originalName,
+      original_name: null,
     })
     .select("id")
     .single()
@@ -142,7 +146,8 @@ export async function registerReceipt(
 /**
  * Quita un comprobante: primero el archivo y después su fila (al revés, un fallo dejaría un archivo que ya nadie
  * ve). Si el archivo ya no estaba —un borrado anterior que quedó a medias—, quita la fila igual. Deja en el
- * historial del cobro el evento `comprobante_quitado`.
+ * historial del cobro el evento `comprobante_quitado`, solo si fue este borrado el que quitó la fila: si otro lo
+ * quitó entretanto (otra pestaña), dice que ya no existe y no repite el evento.
  */
 export async function removeReceipt(supabase: Db, id: string): Promise<void> {
   const receipt = await receiptOf(supabase, id);
@@ -152,7 +157,13 @@ export async function removeReceipt(supabase: Db, id: string): Promise<void> {
   if (data.length === 0 && (await storedFile(supabase, receipt.path)) !== null) {
     throw new UserError("No se pudo borrar el archivo del comprobante. Inténtalo de nuevo.");
   }
-  await supabase.from("pay_transaction_receipts").delete().eq("id", id).throwOnError();
+  const { data: deleted } = await supabase
+    .from("pay_transaction_receipts")
+    .delete()
+    .eq("id", id)
+    .select("id")
+    .throwOnError();
+  if (deleted.length === 0) throw new UserError(NOT_FOUND_TEXT);
   await logReceipt(supabase, "comprobante_quitado", { id, ...receipt });
 }
 

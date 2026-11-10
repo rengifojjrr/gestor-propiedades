@@ -79,10 +79,10 @@ describe("registerReceipt guarda lo que dice Storage", () => {
       path,
       mime: "image/jpeg",
       sizeBytes: 5000,
-      originalName: "Foto demo.jpg",
     });
 
-    expect(await receiptRow(id)).toEqual({ mime: "image/png", size_bytes: PNG.length, original_name: "Foto demo.jpg" });
+    // El nombre original del archivo no se guarda: puede traer datos de otra persona.
+    expect(await receiptRow(id)).toEqual({ mime: "image/png", size_bytes: PNG.length, original_name: null });
   });
 
   it("un PDF guarda su tipo y sus bytes reales", async () => {
@@ -94,7 +94,6 @@ describe("registerReceipt guarda lo que dice Storage", () => {
       path,
       mime: "image/png",
       sizeBytes: 1,
-      originalName: null,
     });
 
     expect(await receiptRow(id)).toEqual({ mime: "application/pdf", size_bytes: pdf.length, original_name: null });
@@ -102,6 +101,23 @@ describe("registerReceipt guarda lo que dice Storage", () => {
 });
 
 describe("el historial del cobro", () => {
+  it("quitar el mismo comprobante dos veces a la vez (dos pestañas) deja un solo evento", async () => {
+    const before = (await events()).length;
+    const path = await upload(`${randomUUID()}.png`, PNG, "image/png");
+    const id = await registerReceipt(user.client, user.id, {
+      transactionId: txId,
+      path,
+      mime: "image/png",
+      sizeBytes: PNG.length,
+    });
+
+    const outcomes = await Promise.allSettled([removeReceipt(user.client, id), removeReceipt(user.client, id)]);
+
+    expect(outcomes.map((outcome) => outcome.status).sort()).toEqual(["fulfilled", "rejected"]);
+    const kinds = (await events()).slice(before).map((event) => event.kind);
+    expect(kinds).toEqual(["comprobante_agregado", "comprobante_quitado"]);
+  });
+
   it("agregar y quitar un comprobante dejan sus dos eventos, con el tipo y sin el nombre del archivo", async () => {
     const before = (await events()).length;
     const path = await upload(`${randomUUID()}.png`, PNG, "image/png");
@@ -111,7 +127,6 @@ describe("el historial del cobro", () => {
       path,
       mime: "image/png",
       sizeBytes: PNG.length,
-      originalName: "Recibo de Grupo A.png",
     });
     await removeReceipt(user.client, id);
 

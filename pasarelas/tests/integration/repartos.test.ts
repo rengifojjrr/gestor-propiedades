@@ -569,6 +569,74 @@ describe("liquidaciones y saldos", () => {
     ).rejects.toThrow("El comprobante no corresponde a esta liquidación.");
   });
 
+  it("el tipo y el tamaño del comprobante son los que dice Storage, no los que declara el navegador", async () => {
+    const id = randomUUID();
+    const path = await upload(user, id);
+    await saveSettlement(user.client, {
+      id,
+      beneficiaryId: basics.beneficiaryIds.b,
+      paidOn: "2026-11-16",
+      currency: "USD",
+      amount: "3.00",
+      method: null,
+      note: null,
+      receipt: { path, mime: "image/jpeg", sizeBytes: 5000 },
+    });
+    const row = unwrap(
+      await admin.from("pay_settlements").select("receipt_mime, receipt_size").eq("id", id).single(),
+      "liquidación",
+    );
+    expect(row).toEqual({ receipt_mime: "image/png", receipt_size: PNG.length });
+  });
+
+  it("un comprobante que no llegó a Storage no se acepta, y la liquidación no se guarda", async () => {
+    const id = randomUUID();
+    await expect(
+      saveSettlement(user.client, {
+        id,
+        beneficiaryId: basics.beneficiaryIds.b,
+        paidOn: "2026-11-16",
+        currency: "USD",
+        amount: "3.00",
+        method: null,
+        note: null,
+        receipt: { path: `${user.id}/${id}/${randomUUID()}.png`, mime: "image/png", sizeBytes: PNG.length },
+      }),
+    ).rejects.toThrow("El archivo no llegó a subirse. Vuelve a intentarlo.");
+    const { count } = await admin.from("pay_settlements").select("id", { count: "exact", head: true }).eq("id", id);
+    expect(count).toBe(0);
+  });
+
+  it("registrarla otra vez con el mismo id (un reintento tras un corte) no crea otra: devuelve su id", async () => {
+    const id = randomUUID();
+    const path = await upload(user, id);
+    const settlement = {
+      id,
+      beneficiaryId: basics.beneficiaryIds.b,
+      paidOn: "2026-11-17",
+      currency: "USD",
+      amount: "7.00",
+      method: null,
+      note: null,
+      receipt: { path, mime: "image/png", sizeBytes: PNG.length },
+    };
+    expect(await saveSettlement(user.client, settlement)).toBe(id);
+    expect(await saveSettlement(user.client, settlement)).toBe(id);
+
+    // El reintento subió otro archivo: la fila se queda con el suyo y el de más se borra.
+    const again = await upload(user, id);
+    expect(await saveSettlement(user.client, { ...settlement, receipt: { ...settlement.receipt, path: again } })).toBe(
+      id,
+    );
+
+    const rows = unwrap(
+      await admin.from("pay_settlements").select("amount::text, receipt_path").eq("id", id),
+      "liquidaciones",
+    );
+    expect(rows).toEqual([{ amount: "7.00", receipt_path: path }]);
+    expect(await filesIn(`${user.id}/${id}`)).toEqual([path.slice(path.lastIndexOf("/") + 1)]);
+  });
+
   it("una liquidación para un beneficiario ajeno (o que no existe) no se guarda", async () => {
     await expect(
       saveSettlement(other.client, {
