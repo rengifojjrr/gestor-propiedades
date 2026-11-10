@@ -55,7 +55,7 @@ export type SaveInternationalInput = InternationalFee & { id?: string | null; ga
  * Cómo se guarda el recargo internacional: una opción de tipo `internacional` con este nombre (es el que sale en el
  * desglose), sobre el bruto, apagada por defecto (se aplica solo si el pago fue internacional) y sin días propios.
  */
-export const INTERNATIONAL_NAME = "Pago internacional";
+const INTERNATIONAL_NAME = "Pago internacional";
 const INTERNATIONAL_COLUMNS = {
   kind: "internacional",
   name: INTERNATIONAL_NAME,
