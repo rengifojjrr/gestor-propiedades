@@ -190,21 +190,35 @@ test("crear una cuenta: si se corta la conexión, el diálogo sigue abierto con 
   await page.getByRole("button", { name: "Agregar cuenta" }).click();
   const dialog = page.getByRole("dialog", { name: "Nueva cuenta destino" });
   await dialog.getByLabel("Alias").fill(alias);
-  await page.route("**/pasarelas/cuentas*", (route) =>
-    route.request().method() === "POST" ? route.abort("internetdisconnected") : route.continue(),
-  );
+  // La acción llega al servidor y guarda la cuenta, pero la respuesta no vuelve al navegador.
+  let cut = 0;
+  await page.route("**/pasarelas/cuentas*", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    cut += 1;
+    await route.fetch();
+    await route.abort("connectionreset");
+  });
   await dialog.getByRole("button", { name: "Guardar cuenta" }).click();
   await expect(dialog.getByRole("alert")).toHaveText(UNSURE_TEXT);
+  expect(cut).toBe(1);
   await expect(dialog.getByRole("button", { name: "Ver cómo quedó" })).toBeVisible();
   await expect(dialog.getByLabel("Alias")).toHaveValue(alias);
+  // En la base ya está: la llamada llegó.
+  const { data: saved } = await admin
+    .from("pay_bank_accounts")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("alias", alias)
+    .throwOnError();
+  expect(saved).toHaveLength(1);
   await expectCleanScreen(page);
 
-  // Al cerrar con la duda, la pantalla de detrás se vuelve a pintar: la llamada no llegó, así que no hay cuenta.
+  // Al cerrar con la duda, la pantalla de detrás se vuelve a pintar y enseña la cuenta que sí se guardó.
   await page.unroute("**/pasarelas/cuentas*");
   await dialog.getByRole("button", { name: "Cancelar" }).click();
   await expect(dialog).toBeHidden();
   await expect(page.getByRole("heading", { level: 1, name: "Cuentas destino" })).toBeVisible();
-  await expect(page.getByRole("region", { name: alias })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: alias })).toBeVisible();
 });
 
 test("feriados: un fallo al quitar uno se dice en su diálogo", async ({ page }) => {
