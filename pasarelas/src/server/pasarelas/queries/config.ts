@@ -27,7 +27,8 @@ const EXACT_COUNT = { count: "exact" } as const;
 
 /**
  * Todas las filas de una lectura. La API da 1000 por petición como mucho, sin avisar de que hay más: se pide por
- * tramos hasta tener las que la propia lectura dice que hay. Con menos de 1000 filas es una sola petición.
+ * tramos hasta tener las que la propia lectura dice que hay. Con menos de 1000 filas es una sola petición. Si un
+ * tramo llega sin ese total no se puede saber si están todas: se lanza, en vez de dar la lectura por completa.
  */
 async function readAll<Row>(
   page: (from: number, to: number) => PromiseLike<{ data: Row[]; count: number | null }>,
@@ -35,8 +36,11 @@ async function readAll<Row>(
   const rows: Row[] = [];
   for (;;) {
     const { data, count } = await page(rows.length, rows.length + PAGE_SIZE - 1);
+    if (count === null) {
+      throw new Error("Una lectura de configuración llegó sin el total de filas (count): no se sabe si están todas.");
+    }
     rows.push(...data);
-    if (data.length === 0 || rows.length >= (count ?? 0)) return rows;
+    if (data.length === 0 || rows.length >= count) return rows;
   }
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { cleanSearch, parseTxFilters } from "./transactions";
+import type { Db } from "../dto";
+import { cleanSearch, leanTx, listTx, parseTxFilters } from "./transactions";
 
 /** Viernes 13 de noviembre de 2026. */
 const TODAY = "2026-11-13";
@@ -222,5 +223,73 @@ describe("cleanSearch", () => {
     expect(cleanSearch("  pago \t  de\nmarzo  ")).toBe("pago de marzo");
     expect(cleanSearch("x".repeat(200))).toHaveLength(80);
     expect(cleanSearch(`${"x".repeat(79)} y`)).toBe("x".repeat(79));
+  });
+});
+
+describe("una lectura que llega sin el total de filas (`count`) no se da por completa", () => {
+  /**
+   * Un cliente falso mínimo: cualquier consulta, con los filtros que sean, responde lo siguiente de `responses`
+   * (la última se repite).
+   */
+  function clientAnswering(...responses: readonly object[]): Db {
+    let asked = 0;
+    const query: object = new Proxy(
+      {},
+      {
+        get: (_target, method) =>
+          method === "then"
+            ? (resolve: (response: unknown) => void) => {
+                resolve(responses[Math.min(asked, responses.length - 1)]);
+                asked += 1;
+              }
+            : () => query,
+      },
+    );
+    return { from: () => query } as unknown as Db;
+  }
+
+  const row = {
+    id: ID,
+    occurred_on: TODAY,
+    company_id: ID,
+    channel_id: null,
+    gateway_id: ID,
+    bank_account_id: null,
+    currency: "USD",
+    gross_original: "1.00",
+    refunded_amount: "0.00",
+    gross_amount: "1.00",
+    fees_total: "0.00",
+    net_amount: "1.00",
+    status: "registrado",
+    dispute_state: null,
+    estimated_deposit_on: null,
+    deposited_on: null,
+    receipts_count: 0,
+  };
+  /** Una página llena (el tope de la API) que no dice cuántas filas tiene el filtro: puede haber más. */
+  const FULL_PAGE_NO_COUNT = { data: Array.from({ length: 1000 }, () => row), count: null, error: null };
+  const NO_COUNT = { data: [], count: null, error: null };
+  const PAST_THE_END = { data: null, count: null, error: { code: "PGRST103", message: "", details: "", hint: "" } };
+  const WITHOUT_TOTAL = /sin el total de filas/;
+
+  test("leanTx lanza en vez de sumar solo la primera página", async () => {
+    await expect(leanTx(clientAnswering(FULL_PAGE_NO_COUNT), {}, TODAY)).rejects.toThrow(WITHOUT_TOTAL);
+    await expect(leanTx(clientAnswering(NO_COUNT), {}, TODAY)).rejects.toThrow(WITHOUT_TOTAL);
+  });
+
+  test("listTx lanza en vez de dar por total las filas de la página", async () => {
+    await expect(listTx(clientAnswering(NO_COUNT), {}, "fecha_desc", 1, TODAY)).rejects.toThrow(WITHOUT_TOTAL);
+  });
+
+  test("listTx, más allá de la última página: lanza en vez de decir que el filtro no tiene cobros", async () => {
+    const client = clientAnswering(PAST_THE_END, NO_COUNT);
+    await expect(listTx(client, {}, "fecha_desc", 99, TODAY)).rejects.toThrow(WITHOUT_TOTAL);
+  });
+
+  test("con su total, las mismas lecturas responden", async () => {
+    expect(await leanTx(clientAnswering({ data: [row], count: 1, error: null }), {}, TODAY)).toHaveLength(1);
+    const client = clientAnswering(PAST_THE_END, { data: null, count: 7, error: null });
+    expect(await listTx(client, {}, "fecha_desc", 99, TODAY)).toEqual({ rows: [], total: 7 });
   });
 });

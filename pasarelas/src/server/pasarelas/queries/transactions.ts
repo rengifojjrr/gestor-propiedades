@@ -279,6 +279,17 @@ async function searchConfig(
 /** PostgREST responde así cuando se le pide un tramo que empieza después de la última fila. */
 const isPastTheEnd = (error: { code: string } | null): boolean => error?.code === "PGRST103";
 
+/**
+ * Cuántas filas dice la API que tiene el filtro. Si la respuesta llega sin ese total no se puede saber si se leyeron
+ * todas: se lanza, en vez de dar por completa una lectura que pudo cortarse en la primera página.
+ */
+function totalOf(count: number | null): number {
+  if (count === null) {
+    throw new Error("La lectura de pay_transactions llegó sin el total de filas (count): no se sabe si están todas.");
+  }
+  return count;
+}
+
 // ─── Lista y totales ────────────────────────────────────────────────────────────────────────────────────────
 
 /** La columna de cada orden. Todos desempatan por `id` en el mismo sentido: el orden es estable entre páginas. */
@@ -323,10 +334,10 @@ export async function listTx(
       today,
       names,
     ).throwOnError();
-    return { rows: [], total: counted.count ?? 0 };
+    return { rows: [], total: totalOf(counted.count) };
   }
   if (error) throw new PostgrestError(error);
-  return { rows: data.map(toTxListItem), total: count ?? data.length };
+  return { rows: data.map(toTxListItem), total: totalOf(count) };
 }
 
 /**
@@ -350,8 +361,9 @@ export async function leanTx(supabase: Db, f: TxFilters, today: ISODate, cfg?: P
     // Si entre una página y otra se borraron cobros, la siguiente puede empezar después del final: ya están todos.
     if (isPastTheEnd(error)) return rows;
     if (error) throw new PostgrestError(error);
+    const total = totalOf(count);
     rows.push(...data.map(toLeanTx));
-    if (data.length === 0 || rows.length >= (count ?? 0)) return rows;
+    if (data.length === 0 || rows.length >= total) return rows;
   }
 }
 
