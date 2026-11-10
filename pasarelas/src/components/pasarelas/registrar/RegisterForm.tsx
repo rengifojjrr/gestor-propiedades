@@ -4,6 +4,14 @@ import { ChevronDown, LoaderCircle, Paperclip, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  activeInternational,
+  isOption,
+  originOf,
+  withOrigin,
+  type Origin,
+} from "@/components/pasarelas/gateways/international";
+import { InternationalChoice } from "@/components/pasarelas/gateways/InternationalChoice";
 import { ReceiptPicker } from "@/components/pasarelas/receipts/ReceiptPicker";
 import {
   RECEIPT_ACCEPT,
@@ -30,6 +38,7 @@ export type RegisterSelection = {
   companyId: string;
   channelId: string | null;
   gatewayId: string;
+  /** Las que aplicó: las opciones y, si fue internacional, el recargo internacional de la pasarela. */
   extraIds: string[];
   schemeId: string | null;
   currency: string;
@@ -144,14 +153,18 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
       schemeId: scheme !== null && schemes.some((candidate) => candidate.id === scheme) ? scheme : "",
     };
   };
+  const gatewayOf = (id: string) => gateways.find((candidate) => candidate.id === id);
+  // Las que salen marcadas, sin el recargo internacional: un pago es «Nacional» hasta que se diga otra cosa.
   const extrasFor = (companyId: string, gatewayId: string) =>
-    gatewayId === "" ? [] : defaultExtraIds(cfg, companyId, gatewayId);
+    gatewayId === "" ? [] : originOf(gatewayOf(gatewayId), defaultExtraIds(cfg, companyId, gatewayId)).optionIds;
 
   // Con una sola empresa o una sola pasarela, ya sale elegida.
   const [companyId, setCompanyId] = useState(() => (companies.length === 1 ? (companies[0]?.id ?? "") : ""));
   const [channelId, setChannelId] = useState("");
   const [gatewayId, setGatewayId] = useState(() => (gateways.length === 1 ? (gateways[0]?.id ?? "") : ""));
+  // Las opciones elegidas; el recargo internacional va aparte, según de dónde fue el pago (`origin`).
   const [extraIds, setExtraIds] = useState(() => extrasFor(companyId, gatewayId));
+  const [origin, setOrigin] = useState<Origin>("nacional");
   const [currency, setCurrency] = useState(() => companyDefaults(companyId).currency);
   const [amount, setAmount] = useState("");
   const [occurredLocal, setOccurredLocal] = useState(now);
@@ -199,8 +212,13 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
   const defaultScheme = companies.find((company) => company.id === companyId)?.defaultSchemeId ?? null;
   const inactiveDefault =
     defaultScheme !== null && schemeId === "" && !schemes.some((scheme) => scheme.id === defaultScheme);
-  const gateway = gateways.find((candidate) => candidate.id === gatewayId);
-  const options = (gateway?.extras ?? []).filter((option) => option.active).sort((a, b) => a.sort - b.sort);
+  const gateway = gatewayOf(gatewayId);
+  const options = (gateway?.extras ?? [])
+    .filter((option) => option.active && isOption(option))
+    .sort((a, b) => a.sort - b.sort);
+  // Si la pasarela cobra un recargo a los pagos internacionales, se pregunta; con «Internacional» se aplica.
+  const international = activeInternational(gateway);
+  const appliedExtraIds = withOrigin(extraIds, international, origin);
 
   const canRepeat =
     last !== null &&
@@ -219,11 +237,14 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
   function chooseGateway(next: string) {
     setGatewayId(next);
     setExtraIds(extrasFor(companyId, next));
+    setOrigin("nacional");
   }
 
   function repeatLast() {
     if (last === null) return;
-    const lastGateway = gateways.find((candidate) => candidate.id === last.gatewayId);
+    const lastGateway = gatewayOf(last.gatewayId);
+    // Si fue internacional, se repite, siempre que la pasarela siga cobrando el recargo (el de hoy).
+    const lastOrigin = originOf(lastGateway, last.extraIds).origin;
     const activeChannel = cfg.channels.some(
       (channel) => channel.id === last.channelId && channel.active && channel.companyId === last.companyId,
     );
@@ -233,10 +254,11 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
     setGatewayId(last.gatewayId);
     setExtraIds(
       (lastGateway?.extras ?? [])
-        .filter((option) => option.active && last.extraIds.includes(option.id))
+        .filter((option) => option.active && isOption(option) && last.extraIds.includes(option.id))
         .sort((a, b) => a.sort - b.sort)
         .map((option) => option.id),
     );
+    setOrigin(activeInternational(lastGateway) === null ? "nacional" : lastOrigin);
     setCurrency(last.currency);
     setSchemeId(activeScheme && last.schemeId !== null ? last.schemeId : "");
   }
@@ -301,7 +323,7 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
         companyId,
         channelId: channelId === "" ? null : channelId,
         gatewayId,
-        extraIds,
+        extraIds: appliedExtraIds,
         schemeId: schemeId === "" ? null : schemeId,
         occurredAt: localInputToInstant(occurredLocal),
         currency,
@@ -506,6 +528,16 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
             />
           ) : null}
 
+          {gateway && international ? (
+            <InternationalChoice
+              gatewayName={gateway.name}
+              international={international}
+              currency={currency}
+              value={origin}
+              onChange={setOrigin}
+            />
+          ) : null}
+
           <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-start gap-3">
             <Field label="Monto" error={fieldErrors.grossOriginal}>
               <MoneyInput value={amount} onChange={(event) => setAmount(event.currentTarget.value)} />
@@ -626,7 +658,7 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
               companyId,
               channelId: channelId === "" ? null : channelId,
               gatewayId,
-              extraIds,
+              extraIds: appliedExtraIds,
               schemeId: schemeId === "" ? null : schemeId,
               occurredLocal,
               currency,

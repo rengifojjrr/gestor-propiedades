@@ -667,3 +667,136 @@ test.describe.serial("registrar cobro", () => {
     await expectCleanScreen(page);
   });
 });
+
+/**
+ * «¿El pago fue nacional o internacional?», con otro usuario: Stripe le cobra un recargo de 1,5 % a los pagos
+ * internacionales; «PayPal Demo» no cobra ninguno. Los cobros van sin canal y sin «Pago rápido», para que lo único
+ * que se sume a Stripe (2,9 % + 0,30 → 3,20 sobre 100,00) sea el recargo: 1,50.
+ */
+test.describe.serial("registrar cobro: nacional o internacional", () => {
+  const QUESTION = "¿El pago fue nacional o internacional?";
+  let owner: TestUser;
+  let ownerDb: Db;
+
+  test.beforeAll(async () => {
+    owner = await newUser();
+    ownerDb = await signInAal1(owner.email, owner.password);
+    const surcharge = await ownerDb.from("pay_gateway_extras").insert({
+      gateway_id: owner.basics.gatewayId,
+      kind: "internacional",
+      name: "Pago internacional",
+      pct: "1.5",
+      sort: 1,
+    });
+    if (surcharge.error) throw new Error(`No se pudo agregar el recargo: ${surcharge.error.message}`);
+    const paypal = await ownerDb.rpc("pay_create_gateway", {
+      p: { name: "PayPal Demo", fee: { pct: "3.49", fixed: "0.49" } },
+    });
+    if (paypal.error) throw new Error(`No se pudo crear PayPal Demo: ${paypal.error.message}`);
+  });
+
+  /** Escuela Demo, sin canal, por Stripe: sin plataforma ni «Pago rápido» (apagado por defecto). */
+  async function chooseStripe(page: Page): Promise<void> {
+    await page.getByLabel("Empresa").selectOption({ label: "Escuela Demo" });
+    await page.getByLabel("Pasarela").selectOption({ label: "Stripe" });
+    await expect(page.getByRole("switch", { name: "Pago rápido" })).not.toBeChecked();
+  }
+
+  test("100 USD «Nacional»: Stripe cobra 3,20 y nada más; la pregunta sale por defecto en «Nacional»", async ({ page }) => {
+    await login(page, owner);
+    await openForm(page);
+    await chooseStripe(page);
+    const origin = page.getByLabel(QUESTION);
+    await expect(origin).toHaveValue("nacional");
+    // El recargo no es una opción más de la lista.
+    const options = page.getByRole("group", { name: "Opciones de Stripe" });
+    await expect(options.getByRole("switch")).toHaveCount(1);
+    await expect(options).not.toContainText("Pago internacional");
+    await page.getByLabel("Monto").fill("100");
+    const reference = `NACIONAL-${randomUUID().slice(0, 8)}`;
+    await page.getByLabel("Referencia").fill(reference);
+
+    const preview = page.getByRole("region", { name: "Vista previa" });
+    const fees = preview.getByRole("list", { name: "Comisiones" });
+    await expect(fees.getByRole("listitem").filter({ hasText: "Stripe" })).toContainText("$3,20");
+    await expect(fees.getByRole("listitem")).toHaveCount(1);
+    await expect(preview.getByTestId("comisiones")).toHaveText("$3,20");
+    await expect(preview.getByTestId("neto")).toHaveText("$96,80");
+    await expectCleanScreen(page);
+
+    await page.getByRole("button", { name: "Guardar" }).click();
+    await expect(page.getByRole("region", { name: /Avisos/ }).getByText("Cobro guardado")).toBeVisible();
+    const [saved, ...more] = await savedWith(ownerDb, reference);
+    expect(more).toEqual([]);
+    expect(saved).toMatchObject({ fees_total: "3.20", net_amount: "96.80" });
+  });
+
+  test("100 USD «Internacional»: 3,20 + 1,50 = 4,70; la vista previa se recalcula al momento y lo guardado lo confirma", async ({
+    page,
+  }) => {
+    await login(page, owner);
+    await openForm(page);
+    await chooseStripe(page);
+    await page.getByLabel("Monto").fill("100");
+    const reference = `INTERNACIONAL-${randomUUID().slice(0, 8)}`;
+    await page.getByLabel("Referencia").fill(reference);
+    const preview = page.getByRole("region", { name: "Vista previa" });
+    await expect(preview.getByTestId("comisiones")).toHaveText("$3,20");
+
+    await page.getByLabel(QUESTION).selectOption("internacional");
+    const fees = preview.getByRole("list", { name: "Comisiones" });
+    await expect(fees.getByRole("listitem").filter({ hasText: "Stripe" })).toContainText("$3,20");
+    await expect(fees.getByRole("listitem").filter({ hasText: "Pago internacional" })).toContainText("$1,50");
+    await expect(preview.getByTestId("comisiones")).toHaveText("$4,70");
+    await expect(preview.getByTestId("neto")).toHaveText("$95,30");
+    // El reparto 50/30/20 sale del neto nuevo.
+    const shares = preview.getByRole("list", { name: "Reparto" });
+    await expect(shares.getByRole("listitem").filter({ hasText: "Grupo A" })).toContainText("$47,65");
+    await expect(shares.getByRole("listitem").filter({ hasText: "Grupo B" })).toContainText("$28,59");
+    await expect(shares.getByRole("listitem").filter({ hasText: "Grupo C" })).toContainText("$19,06");
+    await expectCleanScreen(page);
+
+    await page.getByRole("button", { name: "Guardar" }).click();
+    await expect(page.getByRole("region", { name: /Avisos/ }).getByText("Cobro guardado")).toBeVisible();
+    const [saved, ...more] = await savedWith(ownerDb, reference);
+    expect(more).toEqual([]);
+    expect(saved).toMatchObject({ fees_total: "4.70", net_amount: "95.30" });
+    const amountOf = (beneficiaryId: string) =>
+      saved?.pay_allocations.find((line) => line.beneficiary_id === beneficiaryId)?.amount;
+    const { a, b, c } = owner.basics.beneficiaryIds;
+    expect([a, b, c].map(amountOf)).toEqual(["47.65", "28.59", "19.06"]);
+    // Listo para el siguiente con la misma selección: sigue «Internacional».
+    await expect(page.getByLabel(QUESTION)).toHaveValue("internacional");
+  });
+
+  test("al cambiar de pasarela la pregunta aparece o desaparece y vuelve a «Nacional»; «Repetir el último» repite «Internacional»", async ({
+    page,
+  }) => {
+    await login(page, owner);
+    await openForm(page);
+    await chooseStripe(page);
+    const origin = page.getByLabel(QUESTION);
+    await origin.selectOption("internacional");
+
+    await page.getByLabel("Pasarela").selectOption({ label: "PayPal Demo" });
+    await expect(origin).toHaveCount(0);
+    await page.getByLabel("Monto").fill("100");
+    const preview = page.getByRole("region", { name: "Vista previa" });
+    // PayPal Demo 3,49 % + 0,49 sobre 100,00, sin recargo.
+    await expect(preview.getByTestId("comisiones")).toHaveText("$3,98");
+    await expectCleanScreen(page);
+
+    await page.getByLabel("Pasarela").selectOption({ label: "Stripe" });
+    await expect(origin).toHaveValue("nacional");
+    await expect(preview.getByTestId("comisiones")).toHaveText("$3,20");
+
+    // El último cobro (el de la prueba anterior) fue internacional.
+    await page.getByLabel("Pasarela").selectOption({ label: "PayPal Demo" });
+    await page.getByRole("button", { name: "Repetir el último" }).click();
+    await expect(page.getByLabel("Pasarela")).toHaveValue(owner.basics.gatewayId);
+    await expect(origin).toHaveValue("internacional");
+    await expect(page.getByRole("switch", { name: "Pago rápido" })).not.toBeChecked();
+    await expect(preview.getByTestId("comisiones")).toHaveText("$4,70");
+    await expectCleanScreen(page);
+  });
+});

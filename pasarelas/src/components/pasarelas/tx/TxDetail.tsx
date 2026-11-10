@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { AllocationList } from "@/components/pasarelas/AllocationList";
 import { BreakdownCard } from "@/components/pasarelas/BreakdownCard";
+import { ORIGIN_LABEL, isOption, originOf } from "@/components/pasarelas/gateways/international";
 import { Alert, Card, CardBody, CardHeader, CardTitle, DateText, DateTimeText } from "@/components/ui";
 import type { ISODate, PayConfig, TxSnapshot } from "@/lib/pasarelas/types";
 import type { TxDetail as TxDetailData } from "@/server/pasarelas/dto";
@@ -45,10 +46,21 @@ function namesOf(tx: TxSnapshot, cfg: PayConfig) {
 
 const DISPUTE_LABEL = { abierta: "Abierta", ganada: "Ganada", perdida: "Perdida" } as const;
 
+/**
+ * «Nacional» o «Internacional», si la pasarela cobra (o cobró) un recargo a los pagos internacionales: el cobro fue
+ * internacional si su desglose congelado trae ese recargo. Si la pasarela nunca lo tuvo, no hay nada que decir.
+ */
+function originText(tx: TxSnapshot, cfg: PayConfig): string | null {
+  const gateway = cfg.gateways.find((candidate) => candidate.id === tx.gatewayId);
+  if (gateway === undefined || gateway.extras.every(isOption)) return null;
+  return ORIGIN_LABEL[originOf(gateway, tx.breakdown.rules.extras.map((option) => option.id)).origin];
+}
+
 /** Lo que el cobro es fuera de las cifras: quién, por dónde, cuándo y a qué cuenta. */
 function DataCard({ tx, cfg }: { tx: TxSnapshot; cfg: PayConfig }) {
   const names = namesOf(tx, cfg);
   const scheme = tx.breakdown.rules.scheme;
+  const origin = originText(tx, cfg);
   return (
     <Card>
       <CardHeader>
@@ -59,6 +71,11 @@ function DataCard({ tx, cfg }: { tx: TxSnapshot; cfg: PayConfig }) {
           <Row label="Empresa">{names.company}</Row>
           {names.channel === null ? null : <Row label="Canal">{names.channel}</Row>}
           <Row label="Pasarela">{names.gateway}</Row>
+          {origin === null ? null : (
+            <Row label="Origen" testId="origen">
+              {origin}
+            </Row>
+          )}
           <Row label="Fecha del cobro">
             <DateTimeText value={tx.occurredAt} />
           </Row>

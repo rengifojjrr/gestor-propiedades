@@ -676,3 +676,92 @@ test.describe.serial("detalle del cobro", () => {
     await expectCleanScreen(page);
   });
 });
+
+/**
+ * El origen del pago (nacional o internacional) en el detalle y al editar, con otro usuario. Stripe 2,9 % + 0,30
+ * cobra 3,20 sobre 100,00; su recargo internacional, 1,5 % del bruto, 1,50 más. Sin canal ni «Pago rápido»: no hay
+ * plataforma ni otra opción que sumar.
+ */
+test.describe.serial("detalle del cobro: nacional o internacional", () => {
+  const QUESTION = "¿El pago fue nacional o internacional?";
+  let user: TestUser;
+  let client: Db;
+
+  test.beforeAll(async () => {
+    user = await newUser();
+    client = await signInAal1(user.email, user.password);
+  });
+
+  /** Un cobro de 100,00 USD por Stripe, sin canal, repartido 50/30/20, hoy al mediodía, con esas opciones. */
+  async function charge(extraIds: string[]): Promise<string> {
+    const id = randomUUID();
+    const today = todayNY(new Date());
+    await serverData().createTx(client, {
+      id,
+      companyId: user.basics.companyId,
+      channelId: null,
+      gatewayId: user.basics.gatewayId,
+      extraIds,
+      schemeId: user.basics.schemeId,
+      occurredOn: today,
+      occurredAt: wallTimeToInstant(`${today}T12:00`, ZONE),
+      currency: "USD",
+      grossOriginal: "100.00",
+      reference: `ORIGEN-${randomUUID().slice(0, 8)}`,
+      note: null,
+    });
+    return id;
+  }
+
+  test("el detalle dice el origen solo si la pasarela cobra recargo; editar de nacional a internacional recalcula", async ({
+    page,
+  }) => {
+    const plain = await charge([]);
+    await login(page, user);
+    await page.goto(`/pasarelas/cobros/${plain}`);
+    await expect(page.getByTestId("neto")).toHaveText("$96,80");
+    // Stripe todavía no cobra recargo: no hay nada que decir del origen.
+    await expect(page.getByTestId("origen")).toHaveCount(0);
+
+    const surcharge = unwrap(
+      await client
+        .from("pay_gateway_extras")
+        .insert({ gateway_id: user.basics.gatewayId, kind: "internacional", name: "Pago internacional", pct: "1.5", sort: 1 })
+        .select("id")
+        .single(),
+      "recargo internacional",
+    );
+    const id = await charge([]);
+    await page.goto(`/pasarelas/cobros/${id}`);
+    await expect(page.getByTestId("origen")).toHaveText("Nacional");
+    await expect(feeLine(page, "Stripe")).toContainText("$3,20");
+    await expect(page.getByTestId("comisiones")).toHaveText("$3,20");
+    await expectCleanScreen(page);
+
+    await page.goto(`/pasarelas/cobros/${id}/editar`);
+    await expect(page.getByRole("button", { name: "Guardar cambios" })).toBeEnabled();
+    const origin = page.getByLabel(QUESTION);
+    await expect(origin).toHaveValue("nacional");
+    await expect(page.getByRole("group", { name: "Opciones de Stripe" })).not.toContainText("Pago internacional");
+    await expectCleanScreen(page);
+    await origin.selectOption("internacional");
+    await page.getByRole("button", { name: "Guardar cambios" }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/pasarelas/cobros/${id}$`));
+    await expect(page.getByTestId("origen")).toHaveText("Internacional");
+    await expect(feeLine(page, "Stripe")).toContainText("$3,20");
+    await expect(feeLine(page, "Pago internacional")).toContainText("$1,50");
+    await expect(page.getByTestId("comisiones")).toHaveText("$4,70");
+    await expect(page.getByTestId("neto")).toHaveText("$95,30");
+    await expect(share(page, "Grupo A")).toContainText("$47,65");
+    await expect(history(page).getByRole("listitem").first()).toContainText("Editado: opciones");
+    const [saved] = await serverData().getSnapshots(client, [id]);
+    expect(saved?.breakdown.rules.extras.map((option) => option.id)).toEqual([surcharge.id]);
+    expect(saved?.fees).toBe("4.70");
+    await expectCleanScreen(page);
+
+    // Al volver a editarlo, la pregunta parte de lo guardado.
+    await page.goto(`/pasarelas/cobros/${id}/editar`);
+    await expect(page.getByLabel(QUESTION)).toHaveValue("internacional");
+  });
+});

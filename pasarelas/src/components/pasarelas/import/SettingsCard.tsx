@@ -1,11 +1,16 @@
 "use client";
 
+import { isOption } from "@/components/pasarelas/gateways/international";
 import { Card, CardBody, CardHeader, CardTitle, Checkbox, Field, Select } from "@/components/ui";
 import type { ImportChoices } from "./plan";
 
 export type ImportSettings = { companyId: string; gatewayId: string; channelId: string; extraIds: string[] };
 
-/** Empresa, pasarela, canal y opciones: valen para todos los cobros del archivo. */
+/**
+ * Empresa, pasarela, canal y opciones: valen para todos los cobros del archivo. Si la pasarela cobra un recargo a
+ * los pagos internacionales, va aparte: el archivo no dice qué cobro fue internacional, así que también vale para
+ * todos.
+ */
 export function SettingsCard({
   choices,
   value,
@@ -23,6 +28,8 @@ export function SettingsCard({
 }) {
   const channels = choices.channels.filter((channel) => channel.companyId === value.companyId);
   const gateway = choices.gateways.find((candidate) => candidate.id === value.gatewayId);
+  const options = gateway?.extras.filter(isOption) ?? [];
+  const international = gateway?.extras.find((extra) => !isOption(extra));
   const toggleExtra = (id: string, on: boolean) =>
     onChange({ ...value, extraIds: on ? [...value.extraIds, id] : value.extraIds.filter((other) => other !== id) });
 
@@ -66,10 +73,10 @@ export function SettingsCard({
             </Select>
           </Field>
         </div>
-        {gateway && gateway.extras.length > 0 ? (
+        {gateway && options.length > 0 ? (
           <fieldset className="flex min-w-0 flex-col">
             <legend className="text-sm font-semibold">Opciones de {gateway.name}</legend>
-            {gateway.extras.map((extra) => (
+            {options.map((extra) => (
               <Checkbox
                 key={extra.id}
                 label={extra.name}
@@ -79,6 +86,15 @@ export function SettingsCard({
               />
             ))}
           </fieldset>
+        ) : null}
+        {gateway && international ? (
+          <Checkbox
+            label="Todos los cobros del archivo son internacionales"
+            hint={`Les suma el recargo internacional de ${gateway.name}. El archivo no dice qué cobro fue internacional: si trae de los dos, impórtalos en dos archivos.`}
+            checked={value.extraIds.includes(international.id)}
+            onChange={(event) => toggleExtra(international.id, event.currentTarget.checked)}
+            disabled={disabled}
+          />
         ) : null}
       </CardBody>
     </Card>

@@ -2,6 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore, useTransition, type FormEvent } from "react";
+import {
+  activeInternational,
+  isOption,
+  originOf,
+  withOrigin,
+} from "@/components/pasarelas/gateways/international";
+import { InternationalChoice } from "@/components/pasarelas/gateways/InternationalChoice";
 import { ExtrasToggles } from "@/components/pasarelas/registrar/ExtrasToggles";
 import { Alert, Button, ButtonLink, Field, Input, MoneyInput, Select, Textarea, notify } from "@/components/ui";
 import { localInputToInstant } from "@/lib/pasarelas/dates";
@@ -32,7 +39,8 @@ const sameIds = (a: readonly string[], b: readonly string[]): boolean =>
  * Editar un cobro. Solo viaja lo que cambió: el motor vuelve a resolver solo eso y lo demás conserva sus reglas
  * congeladas. Al cambiar de pasarela van también sus opciones; al cambiar de empresa, el canal se vacía (es de
  * otra). La cuenta destino, si no se toca, la vuelve a elegir el motor cuando cambian la empresa o la pasarela; la
- * fecha estimada se cambia aparte, desde el detalle.
+ * fecha estimada se cambia aparte, desde el detalle. «¿El pago fue nacional o internacional?» parte de lo guardado
+ * (si el desglose trae el recargo internacional) y, como las opciones, viaja solo si cambia.
  *
  * Manda la versión del cobro que se abrió (`expectedUpdatedAt`): si otra pestaña lo cambió entretanto, el servidor
  * da conflicto y no se pisa lo de la otra.
@@ -54,10 +62,17 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
   const schemes = cfg.schemes.filter((scheme) => scheme.active || scheme.id === tx.schemeId);
   const accounts = cfg.bankAccounts.filter((account) => account.active || account.id === tx.bankAccountId);
 
+  // Lo guardado, partido: las opciones por un lado y, si fue internacional, su recargo (aunque ya esté apagado).
+  const frozen = originOf(
+    cfg.gateways.find((candidate) => candidate.id === tx.gatewayId),
+    frozenExtras,
+  );
+
   const [companyId, setCompanyId] = useState(tx.companyId);
   const [channelId, setChannelId] = useState(tx.channelId ?? "");
   const [gatewayId, setGatewayId] = useState(tx.gatewayId);
-  const [extraIds, setExtraIds] = useState(frozenExtras);
+  const [extraIds, setExtraIds] = useState(frozen.optionIds);
+  const [origin, setOrigin] = useState(frozen.origin);
   const [amount, setAmount] = useState(() => formatAmount(tx.grossOriginal));
   const [currency, setCurrency] = useState(tx.currency);
   const [occurredLocal, setOccurredLocal] = useState(initialLocal);
@@ -74,8 +89,13 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
   );
   const gateway = gateways.find((candidate) => candidate.id === gatewayId);
   const options = (gateway?.extras ?? [])
-    .filter((option) => option.active || frozenExtras.includes(option.id))
+    .filter((option) => (option.active || frozenExtras.includes(option.id)) && isOption(option))
     .sort((a, b) => a.sort - b.sort);
+  // El recargo que se aplica con «Internacional»: en la misma pasarela, el que el cobro congeló (si lo trae); si no,
+  // el que la pasarela tiene encendido hoy.
+  const international =
+    gatewayId === tx.gatewayId && frozen.international !== null ? frozen.international : activeInternational(gateway);
+  const appliedExtraIds = withOrigin(extraIds, international, origin);
 
   function chooseCompany(next: string) {
     setCompanyId(next);
@@ -84,7 +104,14 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
 
   function chooseGateway(next: string) {
     setGatewayId(next);
-    setExtraIds(next === tx.gatewayId ? frozenExtras : defaultExtraIds(cfg, companyId, next));
+    if (next === tx.gatewayId) {
+      setExtraIds(frozen.optionIds);
+      setOrigin(frozen.origin);
+      return;
+    }
+    const nextGateway = gateways.find((candidate) => candidate.id === next);
+    setExtraIds(originOf(nextGateway, defaultExtraIds(cfg, companyId, next)).optionIds);
+    setOrigin("nacional");
   }
 
   /** Lo que cambió respecto del cobro guardado, como lo espera `editTransaction`. */
@@ -94,7 +121,7 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
     if ((channelId || null) !== tx.channelId) out.channelId = channelId || null;
     if (gatewayId !== tx.gatewayId) out.gatewayId = gatewayId;
     // Con otra pasarela van siempre sus opciones: las de la anterior no son suyas.
-    if (gatewayId !== tx.gatewayId || !sameIds(extraIds, frozenExtras)) out.extraIds = extraIds;
+    if (gatewayId !== tx.gatewayId || !sameIds(appliedExtraIds, frozenExtras)) out.extraIds = appliedExtraIds;
     if (parseMoney(amount) !== tx.grossOriginal) out.grossOriginal = amount;
     if (currency !== tx.currency) out.currency = currency;
     if (occurredLocal !== initialLocal) out.occurredAt = localInputToInstant(occurredLocal);
@@ -183,6 +210,15 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
           selected={extraIds}
           currency={currency}
           onChange={setExtraIds}
+        />
+      ) : null}
+      {gateway && international ? (
+        <InternationalChoice
+          gatewayName={gateway.name}
+          international={international}
+          currency={currency}
+          value={origin}
+          onChange={setOrigin}
         />
       ) : null}
       {fieldErrors.extraIds ? (

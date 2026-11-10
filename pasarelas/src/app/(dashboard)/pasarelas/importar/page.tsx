@@ -53,7 +53,9 @@ export default async function ImportarPage() {
     gateways: gateways.map(({ id, name, extras }) => ({
       id,
       name,
-      extras: extras.filter((extra) => extra.active).map((extra) => ({ id: extra.id, name: extra.name })),
+      extras: extras
+        .filter((extra) => extra.active)
+        .map((extra) => ({ id: extra.id, name: extra.name, kind: extra.kind })),
     })),
     defaultExtras: Object.fromEntries(
       companies.flatMap((company) =>

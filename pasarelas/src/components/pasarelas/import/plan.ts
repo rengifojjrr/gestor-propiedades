@@ -16,7 +16,7 @@ import {
   type ManualTx,
   type RepeatCheck,
 } from "@/lib/pasarelas/import";
-import type { ISODate } from "@/lib/pasarelas/types";
+import type { ExtraCfg, ISODate } from "@/lib/pasarelas/types";
 import type { ImportPreview, ImportScheme } from "@/server/pasarelas/ops/import";
 import type { SavedImportMapping } from "@/server/pasarelas/queries/import";
 
@@ -36,7 +36,7 @@ export const FORMAT_LABEL: Record<ImportFormat, string> = {
 export type ImportChoices = {
   companies: { id: string; name: string }[];
   channels: { id: string; companyId: string; name: string }[];
-  gateways: { id: string; name: string; extras: { id: string; name: string }[] }[];
+  gateways: { id: string; name: string; extras: Pick<ExtraCfg, "id" | "name" | "kind">[] }[];
   /** Las opciones que salen marcadas al elegir esa pasarela en esa empresa, por `defaultExtrasKey`. */
   defaultExtras: Record<string, string[]>;
 };
