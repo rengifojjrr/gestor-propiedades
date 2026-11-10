@@ -457,6 +457,64 @@ test.describe.serial("registrar cobro", () => {
     expect(after[0]).toMatchObject({ id: saved?.id, receipts_count: 1 });
   });
 
+  test("si algo que no es el comprobante falla después de guardar, dice que el cobro quedó guardado y no reusa su id", async ({
+    page,
+  }) => {
+    const tag = randomUUID().slice(0, 8);
+    const monto = page.getByLabel("Monto");
+    const unfinished = page
+      .getByRole("main")
+      .getByRole("alert")
+      .filter({ hasText: "El cobro quedó guardado, pero algo falló después" });
+
+    await login(page, owner);
+    await openForm(page);
+    await chooseE1(page);
+    const refA = `DESPUES-A-${tag}`;
+    await monto.fill("45");
+    await page.getByLabel("Referencia").fill(refA);
+    // Lo siguiente que pida un id nuevo (dejar el formulario listo, con el cobro ya guardado) falla una sola vez.
+    // Sin `provokedError`: si el fallo se escapara sin atrapar, `pageerror` lo registraría y la prueba no pasaría.
+    await page.evaluate(() => {
+      const original = crypto.randomUUID.bind(crypto);
+      crypto.randomUUID = () => {
+        crypto.randomUUID = original;
+        throw new Error("prueba: falla después de guardar");
+      };
+    });
+    await page.getByRole("button", { name: "Guardar" }).click();
+
+    await expect(unfinished).toBeVisible();
+    await expect(unfinished).toContainText("No lo registres otra vez");
+    await expect(page.getByText("No se pudo guardar el cobro")).toHaveCount(0);
+    const [savedA, ...moreA] = await savedWith(ownerDb, refA);
+    expect(moreA).toEqual([]);
+    await expect(unfinished.getByRole("link", { name: "Ver el cobro guardado" })).toHaveAttribute(
+      "href",
+      `/pasarelas/cobros/${savedA?.id}`,
+    );
+    // El formulario se vacía igual: listo para el siguiente, con la misma selección.
+    await expect(monto).toHaveValue("");
+    await expect(page.getByLabel("Referencia")).toHaveValue("");
+    await expect(page.getByLabel("Empresa")).toHaveValue(owner.basics.companyId);
+    await expect(page.getByRole("button", { name: "Guardar" })).toBeEnabled();
+    const savedToast = page.getByRole("region", { name: /Avisos/ }).getByRole("listitem").filter({ hasText: "Cobro guardado" });
+    await expect(savedToast.first()).toHaveCSS("opacity", "1");
+    await expectCleanScreen(page);
+
+    // El siguiente envío es otro cobro, con otro id, y el aviso de antes se va.
+    const refB = `DESPUES-B-${tag}`;
+    await monto.fill("15");
+    await page.getByLabel("Referencia").fill(refB);
+    await page.getByRole("button", { name: "Guardar" }).click();
+    await expect(monto).toHaveValue("");
+    await expect(unfinished).toHaveCount(0);
+    await expect.poll(async () => (await savedWith(ownerDb, refB)).length).toBe(1);
+    const [savedB] = await savedWith(ownerDb, refB);
+    expect(savedB?.id).not.toBe(savedA?.id);
+    expect(await savedWith(ownerDb, refA)).toHaveLength(1);
+  });
+
   test("si el formulario no se puede mostrar, dice qué hacer: reintentar o mirar en Cobros", async ({ page }) => {
     // El formulario no puede crear el id del cobro en el navegador: falla al montarse y se ve `error.tsx`.
     const failure = "prueba: el formulario no se puede montar";

@@ -60,6 +60,10 @@ const SAVED_WITHOUT_RECEIPT_TEXT = {
   replace: "Cobro guardado, pero el comprobante no se subió: elige otro archivo en el aviso junto a «Guardar».",
 };
 const UPLOAD_FAILED_TEXT = "No se pudo subir el comprobante. Inténtalo de nuevo.";
+/** Algo falló después de guardar el cobro, fuera del comprobante (que tiene su propio aviso). */
+const SAVED_UNFINISHED_TEXT =
+  "El cobro quedó guardado, pero algo falló después: al avisarlo o al dejar el formulario listo para el siguiente. " +
+  "No lo registres otra vez: revísalo en su detalle.";
 
 type FieldErrors = Record<string, string | undefined>;
 
@@ -163,6 +167,8 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
   // El estado tarda un pintado en llegar al botón: esta marca frena en el acto un segundo envío.
   const savingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  // El cobro que quedó guardado aunque algo falló después: el error general enlaza a su detalle.
+  const [unfinishedId, setUnfinishedId] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   // Uno por cobro: guardar otro cobro no borra ni reemplaza el reintento de uno anterior.
   const [pendingReceipts, setPendingReceipts] = useState<PendingReceipt[]>([]);
@@ -230,6 +236,7 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
 
   function showErrors(message: string, errors: FieldErrors) {
     setError(message);
+    setUnfinishedId(null);
     setFieldErrors(errors);
     if (MORE_FIELDS.some((name) => errors[name] !== undefined)) setMoreOpen(true);
   }
@@ -312,33 +319,46 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
     savingRef.current = true;
     setSaving(true);
     setError(null);
+    setUnfinishedId(null);
     setFieldErrors({});
     try {
       const transactionId = await saveTransaction();
       if (transactionId === null) return;
-      const failure = file === null ? null : await attachReceipt(file, transactionId);
-      if (file !== null && failure !== null) {
-        const pending: PendingReceipt = {
-          file,
-          transactionId,
-          ...failure,
-          gross: parseMoney(amount),
-          currency,
-          reference: reference.trim(),
-          retrying: false,
-        };
-        setPendingReceipts((list) => [...list.filter((item) => item.transactionId !== transactionId), pending]);
-        setLastFailedId(transactionId);
+      try {
+        const failure = file === null ? null : await attachReceipt(file, transactionId);
+        if (file !== null && failure !== null) {
+          const pending: PendingReceipt = {
+            file,
+            transactionId,
+            ...failure,
+            gross: parseMoney(amount),
+            currency,
+            reference: reference.trim(),
+            retrying: false,
+          };
+          setPendingReceipts((list) => [...list.filter((item) => item.transactionId !== transactionId), pending]);
+          setLastFailedId(transactionId);
+        }
+        const message =
+          failure === null
+            ? SAVED_TEXT
+            : SAVED_WITHOUT_RECEIPT_TEXT[failure.unusableFile ? "replace" : "retry"];
+        notifyAction(message, {
+          label: "Ver cobro",
+          onClick: () => router.push(`/pasarelas/cobros/${transactionId}`),
+        });
+        resetForNext();
+      } catch {
+        // El cobro ya está guardado: nunca «No se pudo guardar el cobro». Se dice qué pasó, se enlaza el cobro y el
+        // formulario se vacía igual, para que el siguiente envío no reuse el id de este (ni sus datos).
+        setError(SAVED_UNFINISHED_TEXT);
+        setUnfinishedId(transactionId);
+        try {
+          resetForNext();
+        } catch {
+          // Si tampoco se puede vaciar, el aviso ya dice que el cobro quedó guardado y que no se registre otra vez.
+        }
       }
-      const message =
-        failure === null
-          ? SAVED_TEXT
-          : SAVED_WITHOUT_RECEIPT_TEXT[failure.unusableFile ? "replace" : "retry"];
-      notifyAction(message, {
-        label: "Ver cobro",
-        onClick: () => router.push(`/pasarelas/cobros/${transactionId}`),
-      });
-      resetForNext();
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -631,7 +651,16 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
           ) : null}
           {error !== null ? (
             <Alert tone="danger" announce>
-              {error}
+              {unfinishedId === null ? (
+                error
+              ) : (
+                <div className="flex flex-col items-start gap-2">
+                  <p>{error}</p>
+                  <Link href={`/pasarelas/cobros/${unfinishedId}`} className="font-semibold underline">
+                    Ver el cobro guardado
+                  </Link>
+                </div>
+              )}
             </Alert>
           ) : null}
           <Button
