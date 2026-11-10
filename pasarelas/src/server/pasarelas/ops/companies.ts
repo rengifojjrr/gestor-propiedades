@@ -19,6 +19,8 @@ const COMPANY_NOT_FOUND = "Esa empresa ya no existe.";
 const CHANNEL_NOT_FOUND = "Ese canal ya no existe.";
 const GATEWAY_NOT_FOUND = "Esa pasarela ya no está en esta empresa.";
 const IN_USE = "Tiene cobros: desactívala en su lugar";
+/** El canal es masculino: el mismo aviso, concordado. */
+const CHANNEL_IN_USE = "Tiene cobros: desactívalo en su lugar";
 const REPEATED_GATEWAY = "Esa pasarela ya está en esta empresa";
 const LOGO_FILES_FAILED = "No se pudo borrar el logo de la empresa. La empresa sigue ahí: inténtalo de nuevo.";
 
@@ -240,7 +242,7 @@ export async function deleteChannel(supabase: Db, id: string): Promise<void> {
   const { data } = await translating(
     () => supabase.from("pay_channels").delete().eq("id", id).select("id").throwOnError(),
     isReferenced,
-    IN_USE,
+    CHANNEL_IN_USE,
   );
   expectOne(data, CHANNEL_NOT_FOUND);
 }

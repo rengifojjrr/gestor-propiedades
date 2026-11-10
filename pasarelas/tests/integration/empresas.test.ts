@@ -33,6 +33,7 @@ const BUCKET = "comprobantes";
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 
 const IN_USE = "Tiene cobros: desactívala en su lugar";
+const CHANNEL_IN_USE = "Tiene cobros: desactívalo en su lugar";
 const REPEATED_GATEWAY = "Esa pasarela ya está en esta empresa";
 
 const admin = adminClient();
@@ -236,7 +237,7 @@ describe("saveChannel y deleteChannel", () => {
     expect((await getCompany(user.client, companyId))?.channels).toEqual([]);
 
     await saveTransactions(user.client, [e1Item(b)]);
-    await expectUserError(() => deleteChannel(user.client, b.channelId), IN_USE);
+    await expectUserError(() => deleteChannel(user.client, b.channelId), CHANNEL_IN_USE);
     expect((await getCompany(user.client, b.companyId))?.channels.map((channel) => channel.id)).toEqual([b.channelId]);
   });
 
