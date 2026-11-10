@@ -12,7 +12,7 @@ import { looksLikeCardNumber } from "../guards";
 import { formatMoney } from "../money";
 import type { Currency, ISODate, Money } from "../types";
 import { normalizeHeader, type ImportFormat } from "./detect";
-import { skipReason, STRIPE_REFUNDED, type ColumnMapping } from "./presets";
+import { skipReason, STRIPE_CONVERTED_CURRENCY, STRIPE_REFUNDED, type ColumnMapping } from "./presets";
 
 export type ImportRow = {
   /** La línea del archivo: la primera fila de datos es la 2. */
@@ -248,6 +248,11 @@ function readRow(
   const fee = feeCell === "" ? null : parseImportAmount(feeCell, m.decimal);
   if (feeCell !== "" && fee === null) problems.push(`comisión inválida: «${feeCell}»`);
 
+  // En Stripe, pagos, la comisión va en la moneda de la cuenta («Converted Currency») y el monto en la del cobro:
+  // si difieren, la comisión no se trae (nunca se mezclan monedas) y la nota lo dice.
+  const accountCurrency = format === "stripe_pagos" ? cell(STRIPE_CONVERTED_CURRENCY).trim().toUpperCase() : "";
+  const feeElsewhere = fee !== null && accountCurrency !== "" && accountCurrency !== currency;
+
   // Un cobro de Stripe ya reembolsado se importa por su monto original; lo reembolsado queda dicho en la nota.
   const refundedCell = format === "stripe_pagos" ? cell(STRIPE_REFUNDED).trim() : "";
   const refunded = refundedCell === "" ? null : parseImportAmount(refundedCell, m.decimal);
@@ -259,8 +264,9 @@ function readRow(
     refunded === null || dec(refunded).isZero()
       ? ""
       : `Reembolsado en la pasarela: ${formatMoney(toMoney(dec(refunded).abs()), currency)} (falta registrarlo en el detalle del cobro)`;
+  const feeNote = feeElsewhere ? `Comisión informada en ${accountCurrency}, otra moneda que el cobro: no se trajo` : "";
   const ownNote = cell(m.note).trim();
-  const note = [refundNote, looksLikeCardNumber(ownNote) ? "" : ownNote].filter((x) => x !== "").join(" · ");
+  const note = [refundNote, feeNote, looksLikeCardNumber(ownNote) ? "" : ownNote].filter((x) => x !== "").join(" · ");
 
   const occurredAt = toInstant(wall, zone);
   return {
@@ -271,7 +277,7 @@ function readRow(
       occurredOn: nyDate(occurredAt),
       grossOriginal: gross,
       currency,
-      reportedFee: fee === null ? null : toMoney(dec(fee).abs()),
+      reportedFee: fee === null || feeElsewhere ? null : toMoney(dec(fee).abs()),
       note: note === "" ? null : clip(note, MAX_NOTE),
     },
   };

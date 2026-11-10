@@ -121,6 +121,11 @@ export function presetFor(format: ImportFormat): ColumnMapping | null {
 /** Columnas de Stripe, pagos, que el importador lee por su nombre además del mapeo. */
 export const STRIPE_CAPTURED = "Captured";
 export const STRIPE_REFUNDED = "Amount Refunded";
+/**
+ * La moneda de la cuenta (la de las columnas «Converted …»). `Fee` va en esa moneda y `Amount` en la del cobro: si
+ * difieren, la comisión informada no se trae. Es opcional: sin ella no se compara.
+ */
+export const STRIPE_CONVERTED_CURRENCY = "Converted Currency";
 
 /** Las columnas sin las que un formato no se reconoce: las de su mapeo por defecto y las que lee por su nombre. */
 export function requiredColumns(format: Exclude<ImportFormat, "otro">): string[] {

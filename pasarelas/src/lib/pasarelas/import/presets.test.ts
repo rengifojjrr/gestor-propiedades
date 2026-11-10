@@ -162,6 +162,10 @@ describe("Stripe, pagos (tests/fixtures/stripe-pagos.csv)", () => {
       fila({ line: 7, reference: "ch_demo_0006", occurredAt: "2026-11-14T13:00:00.000Z", occurredOn: "2026-11-14",
         grossOriginal: "25.00", currency: "USD", reportedFee: "1.03",
         note: "Reembolsado en la pasarela: $25,00 (falta registrarlo en el detalle del cobro)" }),
+      // Cobro en EUR en una cuenta en USD: la comisión va en USD, así que no se trae.
+      fila({ line: 12, reference: "ch_demo_0010", occurredAt: "2026-11-15T16:00:00.000Z", occurredOn: "2026-11-15",
+        grossOriginal: "50.00", currency: "EUR", reportedFee: null,
+        note: "Comisión informada en USD, otra moneda que el cobro: no se trajo" }),
     ]);
   });
 

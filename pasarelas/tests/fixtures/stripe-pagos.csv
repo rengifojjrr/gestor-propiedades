@@ -9,3 +9,4 @@ ch_demo_0007,2026-11-14 14:00:00,80.00,0.00,usd,false,80.00,0.00,usd,0.00,Cancel
 ch_demo_0001,2026-11-13 15:30:00,100.00,0.00,usd,true,100.00,0.00,usd,3.20,Paid,Pedido demo 1,cliente1@example.com,Cliente Demo 1
 ch_demo_0008,13/11/2026 10:00,10.00,0.00,usd,true,10.00,0.00,usd,0.59,Paid,Pedido demo 8,cliente8@example.com,Cliente Demo 8
 ch_demo_0009,2026-11-15 09:00:00,"12,34,5",0.00,usd,true,12.35,0.00,usd,0.66,Paid,Pedido demo 9,cliente9@example.com,Cliente Demo 9
+ch_demo_0010,2026-11-15 16:00:00,50.00,0.00,eur,true,54.10,0.00,usd,1.87,Paid,Pedido demo 10,cliente10@example.com,Cliente Demo 10

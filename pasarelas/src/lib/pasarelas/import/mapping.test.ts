@@ -586,6 +586,33 @@ describe("mapRows: qué es un cobro en Stripe, pagos", () => {
   test("sin columna de estado en el mapeo, no se filtra por estado", () => {
     expect(mapRows([filaPago("Failed")], { ...PAGOS, status: null }, "stripe_pagos").ok).toHaveLength(1);
   });
+
+  test("un cobro en EUR en una cuenta en USD: la comisión (en USD) no se trae y la nota lo dice", () => {
+    const r = mapRows(
+      [filaPago("Paid", { Currency: "eur", "Converted Currency": "usd", Fee: "1.87", Description: "Pedido demo" })],
+      { ...PAGOS, note: "Description" },
+      "stripe_pagos",
+    );
+    expect(r.ok).toHaveLength(1);
+    expect(r.ok[0]!.currency).toBe("EUR");
+    expect(r.ok[0]!.grossOriginal).toBe("10.00");
+    expect(r.ok[0]!.reportedFee).toBeNull();
+    expect(r.ok[0]!.note).toBe("Comisión informada en USD, otra moneda que el cobro: no se trajo · Pedido demo");
+  });
+
+  test("con la misma moneda (sin distinguir mayúsculas), sin «Converted Currency» o sin comisión, nada cambia", () => {
+    const igual = mapRows([filaPago("Paid", { Currency: "usd", "Converted Currency": "USD " })], PAGOS, "stripe_pagos");
+    expect(igual.ok[0]!).toMatchObject({ reportedFee: "0.59", note: null });
+    const vacia = mapRows([filaPago("Paid", { Currency: "eur", "Converted Currency": "" })], PAGOS, "stripe_pagos");
+    expect(vacia.ok[0]!).toMatchObject({ currency: "EUR", reportedFee: "0.59", note: null });
+    const sinComision = mapRows([filaPago("Paid", { Currency: "eur", "Converted Currency": "usd", Fee: "" })], PAGOS, "stripe_pagos");
+    expect(sinComision.ok[0]!).toMatchObject({ reportedFee: null, note: null });
+  });
+
+  test("la moneda de la cuenta solo se mira en Stripe, pagos", () => {
+    const r = okDe({ moneda: "eur", "Converted Currency": "usd", comision: "1.00" }, { currency: "moneda", fee: "comision" });
+    expect(r).toMatchObject({ currency: "EUR", reportedFee: "1.00", note: null });
+  });
 });
 
 describe("mapRows: qué es un cobro en PayPal", () => {
