@@ -1485,6 +1485,20 @@ de pasarelas, `RegisterForm`, `EditForm`, `TxDetail`, `import/SettingsCard` y su
 2. Al registrar y al editar un cobro: «¿Nacional o internacional?», que aplica o no el recargo, con la vista previa al
    momento. El detalle dice el origen.
 
+### Task 43: Cuánto tarda en caer el dinero: ventanas «de 3 a 5 días»
+
+Pedido del dueño: saber cuándo esperar cada cobro, nacional o internacional y con la opción rápida. Los días por
+pasarela, por opción y por empresa, la fecha estimada y el tiempo real medido ya existían. Lo nuevo son ventanas («de
+3 a 5 días hábiles»), también por opción, para lo internacional y en la cuenta de la empresa.
+
+**Dueña de:** una migración aditiva (máximos opcionales junto a cada «días», `estimated_deposit_from` en el cobro y
+`pay_save_transactions` que la guarda), el motor de fechas y lo que depende de la fecha estimada, y las pantallas de
+pasarelas, empresas, registrar, detalle, editar, cobros, Resumen e importar.
+
+1. La fecha estimada pasa a ser una ventana. `estimated_deposit_on` es la más tardía: «por caer», «atrasado» y los
+   próximos depósitos siguen con una sola fecha.
+2. En las pantallas: «Llega entre el lun 16 y el mié 18 nov».
+
 ### Task 22: Documentación, revisión y entrega
 
 **Archivos:** `docs/PASARELAS.md`, `README.md`, raíz `README.md`.
