@@ -57,9 +57,35 @@ el puerto está ocupado, falla. Para probar contra un servidor que ya tienes cor
 **Dos corridas de punta a punta no pueden compartir la misma carpeta a la vez**: las dos compilan en `.next` y se
 pisan. Una corrida por copia de trabajo.
 
+## Dónde está publicada hoy
+
+Desde el 10 de noviembre de 2026, en **https://pasarelas-rengifojjrr-6206s-projects.vercel.app**:
+
+- **Vercel**: el proyecto `pasarelas` publica la rama `main` con la carpeta raíz `pasarelas/` y solo las dos
+  variables públicas. No vuelve a compilar si un cambio no toca `pasarelas/`. Las vistas previas piden entrar a Vercel.
+- **Supabase**: el proyecto `cotizaciones-interactivas`, compartido con otras apps del dueño (plan gratis, sin
+  proyecto libre).
+  - La migración se aplicó tal cual, del commit `0f981a7` (sha256 `a6bb231b…`): queda registrada como
+    `pasarelas_1_las_pasarelas_de_pago`.
+  - La huella del esquema coincide con la de una base local recién aplicada. La única diferencia: `service_role`
+    también escribe en las 4 vistas, por los permisos por defecto del proyecto alojado.
+  - No apareció ningún aviso de seguridad nuevo.
+  - La prueba en vivo usó una cuenta de prueba (entrar, guardar, recargar) y la borró al terminar.
+
+**Lo que hay que saber de ese proyecto compartido:**
+- **Se entra con la cuenta de ese proyecto.** Si el correo ya tenía cuenta en otra app, es la misma: cambiar la
+  contraseña o «cerrar sesión en todos los dispositivos» desde Pasarelas también afecta a las otras apps. Y borrar
+  esa cuenta en Supabase borra todo lo de Pasarelas.
+- **El registro público del proyecto está abierto** (lo usan otras apps). Quien se registre allí puede entrar a
+  Pasarelas, pero solo ve un libro vacío propio: la base no le da filas de nadie más.
+- **Sin copias automáticas** (plan gratis): exporta cada tanto en Ajustes → «Exportar todo», y guárdala fuera de
+  Supabase. No lleva las fotos ni los PDF.
+- Para pasarlo a su propio proyecto sirven los mismos pasos de abajo. Además hay que copiar las filas `pay_*` y los
+  archivos del depósito `comprobantes`.
+
 ## Pasar a producción
 
-Nada de esto está hecho todavía. Son pasos para el dueño, o para quien tenga acceso a sus cuentas. Van en orden.
+Pasos para armarlo en un proyecto nuevo (por ejemplo, uno propio de pago). Van en orden.
 
 ### 1. Elegir el proyecto de Supabase
 
