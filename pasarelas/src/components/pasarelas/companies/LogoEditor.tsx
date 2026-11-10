@@ -1,7 +1,7 @@
 "use client";
 
 import { ImageUp, LoaderCircle } from "lucide-react";
-import { useId, useState, type ChangeEvent } from "react";
+import { useId, useState, useSyncExternalStore, type ChangeEvent } from "react";
 import { ReceiptFileError, checkReceiptFile } from "@/components/pasarelas/receipts/check";
 import { downscaleImage } from "@/components/pasarelas/receipts/downscale";
 import { uploadToFolder } from "@/components/pasarelas/receipts/upload";
@@ -18,6 +18,9 @@ const LOGO_SIDE = 512;
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const TYPE_TEXT = "El logo tiene que ser una imagen JPG, PNG o WebP.";
 const UPLOAD_TEXT = "No se pudo subir el logo. Inténtalo de nuevo.";
+
+/** `useSyncExternalStore` sin nada que escuchar: solo distingue el HTML del servidor de la página ya hidratada. */
+const noSubscription = () => () => {};
 
 /** Borra un archivo subido que no se pudo guardar como logo. Si no se puede, se irá al borrar la empresa. */
 async function discard(path: string): Promise<void> {
@@ -37,6 +40,10 @@ export function LogoEditor({ companyId, name, url }: { companyId: string; name: 
   const id = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // En el HTML del servidor el selector va apagado: un archivo elegido antes de que la página se hidrate no
+  // llegaría a ningún manejador y se perdería sin aviso.
+  const hydrated = useSyncExternalStore(noSubscription, () => true, () => false);
+  const locked = busy || !hydrated;
 
   async function save(path: string | null): Promise<boolean> {
     try {
@@ -86,7 +93,7 @@ export function LogoEditor({ companyId, name, url }: { companyId: string; name: 
           className={cn(
             buttonClass("secondary"),
             "cursor-pointer has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus",
-            busy && "pointer-events-none opacity-55",
+            locked && "pointer-events-none opacity-55",
           )}
         >
           {busy ? (
@@ -99,7 +106,7 @@ export function LogoEditor({ companyId, name, url }: { companyId: string; name: 
             type="file"
             accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
             className="sr-only"
-            disabled={busy}
+            disabled={locked}
             aria-describedby={error ? `${id}-ayuda ${id}-error` : `${id}-ayuda`}
             aria-invalid={error ? true : undefined}
             onChange={(event) => void pick(event)}

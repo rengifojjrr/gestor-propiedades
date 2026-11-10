@@ -50,6 +50,14 @@ async function filesIn(folder: string): Promise<string[]> {
   return data.map((file) => `${folder}/${file.name}`).sort();
 }
 
+/**
+ * El aviso pasajero que deja una acción, ya del todo visible: mientras entra (se desvanece) su texto todavía no
+ * tiene el contraste final y axe lo marcaría.
+ */
+async function expectToast(page: Page, text: string): Promise<void> {
+  await expect(page.locator("[data-sonner-toast]").filter({ hasText: text })).toHaveCSS("opacity", "1");
+}
+
 async function expectCleanScreen(page: Page): Promise<void> {
   await expectNoHorizontalOverflow(page);
   await expectNoSeriousAxe(page);
@@ -111,6 +119,7 @@ test.describe.serial("empresas", () => {
     // Sin logo, las iniciales.
     await expect(page.getByText("TD", { exact: true })).toBeVisible();
     await expect(page.getByText("Todavía no tiene cobros")).toBeVisible();
+    await expectToast(page, "Empresa creada");
     await expectCleanScreen(page);
   });
 
@@ -134,6 +143,7 @@ test.describe.serial("empresas", () => {
       .select("name, platform_fee_pct::text, platform_fee_fixed::text")
       .eq("company_id", tiendaId);
     expect(saved.data).toEqual([{ name: "Tienda en línea", platform_fee_pct: "3.0000", platform_fee_fixed: "0.25" }]);
+    await expectToast(page, "Canal agregado");
     await expectCleanScreen(page);
   });
 
@@ -164,6 +174,7 @@ test.describe.serial("empresas", () => {
     await expectExternal(stripe.getByRole("link", { name: /Abrir panel/ }), PANEL);
     await expectExternal(stripe.getByRole("link", { name: /Abrir link de pago/ }), CHECKOUT);
     await expect(stripe).toContainText("Cuenta principal");
+    await expectToast(page, "Pasarela agregada");
     await expectCleanScreen(page);
 
     // La misma pasarela otra vez en la misma empresa no se ofrece.
@@ -179,6 +190,8 @@ test.describe.serial("empresas", () => {
     await login(page, owner);
     await page.goto(`/pasarelas/empresas/${tiendaId}`);
     const folder = `${owner.id}/${tiendaId}`;
+    // El selector de archivo se habilita cuando la página ya responde (hidratada): antes, elegir no haría nada.
+    await expect(page.getByLabel("Subir logo")).toBeEnabled();
 
     await page
       .getByLabel("Subir logo")
@@ -193,6 +206,7 @@ test.describe.serial("empresas", () => {
       .toEqual([true, 512]);
     expect(await logo.getAttribute("src")).toContain(`/storage/v1/object/sign/${BUCKET}/${first[0]}`);
     await expect(page.getByText("TD", { exact: true })).toBeHidden();
+    await expectToast(page, "Logo guardado");
     await expectCleanScreen(page);
 
     await page
