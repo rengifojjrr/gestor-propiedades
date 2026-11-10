@@ -4,6 +4,7 @@ import { CompanyCard } from "@/components/pasarelas/companies/CompanyCard";
 import { CompanySummary } from "@/components/pasarelas/companies/CompanySummary";
 import { ChannelsCard } from "@/components/pasarelas/companies/ChannelsCard";
 import { GatewaysCard } from "@/components/pasarelas/companies/GatewaysCard";
+import { companyTxHref } from "@/components/pasarelas/companies/txHref";
 import { Badge, ButtonLink, PageHeader } from "@/components/ui";
 import { summarize, todayNY } from "@/lib/pasarelas";
 import { requireSession } from "@/lib/auth/session";
@@ -62,7 +63,7 @@ export default async function EmpresaPage({ params, searchParams }: PageProps<"/
         back={{ href: "/pasarelas/empresas", label: "Empresas" }}
         description={company.active ? undefined : <Badge>Inactiva</Badge>}
         actions={
-          <ButtonLink href={`/pasarelas/cobros?empresa=${company.id}`} variant="primary">
+          <ButtonLink href={companyTxHref(company.id, company.totals, today)} variant="primary">
             Ver sus cobros
           </ButtonLink>
         }

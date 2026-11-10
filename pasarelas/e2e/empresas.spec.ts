@@ -250,9 +250,13 @@ test.describe.serial("empresas", () => {
     const summary = page.getByRole("region", { name: "Lo facturado" });
     await expect(summary).toContainText("Esta empresa ha facturado $100,00 en el período y $200,00 en total.");
     await expect(summary.getByRole("region", { name: "Por pasarela" })).toContainText("Stripe");
-    // Un enlace interno: la lista de cobros filtrada por la empresa, en la misma pestaña.
+    // Un enlace interno: la lista de cobros filtrada por la empresa, con todo su historial (desde su primer cobro),
+    // en la misma pestaña.
     const cobros = page.getByRole("link", { name: "Ver sus cobros" });
-    await expect(cobros).toHaveAttribute("href", `/pasarelas/cobros?empresa=${owner.basics.companyId}`);
+    await expect(cobros).toHaveAttribute(
+      "href",
+      `/pasarelas/cobros?empresa=${owner.basics.companyId}&periodo=personalizado&desde=2025-01-15&hasta=${today}`,
+    );
     await expect(cobros).not.toHaveAttribute("target", "_blank");
     await expectCleanScreen(page);
 
@@ -266,6 +270,11 @@ test.describe.serial("empresas", () => {
     );
     await expect(summary).toContainText("Esta empresa ha facturado $100,00 en el período y $200,00 en total.");
     await expect(summary.getByRole("region", { name: "Por mes" })).toContainText("ene 2025");
+
+    // «Ver sus cobros» no depende del período de la ficha: abre los dos, el de hoy y el de enero de 2025.
+    await page.getByRole("link", { name: "Ver sus cobros" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Cobros" })).toBeVisible();
+    await expect(page.getByText("Cobros 1–2 de 2")).toBeVisible();
   });
 
   test("las notas no admiten un número de tarjeta; una empresa con cobros no se borra y una sin cobros sí", async ({
