@@ -154,6 +154,35 @@ test("armar un esquema 50/30/20; con 50/30 y sin «Resto» no se guarda y dice p
   await expectCleanScreen(page);
 });
 
+test("si Desactivar falla desde la cabecera se dice ahí mismo, y el diálogo de borrar no hereda ese error", async ({
+  page,
+}, testInfo) => {
+  // Un beneficiario propio de este proyecto (celular o escritorio), que se borra por detrás con la ficha abierta.
+  const name = `Grupo Demo ${testInfo.project.name}`;
+  const { data: created } = await admin
+    .from("pay_beneficiaries")
+    .insert({ user_id: user.id, name })
+    .select("id")
+    .single()
+    .throwOnError();
+  await page.goto(`/pasarelas/repartos/beneficiarios/${created.id}`);
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+  await admin.from("pay_beneficiaries").delete().eq("id", created.id).throwOnError();
+
+  await page.getByRole("button", { name: "Desactivar" }).click();
+  const alert = page.getByRole("alert").filter({ hasText: "Ese beneficiario ya no existe." });
+  await expect(alert).toBeVisible();
+  await expectCleanScreen(page);
+
+  // Borrar abre su diálogo con su propia explicación, no con el error de Desactivar.
+  await page.getByRole("button", { name: "Borrar" }).click();
+  const dialog = page.getByRole("alertdialog", { name: `¿Borrar «${name}»?` });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Si ya no le repartes, desactívalo");
+  await expect(dialog).not.toContainText("Ese beneficiario ya no existe.");
+  await expect(alert).toBeHidden();
+});
+
 test("registrar una liquidación de 45,15 al Grupo A con comprobante: su saldo baja a cero", async ({ page }) => {
   await page.goto("/pasarelas/repartos");
   await page.getByRole("region", { name: "Libro" }).getByRole("link", { name: "Grupo A" }).click();
