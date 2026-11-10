@@ -259,6 +259,7 @@ describe("saveCompanyGateway y deleteCompanyGateway", () => {
       checkoutUrl: "https://pagar.example.com/tienda",
       bankAccountId: b.bankAccountId,
       payoutDaysOverride: 3,
+      payoutDaysOverrideMax: null,
       defaultExtraIds: [b.extraId],
     });
 
@@ -270,6 +271,7 @@ describe("saveCompanyGateway y deleteCompanyGateway", () => {
         checkoutUrl: "https://pagar.example.com/tienda",
         bankAccountId: b.bankAccountId,
         payoutDaysOverride: 3,
+        payoutDaysOverrideMax: null,
         defaultExtraIds: [b.extraId],
         active: true,
       },
@@ -283,6 +285,7 @@ describe("saveCompanyGateway y deleteCompanyGateway", () => {
       checkoutUrl: null,
       bankAccountId: null,
       payoutDaysOverride: null,
+      payoutDaysOverrideMax: null,
       defaultExtraIds: null,
     });
     expect((await getCompany(user.client, companyId))?.gateways).toEqual([
@@ -293,6 +296,7 @@ describe("saveCompanyGateway y deleteCompanyGateway", () => {
         checkoutUrl: null,
         bankAccountId: null,
         payoutDaysOverride: null,
+        payoutDaysOverrideMax: null,
         defaultExtraIds: null,
         active: true,
       },
@@ -309,6 +313,7 @@ describe("saveCompanyGateway y deleteCompanyGateway", () => {
           checkoutUrl: null,
           bankAccountId: null,
           payoutDaysOverride: null,
+          payoutDaysOverrideMax: null,
           defaultExtraIds: null,
         }),
       REPEATED_GATEWAY,
@@ -326,6 +331,7 @@ describe("saveCompanyGateway y deleteCompanyGateway", () => {
           checkoutUrl: null,
           bankAccountId: null,
           payoutDaysOverride: null,
+          payoutDaysOverrideMax: null,
           defaultExtraIds: [randomUUID()],
         }),
       "Alguna de las opciones elegidas no es de esa pasarela.",
@@ -342,6 +348,7 @@ describe("saveCompanyGateway y deleteCompanyGateway", () => {
       checkoutUrl: null,
       bankAccountId: null,
       payoutDaysOverride: null,
+      payoutDaysOverrideMax: null,
       defaultExtraIds: null,
     });
 
@@ -439,6 +446,7 @@ describe("deleteCompany", () => {
       checkoutUrl: null,
       bankAccountId: null,
       payoutDaysOverride: null,
+      payoutDaysOverrideMax: null,
       defaultExtraIds: null,
     });
     const logo = await uploadLogo(companyId);
@@ -528,6 +536,7 @@ describe("las lecturas", () => {
           checkoutUrl: null,
           bankAccountId: ob.bankAccountId,
           payoutDaysOverride: null,
+          payoutDaysOverrideMax: null,
           defaultExtraIds: null,
           active: true,
         },

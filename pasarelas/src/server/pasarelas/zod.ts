@@ -138,3 +138,18 @@ export function zAlias(max: number): z.ZodType<string> {
  * identificadores largos de una pasarela son normales.
  */
 export const zReference: z.ZodType<string | null> = optionalText((text) => tooLong(text, MAX_REFERENCE));
+
+/**
+ * Una ventana de días al depósito («de 3 a 5»), ya leídos los dos campos: el máximo, si viene, pide un mínimo y va
+ * de ese mínimo a 60 (que no pase de 60 ya lo dice su propio campo). Es el `superRefine` del objeto que trae los
+ * dos; lo que falle se dice en el campo del máximo.
+ */
+export function refineDaysWindow<Min extends string, Max extends string>(minKey: Min, maxKey: Max) {
+  return (value: Record<Min | Max, number | null>, ctx: z.RefinementCtx): void => {
+    const min = value[minKey];
+    const max = value[maxKey];
+    if (max === null) return;
+    const message = min === null ? "Escribe también el mínimo («De»)" : `Escribe un número de días entre ${min} y 60`;
+    if (min === null || max < min) ctx.addIssue({ code: "custom", message, path: [maxKey] });
+  };
+}

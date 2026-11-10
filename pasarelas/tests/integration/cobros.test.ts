@@ -68,6 +68,9 @@ const ALL: TxFilters = {};
 
 const admin = adminClient();
 
+/** El recargo internacional sin días propios: tarda lo mismo que un pago nacional. */
+const SAME_DAYS = { payoutDaysOverride: null, payoutDaysOverrideMax: null } as const;
+
 /** El cobro E1 del spec: 100,00 por el canal al 5 %, con Stripe y «Pago rápido», repartido 50/30/20. */
 function e1(b: Basics, patch: Partial<NewTxInput> = {}): NewTxInput {
   return {
@@ -558,7 +561,7 @@ describe("pagos internacionales: el recargo de la pasarela se aplica como una op
   async function withSurcharge(): Promise<{ user: TestUser; b: Basics; international: string }> {
     const user = await createUser();
     const b = await seedBasics(user.client);
-    const { id } = await saveInternational(user.client, { gatewayId: b.gatewayId, pct: "1.5", fixed: "0.00" });
+    const { id } = await saveInternational(user.client, { ...SAME_DAYS, gatewayId: b.gatewayId, pct: "1.5", fixed: "0.00" });
     return { user, b, international: id };
   }
 
@@ -598,7 +601,7 @@ describe("pagos internacionales: el recargo de la pasarela se aplica como una op
   it("cambiar el recargo no mueve el cobro ya registrado; uno nuevo usa el nuevo (2 % + 0,10)", async () => {
     const { user, b, international } = await withSurcharge();
     const before = await register(user, b, via([international]));
-    await saveInternational(user.client, { id: international, gatewayId: b.gatewayId, pct: "2", fixed: "0.10" });
+    await saveInternational(user.client, { ...SAME_DAYS, id: international, gatewayId: b.gatewayId, pct: "2", fixed: "0.10" });
     expect(await rowOf(before)).toMatchObject({ fees_total: "4.70", net_amount: "95.30" });
     const after = await register(user, b, via([international]));
     expect(await rowOf(after)).toMatchObject({ fees_total: "5.30", net_amount: "94.70" });

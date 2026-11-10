@@ -165,22 +165,25 @@ export type DepositPart = DepositGroup & { part: { index: number; of: number } |
 
 /**
  * Los grupos de próximos depósitos, con los de más de `size` cobros (lo más que se marca depositado de una vez)
- * partidos en partes de `size` como mucho, cada una con su neto. `rows`: los cobros de esos grupos.
+ * partidos en partes de `size` como mucho, cada una con su neto y con desde cuándo pueden caer sus cobros (la más
+ * temprana de sus ventanas). `rows`: los cobros de esos grupos.
  */
 export function depositParts(
   groups: readonly DepositGroup[],
   rows: readonly LeanTx[],
   size: number = SAVE_BATCH_SIZE,
 ): DepositPart[] {
-  const netOf = new Map(rows.map((row) => [row.id, row.net]));
+  const byId = new Map(rows.map((row) => [row.id, row]));
   return groups.flatMap((group): DepositPart[] => {
     if (group.ids.length <= size) return [{ ...group, part: null }];
     const parts = chunked(group.ids, size);
     return parts.map((ids, index) => ({
       ...group,
+      // Las fechas AAAA-MM-DD se ordenan como texto: la menor es la más temprana.
+      from: ids.map((id) => byId.get(id)?.estimatedDepositFrom ?? group.date).sort()[0] ?? group.date,
       ids,
       count: ids.length,
-      net: add(...ids.map((id) => netOf.get(id) ?? ZERO)),
+      net: add(...ids.map((id) => byId.get(id)?.net ?? ZERO)),
       part: { index: index + 1, of: parts.length },
     }));
   });

@@ -14,6 +14,8 @@ import { UserError } from "../errors";
 export type GatewayFields = {
   name: string;
   payoutDays: number;
+  /** El máximo de la ventana («de 3 a 5 días»); `null` = un solo día. */
+  payoutDaysMax: number | null;
   payoutDayType: DayType;
   refundsReturnFee: boolean;
   disputeFee: Money;
@@ -27,10 +29,18 @@ export type ExtraFields = {
   base: ExtraBase;
   defaultOn: boolean;
   payoutDaysOverride: number | null;
+  /** El máximo de sus días propios; `null` = un solo día. Sin días propios, `null`. */
+  payoutDaysOverrideMax: number | null;
 };
 
 /** El recargo de la pasarela a los pagos internacionales: se suma a su tarifa nacional, sobre el bruto. */
 export type InternationalFee = { pct: Pct; fixed: Money };
+
+/**
+ * Cuánto tarda en caer un pago internacional: `null` en los dos, lo mismo que los nacionales; si no, sus días
+ * propios (de `payoutDaysOverride` a `payoutDaysOverrideMax`, o un solo día con el máximo en `null`).
+ */
+export type InternationalDays = { payoutDaysOverride: number | null; payoutDaysOverrideMax: number | null };
 
 /**
  * Una pasarela nueva con su primera tarifa (que rige «desde el inicio») y sus opciones, en su orden; y, si cobra
@@ -48,12 +58,16 @@ export type NewFeeVersion = { gatewayId: string; pct: Pct; fixed: Money; effecti
 /** Sin `id`, una opción nueva (va al final); con `id`, la opción de esa pasarela que se edita. */
 export type SaveExtraInput = ExtraFields & { id?: string | null; gatewayId: string; active: boolean };
 
-/** Sin `id`, el recargo internacional nuevo de la pasarela; con `id`, el que tiene encendido, que se cambia. */
-export type SaveInternationalInput = InternationalFee & { id?: string | null; gatewayId: string };
+/**
+ * Sin `id`, el recargo internacional nuevo de la pasarela; con `id`, el que tiene encendido, que se cambia. Con
+ * sus días al depósito (los mismos que los nacionales, o los suyos).
+ */
+export type SaveInternationalInput = InternationalFee & InternationalDays & { id?: string | null; gatewayId: string };
 
 /**
  * Cómo se guarda el recargo internacional: una opción de tipo `internacional` con este nombre (es el que sale en el
- * desglose), sobre el bruto, apagada por defecto (se aplica solo si el pago fue internacional) y sin días propios.
+ * desglose), sobre el bruto y apagada por defecto (se aplica solo si el pago fue internacional). Al crear la
+ * pasarela nace sin días propios: tarda lo mismo que un pago nacional. Los suyos se ponen en su ficha.
  */
 const INTERNATIONAL_NAME = "Pago internacional";
 const INTERNATIONAL_COLUMNS = {
@@ -62,6 +76,7 @@ const INTERNATIONAL_COLUMNS = {
   base: "bruto",
   default_on: false,
   payout_days_override: null,
+  payout_days_override_max: null,
 } as const;
 
 const GATEWAY_NOT_FOUND = "Esa pasarela ya no existe.";
@@ -103,6 +118,7 @@ function touched(rows: readonly unknown[], text: string): void {
 const gatewayColumns = (g: GatewayFields) => ({
   name: g.name,
   payout_days: g.payoutDays,
+  payout_days_max: g.payoutDaysMax,
   payout_day_type: g.payoutDayType,
   refunds_return_fee: g.refundsReturnFee,
   dispute_fee: g.disputeFee,
@@ -123,6 +139,7 @@ export async function createGateway(supabase: Db, input: NewGateway): Promise<{ 
     base: extra.base,
     default_on: extra.defaultOn,
     payout_days_override: extra.payoutDaysOverride,
+    payout_days_override_max: extra.payoutDaysOverrideMax,
   }));
   const international = input.international
     ? [{ ...INTERNATIONAL_COLUMNS, pct: input.international.pct, fixed: input.international.fixed }]
@@ -214,6 +231,7 @@ const extraColumns = (e: SaveExtraInput) => ({
   base: e.base,
   default_on: e.defaultOn,
   payout_days_override: e.payoutDaysOverride,
+  payout_days_override_max: e.payoutDaysOverrideMax,
   active: e.active,
 });
 
@@ -280,12 +298,18 @@ export async function deleteExtra(supabase: Db, id: string): Promise<void> {
 // ─── El recargo internacional ───────────────────────────────────────────────────────────────────────────────
 
 /**
- * Agrega el recargo internacional a la pasarela (sin `id`) o cambia el que tiene encendido (con `id`). Lo ya
- * registrado no cambia: cada cobro internacional congeló el recargo con el que se calculó. Si la pasarela ya tiene
- * uno encendido (otra pestaña lo agregó), la base no deja agregar otro: lo dice `errors.ts`.
+ * Agrega el recargo internacional a la pasarela (sin `id`) o cambia el que tiene encendido (con `id`): su porcentaje,
+ * su fijo y sus días al depósito. Lo ya registrado no cambia: cada cobro internacional congeló el recargo (y sus
+ * días) con el que se calculó. Si la pasarela ya tiene uno encendido (otra pestaña lo agregó), la base no deja
+ * agregar otro: lo dice `errors.ts`.
  */
 export async function saveInternational(supabase: Db, input: SaveInternationalInput): Promise<{ id: string }> {
-  const fee = { pct: input.pct, fixed: input.fixed };
+  const fee = {
+    pct: input.pct,
+    fixed: input.fixed,
+    payout_days_override: input.payoutDaysOverride,
+    payout_days_override_max: input.payoutDaysOverrideMax,
+  };
   if (input.id) {
     const { data } = await supabase
       .from("pay_gateway_extras")

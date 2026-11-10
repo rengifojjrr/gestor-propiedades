@@ -18,7 +18,7 @@ const COMPANY_LIST_COLUMNS = "id, name, website, logo_path, currency, active";
 const COMPANY_DETAIL_COLUMNS = `${COMPANY_LIST_COLUMNS}, default_scheme_id, notes`;
 const CHANNEL_DETAIL_COLUMNS = "id, name, url, platform_fee_pct::text, platform_fee_fixed::text, active";
 const COMPANY_GATEWAY_DETAIL_COLUMNS =
-  "id, gateway_id, dashboard_url, checkout_url, bank_account_id, payout_days_override, default_extra_ids, active";
+  "id, gateway_id, dashboard_url, checkout_url, bank_account_id, payout_days_override, payout_days_override_max, default_extra_ids, active";
 const COMPANY_TOTAL_COLUMNS = "company_id, currency, tx_count, gross::text, fees::text, net::text, first_on, last_on";
 
 /** Lo que dura la URL firmada de un logo: se genera al pintar la pantalla y no se guarda. */
@@ -49,6 +49,7 @@ type CompanyGatewayDetailRow = {
   checkout_url: string | null;
   bank_account_id: string | null;
   payout_days_override: number | null;
+  payout_days_override_max: number | null;
   default_extra_ids: string[] | null;
   active: boolean;
 };
@@ -104,6 +105,8 @@ export type CompanyGateway = {
   checkoutUrl: string | null;
   bankAccountId: string | null;
   payoutDaysOverride: number | null;
+  /** El máximo de sus días propios (una ventana); `null` = un solo día. */
+  payoutDaysOverrideMax: number | null;
   defaultExtraIds: string[] | null;
   active: boolean;
 };
@@ -169,6 +172,7 @@ function toCompanyGateway(row: CompanyGatewayDetailRow): CompanyGateway {
     checkoutUrl: row.checkout_url,
     bankAccountId: row.bank_account_id,
     payoutDaysOverride: row.payout_days_override,
+    payoutDaysOverrideMax: row.payout_days_override_max,
     defaultExtraIds: row.default_extra_ids,
     active: row.active,
   };

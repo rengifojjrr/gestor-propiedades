@@ -8,7 +8,7 @@ import { runAction } from "../action";
 import * as ops from "../ops/companies";
 import { refreshEstimatesAfterTx } from "../ops/transactions";
 import type { ActionResult } from "../result";
-import { zCurrency, zHttpUrl, zId, zMoney, zOptionalText, zPct, zText } from "../zod";
+import { refineDaysWindow, zCurrency, zHttpUrl, zId, zMoney, zOptionalText, zPct, zText } from "../zod";
 
 /**
  * Las Server Actions de la pantalla Empresas: delgadas. Cada una recibe `input: unknown` (un POST público), y
@@ -36,7 +36,10 @@ const zOptionalId = z
 /** Un cargo fijo: un monto que no puede ser negativo. */
 const zFixed = zMoney.refine((money) => cmp(money, ZERO) >= 0, { error: "No puede ser negativo" });
 
-/** Los días propios hasta el depósito: vacío es `null` (los de la pasarela); si no, un entero de 0 a 60. */
+/**
+ * Los días propios hasta el depósito: vacío es `null` (los de la pasarela); si no, un entero de 0 a 60. También el
+ * máximo de esos días (una ventana, «de 3 a 5»; vacío, un solo día).
+ */
 const zPayoutDays = z
   .union([z.string(), z.number()])
   .nullish()
@@ -75,6 +78,7 @@ const zCompanyGateway = z.object({
   checkoutUrl: zHttpUrl,
   bankAccountId: zOptionalId,
   payoutDaysOverride: zPayoutDays,
+  payoutDaysOverrideMax: zPayoutDays,
   defaultExtraIds: z.array(zId).nullable(),
 });
 
@@ -130,7 +134,8 @@ export async function deleteChannel(input: unknown): Promise<ActionResult> {
 export async function saveCompanyGateway(
   input: unknown,
 ): Promise<ActionResult<{ id: string; refreshed: number | null }>> {
-  return runAction(zCompanyGateway, input, async ({ supabase }, account) => {
+  const schema = zCompanyGateway.superRefine(refineDaysWindow("payoutDaysOverride", "payoutDaysOverrideMax"));
+  return runAction(schema, input, async ({ supabase }, account) => {
     const id = await ops.saveCompanyGateway(supabase, account);
     const scope = { gatewayId: account.gatewayId, companyId: account.companyId };
     return { id, refreshed: await refreshEstimatesAfterTx(supabase, scope) };

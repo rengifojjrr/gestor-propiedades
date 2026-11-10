@@ -56,7 +56,7 @@ describe("txCsv", () => {
     expect(csv.startsWith("﻿")).toBe(true);
     expect(lines(csv)).toEqual([
       TX_CSV_HEADER.join(";"),
-      "2026-11-13;Escuela Demo;Escuela de marketing;Stripe;pi_demo_1;USD;100,00;0,00;100,00;9,70;9,7;90,30;Registrado;2026-11-13;;;Cuenta principal;0;",
+      "2026-11-13;Escuela Demo;Escuela de marketing;Stripe;pi_demo_1;USD;100,00;0,00;100,00;9,70;9,7;90,30;Registrado;2026-11-13;;;Cuenta principal;0;;2026-11-13",
     ]);
   });
 
@@ -64,7 +64,7 @@ describe("txCsv", () => {
     const csv = txCsv([e1()], cfgDemo(), CSV_STD);
     expect(csv.startsWith("﻿")).toBe(false);
     expect(lines(csv)[1]).toBe(
-      "2026-11-13,Escuela Demo,Escuela de marketing,Stripe,pi_demo_1,USD,100.00,0.00,100.00,9.70,9.7,90.30,Registrado,2026-11-13,,,Cuenta principal,0,",
+      "2026-11-13,Escuela Demo,Escuela de marketing,Stripe,pi_demo_1,USD,100.00,0.00,100.00,9.70,9.7,90.30,Registrado,2026-11-13,,,Cuenta principal,0,,2026-11-13",
     );
   });
 
@@ -89,14 +89,32 @@ describe("txCsv", () => {
       "Cuenta destino",
       "Comprobantes",
       "Nota",
+      "Fecha estimada (desde)",
     ]);
+  });
+
+  it("una ventana de depósito: «Fecha estimada» es la más tardía y «Fecha estimada (desde)», la más temprana", () => {
+    const row = lines(
+      txCsv([e1({ estimatedDepositFrom: "2026-11-16", estimatedDepositOn: "2026-11-18" })], cfgDemo(), CSV_ES),
+    )[1];
+    const cells = row?.split(";") ?? [];
+    expect([cells[13], cells[19]]).toEqual(["2026-11-18", "2026-11-16"]);
   });
 
   it("un depositado lleva su fecha y los días de calendario que tardó", () => {
     const row = lines(
       txCsv([e1({ status: "depositado", depositedOn: "2026-11-17", receiptsCount: 2 })], cfgDemo(), CSV_ES),
     )[1];
-    expect(row?.split(";").slice(12)).toEqual(["Depositado", "2026-11-13", "2026-11-17", "4", "Cuenta principal", "2", ""]);
+    expect(row?.split(";").slice(12)).toEqual([
+      "Depositado",
+      "2026-11-13",
+      "2026-11-17",
+      "4",
+      "Cuenta principal",
+      "2",
+      "",
+      "2026-11-13",
+    ]);
   });
 
   it("el estado es el visible del motor: en disputa, reembolsado del todo o fallido", () => {
@@ -120,7 +138,7 @@ describe("txCsv", () => {
       ),
     )[1];
     const cells = row?.split(";") ?? [];
-    expect([cells[2], cells[4], cells[13], cells[16]]).toEqual(["", "", "", ""]);
+    expect([cells[2], cells[4], cells[13], cells[16], cells[19]]).toEqual(["", "", "", "", ""]);
   });
 
   it("cada moneda con sus montos: nunca se mezclan ni se convierten", () => {

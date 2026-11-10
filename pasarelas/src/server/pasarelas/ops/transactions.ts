@@ -1,6 +1,7 @@
 import "server-only";
 import {
   PayStateError,
+  depositWindowOf,
   formatDate,
   isPending,
   formatMoney,
@@ -21,7 +22,16 @@ import {
   planTrash,
   requireSameRegistration,
 } from "@/lib/pasarelas";
-import type { DiffRow, EditTxInput, ISODate, Money, NewTxInput, TxSnapshot, TxWrite } from "@/lib/pasarelas";
+import type {
+  DateWindow,
+  DiffRow,
+  EditTxInput,
+  ISODate,
+  Money,
+  NewTxInput,
+  TxSnapshot,
+  TxWrite,
+} from "@/lib/pasarelas";
 import type { Db } from "../dto";
 import { UserError } from "../errors";
 import { loadPayConfig } from "../queries/config";
@@ -408,9 +418,31 @@ function labelOf(tx: TxSnapshot): string {
 }
 
 /**
+ * Las filas de la fecha estimada en el antes y el después de recalcular: ninguna si no cambia. Si antes y después es
+ * un solo día, «Fecha estimada»; si hay una ventana de por medio, «Llega desde» y «Llega hasta», cada una solo si
+ * cambia.
+ */
+function estimateRows(tx: TxSnapshot, write: TxWrite): DiffRow[] {
+  const { estimatedDepositFrom: from, estimatedDepositOn: on } = write.fields;
+  if (from === undefined && on === undefined) return [];
+  const before = depositWindowOf(tx);
+  const after = depositWindowOf({
+    estimatedDepositFrom: from === undefined ? tx.estimatedDepositFrom : from,
+    estimatedDepositOn: on === undefined ? tx.estimatedDepositOn : on,
+  });
+  const isWindow = (w: DateWindow | null): boolean => w !== null && w.from !== w.to;
+  const row = (key: "estimatedDepositFrom" | "estimatedDepositOn", label: string, end: "from" | "to"): DiffRow[] => {
+    const [was, will] = [before?.[end] ?? "—", after?.[end] ?? "—"];
+    return was === will ? [] : [{ key, label, before: was, after: will }];
+  };
+  if (!isWindow(before) && !isWindow(after)) return row("estimatedDepositOn", "Fecha estimada", "to");
+  return [...row("estimatedDepositFrom", "Llega desde", "from"), ...row("estimatedDepositOn", "Llega hasta", "to")];
+}
+
+/**
  * Qué cambiaría al recalcular esos cobros con la configuración de ahora, sin escribir nada. `items` son los que
  * se escribirían (los mismos que cuenta `applyRecalcTx`), cada uno con su antes y su después; si cambia la fecha
- * estimada lleva además una fila «Fecha estimada» (y puede ser la única). Un cobro al que solo le cambian datos
+ * estimada lleva además sus filas (`estimateRows`, y pueden ser las únicas). Un cobro al que solo le cambian datos
  * que no son montos —el nombre de la pasarela, la versión de una tarifa igual— viene sin filas. `unchanged` son
  * los que quedarían idénticos. Los que no se pueden recalcular (fallidos, en la papelera) no están en ninguno.
  */
@@ -430,19 +462,7 @@ export async function previewRecalcTx(
       unchanged += 1;
       continue;
     }
-    const estimated = plan.write.fields.estimatedDepositOn;
-    const dateRow: DiffRow[] =
-      estimated === undefined
-        ? []
-        : [
-            {
-              key: "estimatedDepositOn",
-              label: "Fecha estimada",
-              before: tx.estimatedDepositOn ?? "—",
-              after: estimated ?? "—",
-            },
-          ];
-    items.push({ id: tx.id, label: labelOf(tx), changes: [...plan.changes, ...dateRow] });
+    items.push({ id: tx.id, label: labelOf(tx), changes: [...plan.changes, ...estimateRows(tx, plan.write)] });
   }
   return { items, unchanged };
 }

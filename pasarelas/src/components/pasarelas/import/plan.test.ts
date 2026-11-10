@@ -164,12 +164,12 @@ describe("mergePreviews", () => {
     const manual = { id: "m1", reference: null, currency: "USD", grossOriginal: "100.00", occurredOn: "2026-11-02" };
     const merged = mergePreviews([
       part({
-        estimates: [{ line: 2, estimatedDepositOn: "2026-11-04" }],
+        estimates: [{ line: 2, estimatedDepositFrom: null, estimatedDepositOn: "2026-11-04" }],
         existing: [{ reference: "a", trashed: false }],
         manual: [manual],
       }),
       part({
-        estimates: [{ line: 3, estimatedDepositOn: "2026-11-12" }],
+        estimates: [{ line: 3, estimatedDepositFrom: null, estimatedDepositOn: "2026-11-12" }],
         existing: [{ reference: "b", trashed: true }],
         manual: [manual],
       }),
@@ -196,10 +196,10 @@ describe("planReview", () => {
   const preview = mergePreviews([
     part({
       estimates: [
-        { line: 2, estimatedDepositOn: "2026-11-04" },
-        { line: 3, estimatedDepositOn: "2026-11-04" },
-        { line: 4, estimatedDepositOn: "2026-11-10" },
-        { line: 5, estimatedDepositOn: "2026-11-16" },
+        { line: 2, estimatedDepositFrom: null, estimatedDepositOn: "2026-11-04" },
+        { line: 3, estimatedDepositFrom: null, estimatedDepositOn: "2026-11-04" },
+        { line: 4, estimatedDepositFrom: null, estimatedDepositOn: "2026-11-10" },
+        { line: 5, estimatedDepositFrom: null, estimatedDepositOn: "2026-11-16" },
       ],
       existing: [{ reference: "ch_1", trashed: true }],
       manual: [manual],
@@ -227,7 +227,7 @@ describe("planReview", () => {
 
 describe("reviewState", () => {
   const rows = [row(2, "ch_1")];
-  const preview = mergePreviews([part({ estimates: [{ line: 2, estimatedDepositOn: "2026-11-12" }] })]);
+  const preview = mergePreviews([part({ estimates: [{ line: 2, estimatedDepositFrom: null, estimatedDepositOn: "2026-11-12" }] })]);
 
   it("sin filas convertibles no hay nada que buscar: no se queda «buscando», aunque no haya respuesta", () => {
     expect(reviewState([], null, { includePossible: false })).toEqual({ state: "sin_filas" });

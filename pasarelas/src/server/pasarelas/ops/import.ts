@@ -218,8 +218,11 @@ async function countTrashed(supabase: Db, ids: readonly string[]): Promise<numbe
 export type ImportPreview = {
   /** Hoy en Nueva York: con esta fecha se decide qué ya debió caer. */
   today: ISODate;
-  /** La fecha estimada de depósito de cada fila, con la configuración de ahora. */
-  estimates: { line: number; estimatedDepositOn: ISODate }[];
+  /**
+   * La fecha estimada de depósito de cada fila, con la configuración de ahora: la más tardía de su ventana
+   * (`estimatedDepositOn`) y la más temprana (`estimatedDepositFrom`; `null` si es la misma, un solo día).
+   */
+  estimates: { line: number; estimatedDepositFrom: ISODate | null; estimatedDepositOn: ISODate }[];
   /** Las referencias del lote que ya están en la pasarela (también en la papelera). */
   existing: ExistingRef[];
   /** Los cobros registrados a mano que pueden ser alguna fila con otra referencia o sin ella. */
@@ -245,6 +248,7 @@ export async function previewImport(supabase: Db, input: ImportBatch): Promise<I
     today,
     estimates: rows.map((row, index) => ({
       line: row.line,
+      estimatedDepositFrom: writes[index]!.fields.estimatedDepositFrom ?? null,
       estimatedDepositOn: writes[index]!.fields.estimatedDepositOn!,
     })),
     existing,

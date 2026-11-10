@@ -3,6 +3,7 @@ import {
   CSV_STD,
   STATUS_LABEL,
   daysBetween,
+  depositWindowOf,
   displayStatus,
   pctOf,
   toCsv,
@@ -14,6 +15,9 @@ import type { TxListItem } from "@/server/pasarelas/dto";
 /**
  * El CSV de la lista de cobros: una fila por cobro, con los nombres resueltos contra la configuración. Sin datos
  * de compradores (la base no los guarda). Las cuentas, el estado, el porcentaje y los días salen del motor.
+ *
+ * «Fecha estimada» es la más tardía de la ventana de depósito (la de siempre) y «Fecha estimada (desde)», la más
+ * temprana (la misma, si es un solo día). Va al final para no mover las columnas de quien ya usa el archivo.
  */
 
 export const TX_CSV_HEADER = [
@@ -36,6 +40,7 @@ export const TX_CSV_HEADER = [
   "Cuenta destino",
   "Comprobantes",
   "Nota",
+  "Fecha estimada (desde)",
 ] as const;
 
 /** Las columnas de dinero: `toCsv` les pone el separador decimal del formato. */
@@ -85,6 +90,7 @@ export function txCsv(rows: readonly TxListItem[], cfg: PayConfig, fmt: CsvForma
       nameIn(accounts, tx.bankAccountId),
       String(tx.receiptsCount),
       tx.note,
+      depositWindowOf(tx)?.from ?? null,
     ];
   });
   return toCsv(TX_CSV_HEADER, body, fmt, MONEY_COLUMNS);

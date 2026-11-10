@@ -61,6 +61,8 @@ export type CompanyGatewayInput = {
   bankAccountId: string | null;
   /** Días propios de esta empresa (0–60); `null` = los de la pasarela. */
   payoutDaysOverride: number | null;
+  /** El máximo de esos días (una ventana); `null` = un solo día. Sin días propios, `null`. */
+  payoutDaysOverrideMax: number | null;
   /** Las opciones encendidas por defecto en esta empresa; `null` = las que la pasarela trae encendidas. */
   defaultExtraIds: string[] | null;
 };
@@ -274,6 +276,7 @@ export async function saveCompanyGateway(supabase: Db, input: CompanyGatewayInpu
     checkout_url: input.checkoutUrl,
     bank_account_id: input.bankAccountId,
     payout_days_override: input.payoutDaysOverride,
+    payout_days_override_max: input.payoutDaysOverrideMax,
     default_extra_ids: input.defaultExtraIds === null ? null : [...new Set(input.defaultExtraIds)],
   };
   if (input.id === undefined) {

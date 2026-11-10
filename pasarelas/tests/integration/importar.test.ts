@@ -292,9 +292,9 @@ describe("previewImport", () => {
     expect(preview.today).toBe(todayNY(new Date()));
     // Dos hábiles (este usuario no tiene feriados): viernes 13 → martes 17; miércoles 18 → viernes 20.
     expect(preview.estimates).toEqual([
-      { line: 2, estimatedDepositOn: "2026-11-17" },
-      { line: 3, estimatedDepositOn: "2026-11-17" },
-      { line: 4, estimatedDepositOn: "2026-11-20" },
+      { line: 2, estimatedDepositFrom: null, estimatedDepositOn: "2026-11-17" },
+      { line: 3, estimatedDepositFrom: null, estimatedDepositOn: "2026-11-17" },
+      { line: 4, estimatedDepositFrom: null, estimatedDepositOn: "2026-11-20" },
     ]);
     expect(preview.existing).toHaveLength(2);
     expect(preview.existing).toEqual(

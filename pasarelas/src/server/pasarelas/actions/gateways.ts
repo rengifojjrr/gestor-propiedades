@@ -20,7 +20,7 @@ import {
 } from "../ops/gateways";
 import { refreshEstimatesAfterTx } from "../ops/transactions";
 import type { ActionResult } from "../result";
-import { zDate, zId, zMoney, zOptionalText, zPct, zText } from "../zod";
+import { refineDaysWindow, zDate, zId, zMoney, zOptionalText, zPct, zText } from "../zod";
 
 /**
  * Las Server Actions de la pantalla Pasarelas: delgadas. Cada una recibe `input: unknown` (un POST público), y
@@ -45,7 +45,10 @@ const zDays = z
   .transform(Number)
   .refine((days) => days <= DAYS_MAX, { error: DAYS_TEXT });
 
-/** Días propios de una opción: vacío → `null` (usa los de la pasarela). */
+/**
+ * Unos días que pueden no venir, vacío → `null`: los propios de una opción (sin ellos, los de la pasarela) o el
+ * máximo de una ventana («de 3 a 5»; sin él, un solo día).
+ */
 const zOptionalDays = z
   .string({ error: DAYS_TEXT })
   .nullish()
@@ -64,20 +67,27 @@ const zFee: z.ZodType<Money> = zMoney.refine((money) => cmp(money, ZERO) >= 0, {
 const zGatewayFields = z.object({
   name: zText(NAME_MAX),
   payoutDays: zDays,
+  payoutDaysMax: zOptionalDays,
   payoutDayType: z.enum(["habiles", "corridos"], { error: "Elige días hábiles o corridos" }),
   refundsReturnFee: z.boolean(),
   disputeFee: zFee,
   notes: zOptionalText(NOTES_MAX),
 });
+/** «Días al depósito: de [3] a [5]»: el máximo va del mínimo a 60. */
+const gatewayWindow = refineDaysWindow("payoutDays", "payoutDaysMax");
 
-const zExtraFields = z.object({
+const zExtraBase = z.object({
   name: zText(NAME_MAX),
   pct: zPct,
   fixed: zFee,
   base: z.enum(["bruto", "despues_de_comision"], { error: "Elige sobre qué se calcula" }),
   defaultOn: z.boolean(),
   payoutDaysOverride: zOptionalDays,
+  payoutDaysOverrideMax: zOptionalDays,
 });
+/** Los días propios de una opción (o del recargo internacional): sin mínimo no hay máximo. */
+const overrideWindow = refineDaysWindow("payoutDaysOverride", "payoutDaysOverrideMax");
+const zExtraFields = zExtraBase.superRefine(overrideWindow);
 
 /** El recargo a los pagos internacionales: porcentaje y fijo, que pueden ser 0 y nunca negativos. */
 const zInternationalFee = z.object({ pct: zPct, fixed: zFee });
@@ -89,22 +99,25 @@ const zById = z.object({ id: zId });
  * recargo (`international`; `null` o ausente: no cobra), de una vez. Devuelve su id.
  */
 export async function createGateway(input: unknown): Promise<ActionResult<{ id: string }>> {
-  const schema = zGatewayFields.extend({
-    pct: zPct,
-    fixed: zFee,
-    extras: z.array(zExtraFields).max(20),
-    international: zInternationalFee.nullish(),
-  });
+  const schema = zGatewayFields
+    .extend({
+      pct: zPct,
+      fixed: zFee,
+      extras: z.array(zExtraFields).max(20),
+      international: zInternationalFee.nullish(),
+    })
+    .superRefine(gatewayWindow);
   return runAction(schema, input, ({ supabase }, gateway) => createGatewayOp(supabase, gateway));
 }
 
 /**
- * Guarda los datos de la pasarela. Si cambian sus días al depósito o su tipo de días, la fecha estimada
- * automática de lo que está por caer por esa pasarela se vuelve a calcular: `refreshed` dice cuántas cambiaron
- * (con los mismos días no cambia ninguna; `null` si no se pudieron recalcular: la pasarela quedó guardada).
+ * Guarda los datos de la pasarela. Si cambian sus días al depósito (el mínimo o el máximo de su ventana) o su tipo
+ * de días, las dos fechas de la estimada automática de lo que está por caer por esa pasarela se vuelven a calcular:
+ * `refreshed` dice cuántos cobros cambiaron (con los mismos días no cambia ninguno; `null` si no se pudieron
+ * recalcular: la pasarela quedó guardada).
  */
 export async function updateGateway(input: unknown): Promise<ActionResult<{ refreshed: number | null }>> {
-  const schema = zGatewayFields.extend({ id: zId });
+  const schema = zGatewayFields.extend({ id: zId }).superRefine(gatewayWindow);
   return runAction(schema, input, async ({ supabase }, { id, ...fields }) => {
     await updateGatewayOp(supabase, id, fields);
     return { refreshed: await refreshEstimatesAfterTx(supabase, { gatewayId: id }) };
@@ -142,7 +155,9 @@ export async function deleteFeeVersion(input: unknown): Promise<ActionResult> {
 
 /** Agrega una opción (sin `id`) o edita una de la pasarela (con `id`). */
 export async function saveExtra(input: unknown): Promise<ActionResult<{ id: string }>> {
-  const schema = zExtraFields.extend({ id: zId.nullish(), gatewayId: zId, active: z.boolean() });
+  const schema = zExtraBase
+    .extend({ id: zId.nullish(), gatewayId: zId, active: z.boolean() })
+    .superRefine(overrideWindow);
   return runAction(schema, input, ({ supabase }, extra) => saveExtraOp(supabase, extra));
 }
 
@@ -150,9 +165,19 @@ export async function deleteExtra(input: unknown): Promise<ActionResult> {
   return runAction(zById, input, ({ supabase }, { id }) => deleteExtraOp(supabase, id));
 }
 
-/** Agrega el recargo internacional de la pasarela (sin `id`) o cambia el que tiene encendido (con `id`). */
+/**
+ * Agrega el recargo internacional de la pasarela (sin `id`) o cambia el que tiene encendido (con `id`), con sus días
+ * al depósito: vacíos, tardan lo mismo que los nacionales; si no, los suyos («de 7 a 10»).
+ */
 export async function saveInternational(input: unknown): Promise<ActionResult<{ id: string }>> {
-  const schema = zInternationalFee.extend({ id: zId.nullish(), gatewayId: zId });
+  const schema = zInternationalFee
+    .extend({
+      id: zId.nullish(),
+      gatewayId: zId,
+      payoutDaysOverride: zOptionalDays,
+      payoutDaysOverrideMax: zOptionalDays,
+    })
+    .superRefine(overrideWindow);
   return runAction(schema, input, ({ supabase }, fee) => saveInternationalOp(supabase, fee));
 }
 

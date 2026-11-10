@@ -278,4 +278,13 @@ describe("depositParts", () => {
       { bankAccountId: "a1", net: "500.00", count: 500, ids: 500, part: null },
     ]);
   });
+
+  it("cada parte dice desde cuándo pueden caer sus propios cobros (la más temprana de sus ventanas)", () => {
+    const rows = [...pending(500, "d"), ...pending(1, "e", { estimatedDepositFrom: "2026-11-10" })];
+    const parts = depositParts(upcomingDeposits(rows, "2026-11-10", 14), rows);
+    expect(parts.map(({ date, from, count }) => [date, from, count])).toEqual([
+      ["2026-11-12", "2026-11-12", 500],
+      ["2026-11-12", "2026-11-10", 1],
+    ]);
+  });
 });
