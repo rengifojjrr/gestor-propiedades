@@ -43,7 +43,12 @@ function queryOf(sp: SearchParams): URLSearchParams {
   return query;
 }
 
-/** Las opciones de cada filtro, con los nombres de la configuración. Los canales, de la empresa elegida si la hay. */
+/**
+ * Las opciones de cada filtro, con los nombres de la configuración. Los canales, de la empresa elegida si la hay;
+ * pero el canal elegido va siempre, aunque sea de otra empresa (se cambió la empresa después de elegirlo) o ya no
+ * esté en la configuración: si faltara, su select enseñaría «Todos» con el filtro puesto, y elegir «Todos» no lo
+ * quitaría (para el navegador ya está elegida). Igual con la moneda elegida.
+ */
 function filterOptions(cfg: PayConfig, filters: Filters) {
   const companyName = new Map(cfg.companies.map((company) => [company.id, company.name]));
   const severalCompanies = cfg.companies.length > 1;
@@ -52,14 +57,22 @@ function filterOptions(cfg: PayConfig, filters: Filters) {
     ...cfg.bankAccounts.map((account) => account.currency),
     ...(filters.currency === undefined ? [] : [filters.currency]),
   ]);
+  const channelLabel = (channel: PayConfig["channels"][number]) =>
+    severalCompanies ? `${channel.name} · ${companyName.get(channel.companyId) ?? ""}` : channel.name;
+  const channels = cfg.channels
+    .filter((channel) => filters.companyId === undefined || channel.companyId === filters.companyId)
+    .map((channel) => ({ value: channel.id, label: channelLabel(channel) }));
+  const chosen = filters.channelId;
+  if (chosen !== undefined && !channels.some((option) => option.value === chosen)) {
+    const channel = cfg.channels.find((item) => item.id === chosen);
+    // Fuera de la empresa elegida lleva siempre su empresa: es lo que explica que la lista salga vacía.
+    const label =
+      channel === undefined ? "Canal que ya no existe" : `${channel.name} · ${companyName.get(channel.companyId) ?? ""}`;
+    channels.unshift({ value: chosen, label });
+  }
   return {
     companies: cfg.companies.map((company) => ({ value: company.id, label: company.name })),
-    channels: cfg.channels
-      .filter((channel) => filters.companyId === undefined || channel.companyId === filters.companyId)
-      .map((channel) => ({
-        value: channel.id,
-        label: severalCompanies ? `${channel.name} · ${companyName.get(channel.companyId) ?? ""}` : channel.name,
-      })),
+    channels,
     gateways: cfg.gateways.map((gateway) => ({ value: gateway.id, label: gateway.name })),
     accounts: cfg.bankAccounts.map((account) => ({
       value: account.id,

@@ -308,6 +308,50 @@ test("sin cobros que cumplan el filtro, lo dice y ofrece registrar uno", async (
   await expectCleanScreen(page);
 });
 
+test("al cambiar de empresa, el canal elegido de la otra sigue a la vista y se puede quitar", async ({ page }) => {
+  // Un usuario aparte con dos empresas: los demás casos de este archivo cuentan con una sola.
+  const other = await newUser();
+  const otherClient = await signInAal1(other.email, other.password);
+  const shop = unwrap(
+    await otherClient.from("pay_companies").insert({ name: "Tienda Demo" }).select("id").single(),
+    "segunda empresa",
+  );
+  unwrap(
+    await otherClient
+      .from("pay_channels")
+      .insert({ company_id: shop.id, name: "Ventas en línea" })
+      .select("id")
+      .single(),
+    "canal de la segunda empresa",
+  );
+
+  await login(page, other);
+  await page.goto("/pasarelas/cobros?periodo=30d");
+  await openMoreFilters(page);
+  const channel = page.getByLabel("Canal", { exact: true });
+  await page.getByLabel("Empresa", { exact: true }).selectOption({ label: "Escuela Demo" });
+  await expect(page).toHaveURL(new RegExp(`empresa=${other.basics.companyId}`));
+  await channel.selectOption({ label: "Inscripciones en línea · Escuela Demo" });
+  await expect(page).toHaveURL(new RegExp(`canal=${other.basics.channelId}`));
+
+  // Otra empresa: el canal de la primera sigue filtrando, y su select lo dice en vez de enseñar «Todos».
+  await page.getByLabel("Empresa", { exact: true }).selectOption({ label: "Tienda Demo" });
+  await expect(page).toHaveURL(new RegExp(`empresa=${shop.id}`));
+  await expect(page).toHaveURL(new RegExp(`canal=${other.basics.channelId}`));
+  await expect(page.getByText("Más filtros (2)")).toBeVisible();
+  await expect(channel).toHaveValue(other.basics.channelId);
+  await expect(channel.locator("option:checked")).toHaveText("Inscripciones en línea · Escuela Demo");
+  await expect(channel.getByRole("option", { name: "Ventas en línea · Tienda Demo" })).toHaveCount(1);
+  await expectCleanScreen(page);
+
+  // «Todos» lo quita y deja la empresa.
+  await channel.selectOption({ label: "Todos" });
+  await expect(page).not.toHaveURL(/canal=/);
+  await expect(page).toHaveURL(new RegExp(`empresa=${shop.id}`));
+  await expect(page.getByText("Más filtros (1)")).toBeVisible();
+  await expect(channel).toHaveValue("");
+});
+
 test("sin sesión, la ruta del CSV no entrega datos", async ({ request }) => {
   const response = await request.get("/pasarelas/cobros/exportar", { maxRedirects: 0 });
   expect(response.status()).toBe(307);
