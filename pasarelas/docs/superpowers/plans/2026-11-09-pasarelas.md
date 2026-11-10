@@ -985,13 +985,28 @@ GatewayShare.tsx,GatewayCost.tsx,AccountsChart.tsx,UpcomingDeposits.tsx,SplitsTa
       cada empresa, comisiones por pasarela, qué cae en los próximos 14 días y en qué cuenta, y cuánto se le debe a
       cada grupo; marcar depositado un grupo desde aquí lo mueve de «por caer» a «depositado».
 
-### Task 18: Ajustes — exportar todo
+### Task 18: Ajustes — exportar todo y contraseña a prueba de configuración
 
-**Archivos:** `src/app/(dashboard)/ajustes/{ExportCard.tsx,exportar/route.ts}`; `e2e/ajustes.spec.ts`.
+**Archivos:** crear `src/app/(dashboard)/ajustes/{ExportCard.tsx,exportar/route.ts}` y `e2e/ajustes.spec.ts`;
+modificar `src/app/(dashboard)/ajustes/{page.tsx,actions.ts,SecurityCard.tsx}`, `next.config.ts` y
+`e2e/sesion.spec.ts`.
 
-- [ ] «Exportar todo» descarga un JSON con todas las filas `pay_*` del usuario (sin archivos), con fecha en el
-      nombre. Texto que explica que es la copia propia del dueño.
-- [ ] `e2e`: la descarga trae las 17 tablas y los cobros creados en la prueba.
+- [ ] «Exportar todo» descarga un JSON con **todas** las columnas de todas las filas `pay_*` del usuario (las 17
+      tablas, sin archivos), con la fecha en el nombre. Los montos y porcentajes salen como texto, tal como están
+      guardados (`"90.30"`), nunca como número. Lee por tramos: una tabla con más de 1000 filas sale entera. El
+      archivo lleva la versión del formato y la fecha y hora de la exportación. Texto que explica que es la copia
+      propia del dueño y que no incluye los comprobantes.
+- [ ] `changePassword` comprueba la contraseña actual **en la app** antes de cambiarla (entrando con ella en un
+      cliente aparte, sin cookies ni sesión persistente): no depende de que el proyecto de Supabase tenga encendido
+      «exigir la contraseña actual». La prueba «cambiar la contraseña exige la actual» de `e2e/sesion.spec.ts`
+      deja de ser condicional y de omitirse sola.
+- [ ] La tarjeta de seguridad dice, junto a «Cerrar sesión en todos los dispositivos», que otro dispositivo puede
+      tardar hasta una hora en quedar fuera.
+- [ ] `Strict-Transport-Security` queda en `max-age=63072000`, sin `includeSubDomains` ni `preload`: la app no
+      decide por todo el dominio del dueño.
+- [ ] `e2e/ajustes.spec.ts`: la descarga trae las 17 tablas y los cobros creados en la prueba, con el neto del
+      cobro E1 como el texto `"90.30"`; otro usuario que descarga no ve nada de eso; sin sesión, la ruta de
+      exportar no entrega datos.
 
 ### Task 19: Importar CSV (fase B)
 
