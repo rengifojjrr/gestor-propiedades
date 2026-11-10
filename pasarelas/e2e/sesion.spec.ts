@@ -105,7 +105,13 @@ test.describe("entrada", () => {
     await expect(page).toHaveURL(/\/pasarelas$/);
   });
 
-  for (const outside of ["//evil.example", "https://evil.example/pasarelas", "/\\evil.example", "javascript:alert(1)"]) {
+  for (const outside of [
+    "//evil.example",
+    "https://evil.example/pasarelas",
+    "/\\evil.example",
+    "/..//evil.example",
+    "javascript:alert(1)",
+  ]) {
     test(`?siguiente=${outside} no saca del sitio`, async ({ page, baseURL }) => {
       await page.goto(`/login?siguiente=${encodeURIComponent(outside)}`);
       await login(page, user);
@@ -204,6 +210,46 @@ test.describe("segundo factor", () => {
     await expect(page).toHaveURL(/\/login$/);
   });
 
+  test("un segundo dispositivo también sirve para entrar, y al quitarlo queda el primero", async ({ page }) => {
+    await loginWithTotp(page, user, secret);
+    await openSettings(page);
+    await page.getByRole("button", { name: "Agregar otro dispositivo" }).click();
+    const second = (await page.getByTestId("clave-totp").innerText()).replace(/\s/g, "");
+    expect(second).not.toBe(secret);
+    await page.getByLabel("Código de 6 dígitos").fill(totp(second));
+    await page.getByRole("button", { name: "Verificar y activar" }).click();
+    await expect(page.getByText("Segundo factor activado")).toBeVisible();
+    await expect(page.getByRole("listitem").filter({ hasText: "Autenticador 2" })).toBeVisible();
+
+    // El código del segundo dispositivo vale para entrar, sin tener que decir de cuál es.
+    await signOutHere(page);
+    await loginWithTotp(page, user, second);
+    await expect(page).toHaveURL(/\/pasarelas$/);
+
+    // Quitar el dispositivo con el que se entró deja la sesión sin su código: pide el del que queda.
+    await openSettings(page);
+    const dialog = page.getByRole("alertdialog", { name: "¿Quitar «Autenticador 2»?" });
+    await expect(async () => {
+      await page.getByRole("button", { name: "Quitar Autenticador 2" }).click();
+      await expect(dialog).toBeVisible({ timeout: 1_000 });
+    }).toPass();
+    await expect(dialog).toContainText("se te pedirá el de otro");
+    await dialog.getByRole("button", { name: "Quitar", exact: true }).click();
+    await expect(page).toHaveURL(/\/login\/verificar$/);
+    await page.getByLabel("Código").fill(totp(second));
+    await page.getByRole("button", { name: "Verificar" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "Ese código no es correcto" })).toBeVisible();
+    await page.getByLabel("Código").fill(totp(secret));
+    await page.getByRole("button", { name: "Verificar" }).click();
+    await expect(page).toHaveURL(/\/pasarelas$/);
+
+    // Queda el primero, y el aviso no vuelve.
+    await openSettings(page);
+    await expect(page.getByRole("listitem").filter({ hasText: "Autenticador" })).toHaveCount(1);
+    await expect(page.getByText("Autenticador 2")).toHaveCount(0);
+    await expect(page.getByText(BANNER)).toHaveCount(0);
+  });
+
   test("se quita desde Ajustes, y el aviso vuelve", async ({ page }) => {
     await loginWithTotp(page, user, secret);
     await expect(page).toHaveURL(/\/pasarelas$/);
@@ -248,6 +294,9 @@ test.describe("contraseña y sesión", () => {
     await repetida.fill(`${nueva}-otra`);
     await cambiar.click();
     await expect(page.getByText("Las dos contraseñas nuevas no coinciden.")).toBeVisible();
+    // Lo escrito se queda: no hay que volver a escribir las tres por un error en una.
+    await expect(actual).toHaveValue(user.password);
+    await expect(primera).toHaveValue(nueva);
 
     await actual.fill("no-es-la-actual");
     await primera.fill(nueva);
@@ -255,6 +304,12 @@ test.describe("contraseña y sesión", () => {
     await cambiar.click();
     await expect(page.getByText("La contraseña actual no es correcta.")).toBeVisible();
     await expectNoSeriousAxe(page);
+
+    await actual.fill(user.password);
+    await primera.fill(user.password);
+    await repetida.fill(user.password);
+    await cambiar.click();
+    await expect(page.getByText("La contraseña nueva tiene que ser distinta de la actual.")).toBeVisible();
 
     await actual.fill(user.password);
     await primera.fill(nueva);

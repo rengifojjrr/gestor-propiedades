@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { expectNoHorizontalOverflow, expectNoSeriousAxe } from "./axe";
+import { login, newUser, type TestUser } from "./helpers";
 
 /**
  * El kit de interfaz y el marco, sobre la galería `/kit` (solo existe en desarrollo, o en un build con
@@ -9,6 +10,17 @@ const MAIN_LINKS = ["Resumen", "Cobros", "Repartos"];
 const MORE_LINKS = ["Empresas", "Pasarelas", "Cuentas destino", "Importar", "Feriados", "Papelera", "Ajustes"];
 
 const isPhone = (page: Page) => (page.viewportSize()?.width ?? 0) < 768;
+
+// La galería y el marco están detrás de la entrada: cada prueba empieza con la sesión de un usuario de este archivo.
+let user: TestUser;
+
+test.beforeAll(async () => {
+  user = await newUser();
+});
+
+test.beforeEach(async ({ page }) => {
+  await login(page, user);
+});
 
 async function openKit(page: Page, query = "") {
   await page.goto(`/kit${query}`);
