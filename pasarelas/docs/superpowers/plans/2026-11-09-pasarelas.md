@@ -1226,6 +1226,146 @@ todavía deje pasar errores de consola por rutas «pendientes» (ya existen toda
 - [ ] Lo que las capturas o axe revelen (textos cortados, cifras que no caben, contraste) se arregla en la pantalla
       que corresponda, con su prueba.
 
+### Ola de arreglos de la revisión final (tareas 30 a 36)
+
+Una revisión adversarial de toda la rama (seis dimensiones, cada hallazgo grave verificado por otro agente que
+intentó refutarlo) dejó 17 hallazgos confirmados y 26 menores. Están, con su escenario, su evidencia y el arreglo
+verificado, en `/tmp/claude-0/-home-user-gestor-propiedades/b1082bf1-8952-53e0-b565-87e2dda8ba35/scratchpad/revision-final.json`: «#n» es el n-ésimo de `confirmed` y «mN» el N-ésimo de `minors` (contando desde 1). Cada tarea
+de esta ola es dueña de sus archivos: no toca los de las otras, que corren a la vez. Todas terminan con sus
+pruebas (unitarias, de integración y de punta a punta en modo producción) en verde y la salida limpia.
+
+### Task 30: Cobros — depósitos, concurrencia, reintentos y pantallas en el celular
+
+**Dueña de:** `src/lib/pasarelas/{write,rules}.ts` (+ pruebas), `src/server/pasarelas/ops/transactions.ts`,
+`actions/transactions.ts`, `ops/holidays.ts`, `actions/{holidays,gateways}.ts` (solo para lo del punto 7),
+`src/components/pasarelas/tx/**` (salvo `ReceiptsCard.tsx`), `src/components/pasarelas/registrar/**`,
+`src/components/pasarelas/BreakdownCard.tsx`, `src/components/pasarelas/summary/UpcomingDeposits.tsx`, un nuevo
+`src/components/pasarelas/callAction.ts`, `src/app/(dashboard)/pasarelas/cobros/**`, `tests/integration/cobros.test.ts`
+y `e2e/{registrar,cobros,cobro-detalle,listo-cuando}.spec.ts`.
+
+1. **#1** — «Marcar depositado» en lote (Cobros y Resumen) solo deposita lo que está POR CAER (`isPending`): salta los
+   ya depositados (no les pisa la fecha) y los que tienen la disputa abierta o el reembolso total; el aviso dice
+   cuántos se saltaron y por qué. Cambiar la fecha de un depósito ya hecho queda solo en el detalle del cobro.
+2. **#6 y #7 (reembolso)** — Las acciones de un solo cobro reciben el `updatedAt` que vio la persona
+   (`expectedUpdatedAt`) y la base compara contra ese: una pestaña vieja no pisa cambios ni aplica una vista previa
+   que ya no vale, y un reembolso reintentado tras un corte da conflicto en vez de sumarse dos veces.
+3. **#5 y #12** — `createTransaction` devuelve `{ id, created }`; si el `id` ya existía con OTROS datos (monto,
+   moneda, fecha, empresa, pasarela, canal, opciones, esquema, referencia), no escribe y lo dice. Registrar no
+   enseña «Cobro guardado.» si no se creó nada, y el aviso tras un fallo de red no afirma que no se guardó («No
+   sabemos si se guardó: revisa Cobros antes de cambiar nada; si lo envías igual, no se duplica»).
+4. **#11** — Un ayudante `callAction` atrapa el fallo de red de una acción en los diálogos y barras de cobros: el
+   error sale en el propio diálogo (sin desmontarlo ni ir a `error.tsx`), dice que hay que revisar antes de repetir
+   y refresca la pantalla.
+5. **#16 (Registrar)** — Si la empresa elegida tiene un esquema por defecto desactivado, Registrar lo avisa fuera de
+   «Más opciones» («este cobro no se reparte») con enlace a la empresa.
+6. **Celular** — En el detalle del cobro, lo primero son los datos y el desglose; las acciones van agrupadas (la
+   principal a la vista y el resto en «Más acciones»). En la lista de Cobros, la lista aparece pronto: la exportación
+   a CSV va en un menú o al final, y los totales del filtro, plegables con una línea de resumen.
+7. **m25** — Al cambiar feriados o los días al depósito de una pasarela, se recalculan las fechas estimadas
+   AUTOMÁTICAS de lo que está por caer (sin tocar comisiones ni las fechas puestas a mano), y se dice cuántas cambiaron.
+8. Menores: **m1** (corregir el monto de un cobro importado descarta la comisión informada del archivo), **m2** (la
+   línea prorrateada no dice «Informada por la pasarela»), **m7** (la fecha de depósito no puede ser anterior a la
+   del cobro ni futura), **m10** (foco tras una acción en lote), **m13** (la tabla del antes y el después cabe a
+   390 px), **m24** (una prueba de fecha estimada con días hábiles y feriado por la pantalla de Registrar).
+
+### Task 31: Importar — estado, repetidos y esquema
+
+**Dueña de:** `src/lib/pasarelas/import/**` (+ pruebas y `tests/fixtures/`), `src/server/pasarelas/{ops,actions,queries}/import.ts`,
+`src/components/pasarelas/import/**`, `tests/integration/importar.test.ts` y `e2e/importar.spec.ts`.
+
+1. **#2** — Opción «Estos cobros ya se depositaron»: los de fecha estimada hasta hoy entran como depositados en esa
+   fecha (es una estimación y se dice). «Así lo entendí» dice cuántos quedarán por caer y cuántos atrasados con la
+   opción apagada, y la sugiere si hay atrasados.
+2. **#8** — Los repetidos que están en la papelera se cuentan aparte y se dice qué hacer.
+3. **#15** — Stripe saldo usa `source_id` (`ch_…`/`py_…`) como referencia cuando viene (confírmalo en la fuente
+   oficial y anótalo en `presets.ts`); antes de importar se buscan las referencias que ya existen en esa pasarela
+   (papelera incluida) y se enseñan como repetidas; y las filas que coinciden con un cobro registrado a mano sin esa
+   referencia (misma empresa, pasarela, moneda y bruto, ±1 día) se marcan como «posible repetido» y piden confirmar.
+4. **#16 (Importar)** — El esquema por defecto solo se aplica si está activo; «Así lo entendí» dice qué esquema se
+   aplicará.
+5. Menores de la tarea 27: la marca BOM como `\uFEFF` (no un carácter invisible); «Pago por transferencia» no se
+   omite como retiro en «otro»; BUYER_COLUMN reconoce nombres con guion bajo y no confunde «city» dentro de otras
+   palabras.
+
+### Task 32: Resumen en el celular y la moneda por defecto
+
+**Dueña de:** `src/app/(dashboard)/pasarelas/page.tsx`, `src/components/pasarelas/summary/**` (salvo
+`UpcomingDeposits.tsx`), `src/server/pasarelas/queries/summary.ts` (+ pruebas), `src/lib/pasarelas/stats.ts`
+(+ pruebas) y `e2e/resumen.spec.ts`.
+
+1. La moneda por defecto es la que tiene más cobros en el período (en empate, la de la mayoría de las empresas), no
+   la de más bruto comparando monedas distintas como números.
+2. En el celular, las cifras se ven sin desplazar: los filtros van plegados tras un botón «Filtros» que resume lo
+   elegido; desde 768 px, como hoy.
+3. **#16 (Resumen)** — El aviso de empresas sin esquema cuenta también las que tienen uno desactivado.
+4. **m3** — La parte de cada cuenta destino no da más de 100 % ni porcentajes negativos cuando hay pérdidas.
+5. Menores de la tarea 17: «Marcar depositado» de un grupo de más de 500 cobros va por lotes; una pasarela sin costo
+   efectivo no se dibuja como 0 %; el vacío al pedir una moneda sin cobros dice qué pasa.
+
+### Task 33: Comprobantes y liquidaciones
+
+**Dueña de:** `src/components/pasarelas/receipts/**`, `src/components/pasarelas/tx/ReceiptsCard.tsx`,
+`src/server/pasarelas/{ops,actions}/receipts.ts`, `src/components/pasarelas/splits/{SettlementForm,Movements}.tsx`,
+`src/server/pasarelas/{ops,actions}/settlements.ts`, `src/components/pasarelas/companies/LogoEditor.tsx`,
+`tests/integration/{comprobantes,repartos}.test.ts` y `e2e/repartos.spec.ts`.
+
+1. **#7 (liquidación)** — Registrar una liquidación es idempotente: tras un corte conserva su `id`, el reintento no
+   crea otra y el comprobante no se borra si no se sabe si la fila quedó.
+2. **#9** — El «Tipo» de la liquidación que se ve es el que se guarda, también tras guardar o tras un error.
+3. **m5** — Si una acción lanza después de que el servidor ya guardó, el navegador no borra el archivo (comprobante
+   o logo): solo lo borra ante un rechazo seguro.
+4. **m4** — No se guarda ni se muestra el nombre original del archivo (puede traer datos de otra persona): se
+   identifica por tipo y fecha.
+5. Menores: **m8** (quitar un comprobante dos veces no duplica el evento), **m14** («Ver» y «Quitar» dicen de qué
+   comprobante son), **m18** (la URL firmada del PDF se pide al tocar el enlace), y de la tarea 14: el tipo y el
+   tamaño del comprobante de una liquidación salen de Storage (`storedFile`), una prueba de la devolución (monto
+   negativo), la etiqueta de borrar una devolución sin el signo menos.
+
+### Task 34: Configuración — cuentas, empresas, esquemas y Ajustes
+
+**Dueña de:** `src/components/pasarelas/{accounts,holidays}/**`, `src/components/pasarelas/companies/**` (salvo
+`LogoEditor.tsx`), `src/components/pasarelas/gateways/**`, `src/components/pasarelas/splits/{SchemeStatusActions,SchemeEditor}.tsx`,
+`src/server/pasarelas/{ops,actions}/companies.ts`, `src/app/(dashboard)/pasarelas/empresas/**`,
+`src/app/(dashboard)/ajustes/{error,loading}.tsx`, `src/lib/supabase/proxy.ts`, y sus pruebas
+(`e2e/{empresas,cuentas-feriados,pasarelas}.spec.ts`).
+
+1. **#17** — Desactivar una cuenta destino que usan cuentas de pasarela avisa cuántas son y que los cobros nuevos la
+   seguirán usando hasta cambiarla; la ficha de la empresa marca «Cuenta inactiva»; el texto de la pantalla dice
+   la verdad.
+2. **#16 (Configuración)** — La ficha de la empresa marca «(desactivado)» junto a un esquema por defecto inactivo, y
+   desactivar un esquema nombra antes las empresas que lo tienen por defecto.
+3. **#11 (formularios de configuración)** — Un fallo de red en los formularios de pasarela y de esquema sale en el
+   propio formulario, sin perder lo escrito.
+4. Menores: **m9** (un error no queda detrás de un diálogo abierto), **m12** (`/ajustes` con `error.tsx` y
+   `loading.tsx`), **m16** (borrar una empresa desde su ficha no pinta un 404 antes de volver a la lista), **m19**
+   (con sesión, `/login?siguiente=…` respeta `siguiente`), **m26** («Ver sus cobros» abre todo su historial).
+
+### Task 35: Kit — formularios que no se desincronizan
+
+**Dueña de:** `src/components/ui/{Inputs,Toggles}.tsx` (+ pruebas), `e2e/kit.spec.ts`, la línea de `AGENTS.md` sobre el
+reinicio de los formularios de React 19.
+
+1. **#10** — Al terminar la acción de un `<form>`, React 19 reinicia el formulario: un `Select`, `Checkbox` o `Switch`
+   controlado vuelve a su valor inicial EN PANTALLA aunque el estado diga otro. Las primitivas mantienen
+   `defaultSelected`/`defaultChecked` iguales al valor controlado, para que el reinicio no cambie nada. Prueba en la
+   galería con un formulario de acción real; `AGENTS.md` dice cómo es.
+
+### Task 36: Seguridad en la base y en Storage
+
+**Dueña de:** `supabase/migrations/20261110120000_las_pasarelas_de_pago.sql`, `tests/integration/{rls,storage}.test.ts`,
+un nuevo `tests/integration/sesiones.test.ts` y `src/app/(dashboard)/ajustes/SecurityCard.tsx` (solo textos).
+
+1. **#3** — Políticas RESTRICTIVAS en `storage.objects` para el bucket `comprobantes` (la carpeta del usuario y el
+   segundo factor), aparte para `authenticated` y para `anon`, más su comprobación al final de la migración y una
+   prueba que cree una política permisiva amplia y vea que una sesión aal1 con factor sigue sin ver nada.
+2. **#4** — Una sesión cerrada (cambio de contraseña, «cerrar sesión en todos», o cerrar sesión en ese dispositivo)
+   deja de leer y escribir de inmediato: `private.pay_mfa_ok()` exige además que la sesión del token siga existiendo
+   en `auth.sessions`. Comprueba en el stack local qué sesiones borra Auth en cada caso y pruébalo; si alguno no las
+   borra, dilo. Los textos de Ajustes dicen lo que de verdad pasa.
+3. **m23** — Una prueba de que el registro público está apagado.
+4. Los cambios se aplican a la base local compartida SIN reiniciarla (`create or replace function`, `create policy`
+   con `psql`), y el informe deja el SQL exacto.
+
 ### Task 22: Documentación, revisión y entrega
 
 **Archivos:** `docs/PASARELAS.md`, `README.md`, raíz `README.md`.
