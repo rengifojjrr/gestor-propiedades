@@ -174,7 +174,11 @@ type TxFilterBuilder<Q> = {
 const NOT_DISPUTED = "dispute_state.is.null,dispute_state.neq.abierta";
 const PENDING = ["registrado", "en_transito"] as const;
 
-/** El estado visible, traducido a columnas en el mismo orden que `displayStatus` del motor. */
+/**
+ * El estado visible, traducido a columnas en el mismo orden que `displayStatus` del motor. «Por caer» y «atrasado»
+ * no son estados visibles: son `isPending` e `isOverdue` del motor, que miran el ciclo del dinero sin importar el
+ * reembolso ni la disputa. Así el filtro «por caer» trae justo los cobros que suma la tarjeta «Por caer».
+ */
 function applyStatus<Q extends TxFilterBuilder<Q>>(query: Q, status: TxFilters["status"], today: ISODate): Q {
   switch (status) {
     case undefined:
@@ -191,8 +195,9 @@ function applyStatus<Q extends TxFilterBuilder<Q>>(query: Q, status: TxFilters["
     case "registrado":
       return query.eq("status", status).or(NOT_DISPUTED).gt("gross_amount", ZERO);
     case "por_caer":
-      return query.in("status", PENDING).gt("gross_amount", ZERO);
+      return query.in("status", PENDING);
     case "atrasado":
+      // Además de por caer: le queda algo por cobrar (bruto vigente mayor que cero) y la fecha estimada ya pasó.
       return query.in("status", PENDING).gt("gross_amount", ZERO).lt("estimated_deposit_on", today);
   }
 }

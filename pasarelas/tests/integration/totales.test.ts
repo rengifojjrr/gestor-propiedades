@@ -9,6 +9,7 @@ import {
   isPending,
   cmp,
   planCreate,
+  summarize,
   totalsOf,
   type LeanTx,
   type NewTxInput,
@@ -241,16 +242,32 @@ describe("con cobros de todos los estados", () => {
   it("«por caer» y «atrasado» coinciden con las reglas del motor", async () => {
     const all = await leanTx(user.client, {}, TODAY);
 
-    const pending = all.filter((row) => isPending(row) && cmp(row.gross, ZERO) > 0);
+    const pending = all.filter((row) => isPending(row));
     const overdue = all.filter((row) => isOverdue(row, TODAY));
     expect(pending.length).toBeGreaterThan(overdue.length);
     expect(overdue.length).toBeGreaterThan(0);
-    // Hay por caer con el bruto en cero (reembolsados del todo): no entran.
-    expect(all.some((row) => isPending(row) && cmp(row.gross, ZERO) === 0)).toBe(true);
-    expect(idsOf(await leanTx(user.client, { status: "por_caer" }, TODAY))).toEqual(idsOf(pending));
+    // Lo que distingue a las dos reglas está en los datos: por caer con el bruto en cero (reembolsados del todo)
+    // y por caer en disputa. Siguen por caer; lo que ya no pueden es estar atrasados los del bruto en cero.
+    expect(pending.some((row) => cmp(row.gross, ZERO) === 0)).toBe(true);
+    expect(pending.some((row) => row.disputeState === "abierta")).toBe(true);
+    const byStatus = await leanTx(user.client, { status: "por_caer" }, TODAY);
+    expect(idsOf(byStatus)).toEqual(idsOf(pending));
     expect(idsOf(await leanTx(user.client, { status: "atrasado" }, TODAY))).toEqual(idsOf(overdue));
     // «Atrasado» depende de qué día es hoy.
     expect(await leanTx(user.client, { status: "atrasado" }, FIRST_DAY)).toEqual([]);
+  });
+
+  it("el neto del filtro «por caer» es el de la tarjeta «Por caer», moneda por moneda", async () => {
+    const summary = summarize(await leanTx(user.client, {}, TODAY), TODAY);
+    const pending = await leanTx(user.client, { status: "por_caer" }, TODAY);
+    const filtered = totalsOf(pending);
+
+    expect(Object.keys(filtered).sort()).toEqual(["EUR", "USD"]);
+    for (const [currency, totals] of Object.entries(filtered)) {
+      expect(totals.net, currency).toBe(summary[currency]?.totals.pendingNet);
+    }
+    // Un reembolso total no devuelve la comisión: esos cobros restan en la tarjeta, y por eso están en el filtro.
+    expect(pending.some((row) => cmp(row.gross, ZERO) === 0 && cmp(row.net, ZERO) < 0)).toBe(true);
   });
 
   it("la papelera va aparte: por defecto no aparece, y con trashed solo aparece ella", async () => {
