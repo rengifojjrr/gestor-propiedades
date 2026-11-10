@@ -144,11 +144,13 @@ const FIELDS: readonly [Field, string, boolean][] = [
 
 /**
  * Columnas con datos del comprador (correo, nombre, teléfono, dirección completa o por partes: ciudad, código postal,
- * estado o provincia, país), por su nombre ya normalizado. «state» y «país» van con límites de palabra para no
- * tocar «Statement Descriptor» ni «Status»; «Estado» no se toca porque casi siempre es el estado del cobro.
+ * estado o provincia, país), por su nombre ya normalizado. «city», «state» y «país» van como palabra suelta, para
+ * no tocar «Velocity», «Statement Descriptor» ni «Status»; el borde de palabra es cualquier cosa que no sea letra
+ * ni dígito, así que el guion bajo también separa («billing_state»). «Estado» no se toca porque casi siempre es el
+ * estado del cobro.
  */
 const BUYER_COLUMN =
-  /mail|correo|name|nombre|address|direcci|domicilio|customer|cliente|buyer|comprador|payer|pagador|phone|tel[eé]fono|city|ciudad|town|localidad|municipio|zip|postal|\bstate\b|province|provincia|country|\bpa[ií]s\b/;
+  /mail|correo|name|nombre|address|direcci|domicilio|customer|cliente|buyer|comprador|payer|pagador|phone|tel[eé]fono|ciudad|town|localidad|municipio|zip|postal|province|provincia|country|(?<![\p{L}\p{N}])(?:city|state|pa[ií]s)(?![\p{L}\p{N}])/u;
 
 const CURRENCY = /^[A-Z]{3}$/;
 

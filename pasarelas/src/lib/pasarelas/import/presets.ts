@@ -263,6 +263,20 @@ const GENERIC_TYPE_WORDS: [RegExp, string | null][] = [
   [/\b(payment|charge|sale|donation|cobro|cobros|pago|pagos|venta|ventas|donacion)\b/, null],
 ];
 
+/**
+ * «por transferencia», «vía depósito», «by bank transfer»: dicen cómo pagó el cliente, no que el dinero salga del
+ * saldo. Se quitan antes de buscar el tipo, así «Pago por transferencia» es un cobro y «Retiro por transferencia»
+ * sigue siendo un retiro. Si no queda nada más («Por transferencia»), se mira el texto entero.
+ */
+const PAID_BY =
+  /\b(?:por|via|mediante|by|through)\s+(?:(?:bank|wire)\s+)?(?:transferencia|transfer|deposito|deposit)(?:\s+bancari[ao])?\b/g;
+
+function genericType(value: string): string | null {
+  const text = plain(value);
+  const kind = text.replace(PAID_BY, " ").trim();
+  return byWords(GENERIC_TYPE_WORDS, value, kind === "" ? text : kind);
+}
+
 function genericStatus(value: string): string | null {
   const key = plain(value);
   if (key === "") return missing("estado");
@@ -290,7 +304,7 @@ export function skipReason(format: ImportFormat, facts: RowFacts): string | null
       );
     case "otro":
       return (
-        (facts.type === null ? null : byWords(GENERIC_TYPE_WORDS, facts.type, plain(facts.type))) ??
+        (facts.type === null ? null : genericType(facts.type)) ??
         (facts.status === null ? null : genericStatus(facts.status))
       );
   }

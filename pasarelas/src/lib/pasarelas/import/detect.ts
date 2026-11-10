@@ -8,7 +8,7 @@ export type ImportFormat = "stripe_pagos" | "stripe_saldo" | "paypal_actividad" 
 
 /** Un nombre de columna tal como se compara: sin la marca BOM, sin espacios alrededor y en minúsculas. */
 export function normalizeHeader(header: string): string {
-  return header.replace(/^﻿/, "").trim().toLowerCase();
+  return header.replace(/^\uFEFF/, "").trim().toLowerCase();
 }
 
 const KNOWN = ["stripe_pagos", "stripe_saldo", "paypal_actividad"] as const;

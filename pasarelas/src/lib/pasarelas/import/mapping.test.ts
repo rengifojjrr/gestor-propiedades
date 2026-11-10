@@ -134,7 +134,7 @@ describe("validateMapping", () => {
   });
 
   test("las columnas se buscan sin distinguir mayúsculas, espacios alrededor ni la marca BOM", () => {
-    expect(validateMapping(["﻿REF", " Fecha ", "MONTO"], { ...BASE, reference: " ref", gross: "Monto " })).toEqual([]);
+    expect(validateMapping(["\uFEFFREF", " Fecha ", "MONTO"], { ...BASE, reference: " ref", gross: "Monto " })).toEqual([]);
   });
 
   test("faltan las obligatorias o no están en el archivo", () => {
@@ -194,6 +194,12 @@ describe("validateMapping", () => {
     "Provincia",
     "País",
     "Localidad",
+    // Con guion bajo («_» es parte de la palabra para \b): Stripe y otros escriben así las partes de la dirección.
+    "customer_shipping_address_state",
+    "billing_state",
+    "shipping_city",
+    "customer_country",
+    "direccion_pais",
   ])("la nota y la referencia no pueden salir de «%s» (datos del comprador)", (columna) => {
     const encabezados = [...ENCABEZADOS, columna];
     const motivo = (campo: string) =>
@@ -202,7 +208,19 @@ describe("validateMapping", () => {
     expect(validateMapping(encabezados, { ...BASE, reference: columna })).toEqual([motivo("referencia")]);
   });
 
-  test.each(["Statement Descriptor", "Status", "Estado", "Descripción", "Item Title", "Subject"])(
+  test.each([
+    "Statement Descriptor",
+    "Status",
+    "Estado",
+    "Descripción",
+    "Item Title",
+    "Subject",
+    // «city» dentro de otra palabra no es la ciudad del comprador.
+    "Velocity",
+    "Capacity",
+    "Authenticity",
+    "risk_velocity_score",
+  ])(
     "«%s» no es una columna del comprador: sirve como nota",
     (columna) => {
       expect(validateMapping([...ENCABEZADOS, columna], { ...BASE, note: columna })).toEqual([]);
@@ -252,7 +270,7 @@ describe("mapRows: lo general", () => {
   });
 
   test("encuentra las columnas aunque el archivo las escriba distinto que el mapeo (mayúsculas, BOM, espacios)", () => {
-    const filas = [{ "﻿Ref": "ref_demo_1", " FECHA ": "2026-11-13", Monto: "10.00" }];
+    const filas = [{ "\uFEFFRef": "ref_demo_1", " FECHA ": "2026-11-13", Monto: "10.00" }];
     expect(mapRows(filas, BASE, "otro").ok).toHaveLength(1);
   });
 
@@ -662,6 +680,17 @@ describe("mapRows: qué es un cobro en «otro» (columnas de estado o tipo elegi
     ["Retiro al banco", "retiro, depósito o transferencia de saldo: no es un cobro"],
     ["Depósito", "retiro, depósito o transferencia de saldo: no es un cobro"],
     ["Transferencia", "retiro, depósito o transferencia de saldo: no es un cobro"],
+    // «por transferencia» dice cómo pagó el cliente, no que el dinero salga del saldo.
+    ["Pago por transferencia", "cobro"],
+    ["Cobro por transferencia bancaria", "cobro"],
+    ["Pago vía depósito", "cobro"],
+    ["Payment by bank transfer", "cobro"],
+    ["Payment via wire transfer", "cobro"],
+    ["Venta mediante transferencia", "cobro"],
+    ["Retiro por transferencia", "retiro, depósito o transferencia de saldo: no es un cobro"],
+    ["Reembolso por transferencia", "reembolso: el importador solo trae cobros (el reembolso se registra en el detalle del cobro)"],
+    ["Transferencia de pago", "retiro, depósito o transferencia de saldo: no es un cobro"],
+    ["Por transferencia", "retiro, depósito o transferencia de saldo: no es un cobro"],
     ["Fee", "comisión suelta: no es un cobro"],
     ["Comisión de pago", "comisión suelta: no es un cobro"],
     ["Adjustment", "ajuste, disputa o contracargo: no es un cobro"],

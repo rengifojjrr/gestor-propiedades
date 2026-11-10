@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import { detectFormat, type ImportFormat } from "./detect";
 import { validateMapping } from "./mapping";
@@ -61,7 +62,7 @@ describe("detectFormat", () => {
 
   test.each(CASOS)("%s: sin distinguir mayúsculas, espacios alrededor ni la marca BOM, y en cualquier orden", (formato, encabezados) => {
     const revueltos = encabezados.map((h, i) => (i % 2 === 0 ? `  ${h.toUpperCase()} ` : h.toLowerCase())).reverse();
-    revueltos[0] = `﻿${revueltos[0]}`;
+    revueltos[0] = `\uFEFF${revueltos[0]}`;
     expect(detectFormat(revueltos)).toBe(formato);
   });
 
@@ -86,5 +87,16 @@ describe("detectFormat", () => {
 
   test.each(CASOS)("%s: lo que se reconoce se puede importar con su mapeo por defecto, sin tocar nada", (formato, encabezados) => {
     expect(validateMapping(encabezados, presetFor(formato)!)).toEqual([]);
+  });
+});
+
+describe("el código del importador", () => {
+  // Un carácter invisible escrito tal cual (la marca BOM, un espacio de ancho cero) no se ve al revisar el código:
+  // se escribe con su escape (`\uFEFF`).
+  const archivos = readdirSync("src/lib/pasarelas/import").filter((nombre) => nombre.endsWith(".ts"));
+
+  test.each(archivos)("%s no trae caracteres invisibles escritos tal cual", (nombre) => {
+    const texto = readFileSync(`src/lib/pasarelas/import/${nombre}`, "utf8");
+    expect(texto).not.toMatch(/[\uFEFF\u200B-\u200D\u2060]/);
   });
 });
