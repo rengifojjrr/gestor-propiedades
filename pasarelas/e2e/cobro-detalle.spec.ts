@@ -646,6 +646,8 @@ test.describe.serial("detalle del cobro", () => {
     await serverData().depositTx(client, [id], today);
     await login(page, user);
     await page.goto(`/pasarelas/cobros/${id}/editar`);
+    // Hasta hidratar, «Guardar cambios» está desactivado: lo que se escribiera antes se perdería al hidratar.
+    await expect(page.getByRole("button", { name: "Guardar cambios" })).toBeEnabled();
     const when = page.getByLabel("Fecha y hora");
     await expect(when).toHaveAttribute("max", `${today}T23:59`);
 

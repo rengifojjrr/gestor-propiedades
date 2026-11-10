@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type FormEvent } from "react";
+import { useState, useSyncExternalStore, useTransition, type FormEvent } from "react";
 import { ExtrasToggles } from "@/components/pasarelas/registrar/ExtrasToggles";
 import { Alert, Button, ButtonLink, Field, Input, MoneyInput, Select, Textarea, notify } from "@/components/ui";
 import { localInputToInstant } from "@/lib/pasarelas/dates";
@@ -37,8 +37,14 @@ const sameIds = (a: readonly string[], b: readonly string[]): boolean =>
  * Manda la versión del cobro que se abrió (`expectedUpdatedAt`): si otra pestaña lo cambió entretanto, el servidor
  * da conflicto y no se pisa lo de la otra.
  */
+/** Sin suscripción: solo sirve para saber si ya se hidrató (en el servidor da `false`, en el navegador `true`). */
+const noSubscription = () => () => {};
+
 export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: EditFormProps) {
   const router = useRouter();
+  // Hasta hidratar, «Guardar cambios» no se puede tocar: lo escrito antes se perdería al hidratar (los campos son
+  // controlados y vuelven al valor con que se pintaron) y se guardaría el cobro sin cambios.
+  const hydrated = useSyncExternalStore(noSubscription, () => true, () => false);
   // El cobro tal como se abrió: si la pantalla se refresca detrás (tras un fallo de red), se compara con este.
   const [tx] = useState(current);
   const frozenExtras = tx.breakdown.rules.extras.map((option) => option.id);
@@ -261,7 +267,7 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
 
       <div className="flex flex-wrap justify-end gap-2">
         <ButtonLink href={`/pasarelas/cobros/${tx.id}`}>Cancelar</ButtonLink>
-        <Button type="submit" variant="primary" disabled={pending} aria-busy={pending || undefined}>
+        <Button type="submit" variant="primary" disabled={pending || !hydrated} aria-busy={pending || undefined}>
           {pending ? "Guardando…" : "Guardar cambios"}
         </Button>
       </div>
