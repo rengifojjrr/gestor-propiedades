@@ -17,7 +17,7 @@ export function TxCards({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
             <TxCheckbox tx={tx} />
             <div className="flex min-w-0 flex-1 flex-col gap-1.5 py-2">
               <div className="flex items-baseline justify-between gap-3">
-                <TxLink tx={tx} className="min-w-0 truncate font-semibold text-brand hover:underline" />
+                <TxLink tx={tx} className="inline-flex min-h-11 min-w-0 items-center font-semibold break-all text-brand hover:underline" />
                 <Money value={tx.gross} currency={tx.currency} className="text-lg font-semibold" />
               </div>
               <p className="text-sm text-ink-soft">

@@ -59,6 +59,8 @@ export function SelectAllCheckbox({ visibleLabel = false }: { visibleLabel?: boo
   return (
     <Checkbox
       label={visibleLabel ? text : <span className="sr-only">{text}</span>}
+      // Sin texto a la vista, la fila tocable mediría lo que la casilla: el ancho la deja en 44 px.
+      className={visibleLabel ? undefined : "w-11"}
       checked={total > 0 && selected.length === total}
       ref={(input: HTMLInputElement | null) => {
         if (input) input.indeterminate = selected.length > 0 && selected.length < total;

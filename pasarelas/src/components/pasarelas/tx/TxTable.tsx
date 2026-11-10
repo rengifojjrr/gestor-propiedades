@@ -33,12 +33,16 @@ export function TxLink({ tx, className }: { tx: TxRowView; className?: string })
   );
 }
 
-/** La casilla de un cobro, con su nombre solo para el lector de pantalla (la fila ya dice de qué cobro se trata). */
+/**
+ * La casilla de un cobro, con su nombre solo para el lector de pantalla (la fila ya dice de qué cobro se trata).
+ * Sin texto a la vista, la fila tocable mediría lo que la casilla: el ancho la deja en 44 px.
+ */
 export function TxCheckbox({ tx }: { tx: TxRowView }) {
   const { isSelected, toggle } = useTxSelection();
   return (
     <Checkbox
       label={<span className="sr-only">{selectLabel(tx)}</span>}
+      className="w-11 shrink-0"
       checked={isSelected(tx.id)}
       onChange={(event) => toggle(tx.id, event.currentTarget.checked)}
     />
@@ -95,7 +99,7 @@ export function TxTable({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
             </Td>
             <Td>
               <span className="flex flex-col">
-                <TxLink tx={tx} className="font-semibold text-brand hover:underline" />
+                <TxLink tx={tx} className="-my-2 inline-flex min-h-11 items-center font-semibold text-brand hover:underline" />
                 <span className="text-sm text-ink-soft">
                   {tx.companyName} · {tx.gatewayName}
                 </span>
