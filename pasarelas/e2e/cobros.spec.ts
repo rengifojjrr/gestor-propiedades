@@ -299,6 +299,25 @@ test("en tránsito y a la papelera, en lote", async ({ page, isMobile }) => {
   await expect(cobro(page, isMobile, "lt_1")).toBeVisible();
 });
 
+test("si la acción en lote vacía la lista, el foco va al aviso de la lista vacía, no se pierde", async ({
+  page,
+  isMobile,
+}) => {
+  await register(["vacia_1", "vacia_2"], { daysAgo: 1 });
+
+  await login(page, user);
+  await page.goto("/pasarelas/cobros?periodo=30d&q=vacia_");
+  await expect(cobro(page, isMobile, "vacia_2")).toBeVisible();
+  await page.getByRole("checkbox", { name: "Seleccionar todos los cobros de esta página" }).check();
+  await page.getByRole("button", { name: "A la papelera" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Enviar a la papelera" }).click();
+  await expect(page.getByText("2 cobros enviados a la papelera.")).toBeVisible();
+  await expect(page.getByText("No hay cobros con estos filtros")).toBeVisible();
+  const focused = page.locator(":focus");
+  await expect(focused).toContainText("No hay cobros con estos filtros");
+  await expectCleanScreen(page);
+});
+
 test("sin cobros que cumplan el filtro, lo dice y ofrece registrar uno", async ({ page }) => {
   await login(page, user);
   await page.goto("/pasarelas/cobros?periodo=30d&q=no_existe_nada");

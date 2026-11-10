@@ -1,13 +1,13 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useId, useState, useTransition, type FormEvent } from "react";
 import { Alert, Button, Dialog, Field, Input, Money, notify } from "@/components/ui";
 import { isZero } from "@/lib/pasarelas/money";
 import type { ISODate, TxSnapshot } from "@/lib/pasarelas/types";
 import { planDispute } from "@/lib/pasarelas/write";
 import { disputeTransaction } from "@/server/pasarelas/actions/transactions";
-import { callAction } from "../callAction";
+import { ActionError, useRefreshOnClose } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { previewChange } from "./preview";
 import { ChangesTable } from "./RecalcDialog";
 
@@ -63,15 +63,15 @@ export function DisputeDialog({ tx, mode, open, onClose, today }: DisputeDialogP
 }
 
 function DisputeForm({ tx: current, mode, onClose, today }: Omit<DisputeDialogProps, "open">) {
-  const router = useRouter();
   // Lo que vio la persona al abrir: aunque la pantalla se refresque detrás, la vista previa y la versión son esas.
   const [tx] = useState(current);
   const name = useId();
   const [outcome, setOutcome] = useState<Outcome>("ganar");
   const [on, setOn] = useState(today);
   const [dateError, setDateError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
+  useRefreshOnClose(error);
   const action = mode === "abrir" ? "abrir" : outcome;
   const preview = previewChange(tx, (t) => planDispute(t, { action, on: on || today }));
 
@@ -82,12 +82,11 @@ function DisputeForm({ tx: current, mode, onClose, today }: Omit<DisputeDialogPr
       return;
     }
     startTransition(async () => {
-      const result = await callAction(
-        () => disputeTransaction({ id: tx.id, expectedUpdatedAt: tx.updatedAt, action, on }),
-        router.refresh,
+      const result = await callAction(() =>
+        disputeTransaction({ id: tx.id, expectedUpdatedAt: tx.updatedAt, action, on }),
       );
       if (!result.ok) {
-        setError(result.error);
+        setError(failureOf(result));
         setDateError(result.fieldErrors?.on?.[0] ?? null);
         return;
       }
@@ -140,11 +139,7 @@ function DisputeForm({ tx: current, mode, onClose, today }: Omit<DisputeDialogPr
         <Alert tone="warning">{preview.error}</Alert>
       )}
 
-      {error ? (
-        <Alert tone="danger" announce>
-          {error}
-        </Alert>
-      ) : null}
+      <ActionError failure={error} />
 
       <div className="flex flex-wrap justify-end gap-2">
         <Button onClick={onClose} disabled={pending}>

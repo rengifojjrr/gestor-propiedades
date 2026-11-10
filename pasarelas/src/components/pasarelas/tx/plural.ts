@@ -43,3 +43,18 @@ export function depositDone({ count, skipped }: DepositOutcome): string {
   ].filter((reason) => reason !== null);
   return `${head} ${total === 1 ? "Se saltó" : "Se saltaron"} ${total}: ${listed(reasons)}.`;
 }
+
+/** Lo que se dice si el cambio quedó guardado pero las fechas estimadas no se pudieron volver a calcular. */
+export const REFRESH_FAILED_TEXT =
+  "No se pudieron actualizar las fechas estimadas: usa «Recalcular» en Cobros para ponerlas al día.";
+
+/**
+ * Lo que se dice tras un cambio que mueve las fechas estimadas de lo que está por caer (un feriado, los días de una
+ * pasarela o de su cuenta en una empresa): `done` y cuántas fechas cambiaron (`refreshed`; nada si ninguna). Si
+ * no se pudieron recalcular (`null`), el cambio sigue guardado y `error` lo dice aparte.
+ */
+export function savedWithRefresh(done: string, refreshed: number | null): { success: string; error: string | null } {
+  if (refreshed === null) return { success: done, error: REFRESH_FAILED_TEXT };
+  if (refreshed === 0) return { success: done, error: null };
+  return { success: `${done} Se actualizó la fecha estimada de ${cobros(refreshed)} por caer.`, error: null };
+}

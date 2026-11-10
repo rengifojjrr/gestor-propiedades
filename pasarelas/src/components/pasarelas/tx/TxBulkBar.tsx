@@ -1,11 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { createContext, use, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
-import { Alert, Button, Checkbox, ConfirmDialog, notify } from "@/components/ui";
+import { Button, Checkbox, ConfirmDialog, notify } from "@/components/ui";
 import type { Currency, ISODate } from "@/lib/pasarelas/types";
 import { markInTransit, trashTransactions } from "@/server/pasarelas/actions/transactions";
-import { callAction } from "../callAction";
+import { ActionError } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { DepositDialog } from "./DepositDialog";
 import { batchDone, cobros } from "./plural";
 import { RecalcDialog } from "./RecalcDialog";
@@ -20,11 +20,19 @@ type Selection = {
   /** Elige todos los de la página, o ninguno. */
   toggleAll: (on: boolean) => void;
   clear: () => void;
+  /**
+   * Tras una acción en lote que salió bien: vacía la selección y, cuando la pantalla ya se volvió a pintar, lleva el
+   * foco a `focusAfterId` (la barra se fue con el botón pulsado, y quizá la lista entera).
+   */
+  finish: () => void;
   /** Cuántos cobros tiene la página. */
   total: number;
 };
 
 const SelectionContext = createContext<Selection | null>(null);
+
+/** El foco todavía no se llevó a ningún lado tras la acción en lote. */
+const PENDING = "pendiente";
 
 /** La selección de la lista. Solo cuenta lo que está en la página: lo elegido que ya no se ve, se olvida. */
 export function useTxSelection(): Selection {
@@ -33,10 +41,46 @@ export function useTxSelection(): Selection {
   return selection;
 }
 
-/** Guarda qué cobros de la página están elegidos. `ids`: los de la página, en su orden. */
-export function TxSelectionProvider({ ids, children }: { ids: string[]; children: ReactNode }) {
+export type TxSelectionProviderProps = {
+  /** Los cobros de la página, en su orden (ninguno si la lista quedó vacía). */
+  ids: string[];
+  /**
+   * El id de lo que recibe el foco tras una acción en lote que sale bien: el contador de la lista o, si la acción
+   * la vació, el aviso de la lista vacía (con `tabIndex={-1}`). Va fuera de la lista y de la barra, que se pueden
+   * ir con la acción: por eso lo mueve el proveedor, que sigue en la página.
+   */
+  focusAfterId: string;
+  children: ReactNode;
+};
+
+/** Guarda qué cobros de la página están elegidos y, tras una acción en lote, a dónde va el foco. */
+export function TxSelectionProvider({ ids, focusAfterId, children }: TxSelectionProviderProps) {
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
   const selected = ids.filter((id) => chosen.has(id));
+  // Tras una acción en lote: a qué se llevó el foco («pendiente» hasta que se pinte sin la selección). La lista
+  // nueva puede llegar después: si se lleva lo que tenía el foco (la lista quedó vacía), el foco caería en <body> y
+  // se pasa a lo que lo reemplaza. Si la persona ya lo movió a otra parte, se deja de vigilar.
+  const focusGuard = useRef<HTMLElement | typeof PENDING | null>(null);
+
+  useEffect(() => {
+    const guarded = focusGuard.current;
+    if (guarded === null || selected.length > 0) return;
+    if (guarded !== PENDING) {
+      const active = document.activeElement;
+      if (guarded.isConnected) {
+        if (active !== guarded) focusGuard.current = null;
+        return;
+      }
+      if (active !== null && active !== document.body) {
+        focusGuard.current = null;
+        return;
+      }
+    }
+    const target = document.getElementById(focusAfterId);
+    focusGuard.current = target;
+    target?.focus();
+  });
+
   const value: Selection = {
     selected,
     isSelected: (id) => chosen.has(id),
@@ -49,6 +93,10 @@ export function TxSelectionProvider({ ids, children }: { ids: string[]; children
       }),
     toggleAll: (on) => setChosen(on ? new Set(ids) : new Set()),
     clear: () => setChosen(new Set()),
+    finish: () => {
+      focusGuard.current = PENDING;
+      setChosen(new Set());
+    },
     total: ids.length,
   };
   return <SelectionContext value={value}>{children}</SelectionContext>;
@@ -81,36 +129,22 @@ export type TxBulkBarProps = {
   transactions: { id: string; currency: Currency }[];
   /** Hoy en Nueva York: la fecha que propone «Marcar depositado». */
   today: ISODate;
-  /**
-   * El id de lo que recibe el foco cuando, tras una acción que sale bien, la barra desaparece (con ella se va el
-   * botón que se pulsó): el contador de la lista, con `tabIndex={-1}`.
-   */
-  focusAfterId: string;
 };
 
 /**
  * Las acciones sobre los cobros elegidos: marcar en tránsito, marcar depositado (con fecha), recalcular (con el
  * antes y el después) y enviar a la papelera. «Marcar depositado» solo marca lo que está por caer: lo ya depositado
  * conserva su fecha. Solo aparece cuando hay alguno elegido; tras una acción que sale bien, la selección se vacía y
- * el foco pasa al contador de la lista (`focusAfterId`).
+ * el foco pasa a donde diga `TxSelectionProvider` (el contador de la lista, o el aviso de la lista vacía).
  */
-export function TxBulkBar({ transactions, today, focusAfterId }: TxBulkBarProps) {
-  const router = useRouter();
-  const { selected, clear } = useTxSelection();
+export function TxBulkBar({ transactions, today }: TxBulkBarProps) {
+  const { selected, clear, finish } = useTxSelection();
   const [dialog, setDialog] = useState<Dialogs>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
   // Mientras un diálogo está abierto, la selección que usa es la del momento en que se abrió.
   const [ids, setIds] = useState<string[]>([]);
-  // Tras una acción que vació la selección: cuando la barra ya no está, el foco va al contador.
-  const refocus = useRef(false);
   const hidden = selected.length === 0 && dialog === null;
-
-  useEffect(() => {
-    if (!refocus.current || !hidden) return;
-    refocus.current = false;
-    document.getElementById(focusAfterId)?.focus();
-  });
 
   if (hidden) return null;
 
@@ -122,31 +156,29 @@ export function TxBulkBar({ transactions, today, focusAfterId }: TxBulkBarProps)
   const close = () => setDialog(null);
   const done = () => {
     setDialog(null);
-    clear();
-    refocus.current = true;
+    finish();
   };
 
   function transit() {
     setError(null);
     const chosen = selected;
     startTransition(async () => {
-      const result = await callAction(() => markInTransit({ ids: chosen }), router.refresh);
+      const result = await callAction(() => markInTransit({ ids: chosen }));
       if (!result.ok) {
-        setError(result.error);
+        setError(failureOf(result));
         return;
       }
       notify.success(batchDone(result.data.count, chosen.length, { one: "marcado en tránsito", many: "marcados en tránsito" }));
-      clear();
-      refocus.current = true;
+      finish();
     });
   }
 
   function trash() {
     startTransition(async () => {
-      const result = await callAction(() => trashTransactions({ ids }), router.refresh);
+      const result = await callAction(() => trashTransactions({ ids }));
       if (!result.ok) {
         setDialog(null);
-        setError(result.error);
+        setError(failureOf(result));
         return;
       }
       notify.success(
@@ -186,11 +218,7 @@ export function TxBulkBar({ transactions, today, focusAfterId }: TxBulkBarProps)
           </Button>
         </div>
       ) : null}
-      {error ? (
-        <Alert tone="danger" announce>
-          {error}
-        </Alert>
-      ) : null}
+      <ActionError failure={error} />
 
       <DepositDialog
         ids={ids}

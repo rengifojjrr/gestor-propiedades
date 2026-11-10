@@ -1,10 +1,10 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { Alert, Button, ConfirmDialog, notify } from "@/components/ui";
+import { Button, ConfirmDialog, notify } from "@/components/ui";
 import { purgeTransactions, restoreTransactions } from "@/server/pasarelas/actions/transactions";
-import { callAction } from "../callAction";
+import { ActionError } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { cobros } from "./plural";
 
 /** Lo más que borra `purgeTransactions` de una vez (el tope de un lote de cobros en el servidor). */
@@ -15,17 +15,16 @@ const LOST_TEXT = "con su reparto, su historial y también sus comprobantes. No 
 
 /** «Restaurar» y «Borrar del todo» de un cobro de la papelera. `label` lo nombra para el lector de pantalla. */
 export function TrashRowActions({ id, label }: { id: string; label: string }) {
-  const router = useRouter();
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
 
   function restore() {
     setError(null);
     startTransition(async () => {
-      const result = await callAction(() => restoreTransactions({ ids: [id] }), router.refresh);
+      const result = await callAction(() => restoreTransactions({ ids: [id] }));
       if (!result.ok) {
-        setError(result.error);
+        setError(failureOf(result));
         return;
       }
       notify.success("Cobro restaurado.");
@@ -35,10 +34,10 @@ export function TrashRowActions({ id, label }: { id: string; label: string }) {
   function purge() {
     setError(null);
     startTransition(async () => {
-      const result = await callAction(() => purgeTransactions({ ids: [id] }), router.refresh);
+      const result = await callAction(() => purgeTransactions({ ids: [id] }));
       setConfirming(false);
       if (!result.ok) {
-        setError(result.error);
+        setError(failureOf(result));
         return;
       }
       notify.success("Cobro borrado del todo.");
@@ -55,11 +54,7 @@ export function TrashRowActions({ id, label }: { id: string; label: string }) {
           Borrar del todo<span className="sr-only"> {label}</span>
         </Button>
       </div>
-      {error ? (
-        <Alert tone="danger" announce>
-          {error}
-        </Alert>
-      ) : null}
+      <ActionError failure={error} align="end" />
       <ConfirmDialog
         open={confirming}
         onClose={() => setConfirming(false)}
@@ -79,9 +74,8 @@ export function TrashRowActions({ id, label }: { id: string; label: string }) {
  * dice cuántos alcanzó a borrar.
  */
 export function EmptyTrashButton({ ids }: { ids: string[] }) {
-  const router = useRouter();
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
 
   function empty() {
@@ -90,10 +84,13 @@ export function EmptyTrashButton({ ids }: { ids: string[] }) {
       let purged = 0;
       for (let start = 0; start < ids.length; start += PURGE_BATCH) {
         const batch = ids.slice(start, start + PURGE_BATCH);
-        const result = await callAction(() => purgeTransactions({ ids: batch }), router.refresh);
+        const result = await callAction(() => purgeTransactions({ ids: batch }));
         if (!result.ok) {
           setConfirming(false);
-          setError(purged === 0 ? result.error : `${result.error} Se alcanzaron a borrar ${cobros(purged)}.`);
+          const failure = failureOf(result);
+          setError(
+            purged === 0 ? failure : { ...failure, text: `${failure.text} Se alcanzaron a borrar ${cobros(purged)}.` },
+          );
           return;
         }
         purged += result.data.count;
@@ -108,11 +105,7 @@ export function EmptyTrashButton({ ids }: { ids: string[] }) {
       <Button variant="danger" onClick={() => setConfirming(true)} disabled={pending}>
         Vaciar la papelera
       </Button>
-      {error ? (
-        <Alert tone="danger" announce>
-          {error}
-        </Alert>
-      ) : null}
+      <ActionError failure={error} />
       <ConfirmDialog
         open={confirming}
         onClose={() => setConfirming(false)}

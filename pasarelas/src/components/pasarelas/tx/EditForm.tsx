@@ -10,7 +10,8 @@ import { defaultExtraIds } from "@/lib/pasarelas/rules";
 import type { PayConfig, TxSnapshot } from "@/lib/pasarelas/types";
 import { PAY_STATE_TEXT } from "@/lib/pasarelas/write";
 import { editTransaction } from "@/server/pasarelas/actions/transactions";
-import { callAction } from "../callAction";
+import { ActionError } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
 
 const NOTE_MAX = 280;
 const FIELDS_TEXT = "Revisa los campos marcados.";
@@ -58,7 +59,7 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
   const [schemeId, setSchemeId] = useState(tx.schemeId ?? "");
   const [bankAccountId, setBankAccountId] = useState(tx.bankAccountId ?? "");
   const [note, setNote] = useState(tx.note ?? "");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionFailure | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [pending, startTransition] = useTransition();
 
@@ -106,21 +107,26 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
     try {
       changed = changes();
     } catch {
-      setError(FIELDS_TEXT);
+      setError({ text: FIELDS_TEXT, unsure: false });
       setFieldErrors({ occurredAt: "Elige la fecha y la hora." });
       return;
     }
+    // Ya depositado, el cobro no puede ser de un día posterior al del depósito.
+    if (tx.depositedOn !== null && occurredLocal.slice(0, 10) > tx.depositedOn) {
+      setError({ text: FIELDS_TEXT, unsure: false });
+      setFieldErrors({ occurredAt: PAY_STATE_TEXT.deposito_antes_del_cobro });
+      return;
+    }
     if (Object.keys(changed).length === 0) {
-      setError(PAY_STATE_TEXT.sin_cambios);
+      setError({ text: PAY_STATE_TEXT.sin_cambios, unsure: false });
       return;
     }
     startTransition(async () => {
-      const result = await callAction(
-        () => editTransaction({ id: tx.id, expectedUpdatedAt: tx.updatedAt, ...changed }),
-        router.refresh,
+      const result = await callAction(() =>
+        editTransaction({ id: tx.id, expectedUpdatedAt: tx.updatedAt, ...changed }),
       );
       if (!result.ok) {
-        setError(result.error);
+        setError(failureOf(result));
         setFieldErrors(
           Object.fromEntries(Object.entries(result.fieldErrors ?? {}).map(([name, messages]) => [name, messages[0]])),
         );
@@ -195,8 +201,21 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
         </Field>
       </div>
 
-      <Field label="Fecha y hora" hint="Hora de Nueva York." error={fieldErrors.occurredAt}>
-        <Input type="datetime-local" value={occurredLocal} onChange={(event) => setOccurredLocal(event.currentTarget.value)} />
+      <Field
+        label="Fecha y hora"
+        hint={
+          tx.depositedOn === null
+            ? "Hora de Nueva York."
+            : "Hora de Nueva York. No puede ser de después del día del depósito."
+        }
+        error={fieldErrors.occurredAt}
+      >
+        <Input
+          type="datetime-local"
+          value={occurredLocal}
+          max={tx.depositedOn === null ? undefined : `${tx.depositedOn}T23:59`}
+          onChange={(event) => setOccurredLocal(event.currentTarget.value)}
+        />
       </Field>
 
       <Field label="Referencia" optional hint="La que le da la pasarela al cobro." error={fieldErrors.reference}>
@@ -238,11 +257,7 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
         <Textarea value={note} maxLength={NOTE_MAX} onChange={(event) => setNote(event.currentTarget.value)} />
       </Field>
 
-      {error !== null ? (
-        <Alert tone="danger" announce>
-          {error}
-        </Alert>
-      ) : null}
+      <ActionError failure={error} />
 
       <div className="flex flex-wrap justify-end gap-2">
         <ButtonLink href={`/pasarelas/cobros/${tx.id}`}>Cancelar</ButtonLink>

@@ -1,12 +1,12 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
-import { Alert, Button, Dialog, Field, Input, notify } from "@/components/ui";
+import { Button, Dialog, Field, Input, notify } from "@/components/ui";
 import type { ISODate } from "@/lib/pasarelas/types";
 import { PAY_STATE_TEXT } from "@/lib/pasarelas/write";
 import { markDeposited } from "@/server/pasarelas/actions/transactions";
-import { callAction } from "../callAction";
+import { ActionError, useRefreshOnClose } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { cobros, depositDone } from "./plural";
 
 const FUTURE_TEXT = "La fecha del depósito no puede ser futura.";
@@ -28,6 +28,11 @@ export type DepositDialogProps = {
   onlyPending: boolean;
   /** La fecha del cobro, si es uno solo: el depósito no puede ser anterior. */
   earliest?: ISODate;
+  /**
+   * El detalle de un cobro manda la versión que se está viendo (su `updatedAt`, con un solo id): si el cobro cambió
+   * desde entonces (otra pestaña abrió una disputa o puso otra fecha), el servidor da conflicto en vez de pisarlo.
+   */
+  expectedUpdatedAt?: string;
   /** Por defecto «Marcar depositado»; el detalle de un cobro ya depositado dice «Cambiar la fecha del depósito». */
   title?: string;
   /** Tras marcar, con cuántos cambiaron (antes de `onClose`). */
@@ -64,13 +69,16 @@ function DepositForm({
   today,
   onlyPending,
   earliest,
+  expectedUpdatedAt: current,
   title,
   onClose,
   onDone,
 }: Omit<DepositDialogProps, "open">) {
-  const router = useRouter();
+  // La versión que se vio al abrir: aunque la pantalla se refresque detrás, se manda esa.
+  const [expectedUpdatedAt] = useState(current);
   const [date, setDate] = useState(defaultDate);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionFailure | null>(null);
+  useRefreshOnClose(error);
   const [dateError, setDateError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -90,9 +98,9 @@ function DepositForm({
     }
     setError(null);
     startTransition(async () => {
-      const result = await callAction(() => markDeposited({ ids, on: date, onlyPending }), router.refresh);
+      const result = await callAction(() => markDeposited({ ids, on: date, onlyPending, expectedUpdatedAt }));
       if (!result.ok) {
-        setError(result.error);
+        setError(failureOf(result));
         setDateError(result.fieldErrors?.on?.[0] ?? null);
         return;
       }
@@ -117,11 +125,7 @@ function DepositForm({
           required
         />
       </Field>
-      {error ? (
-        <Alert tone="danger" announce>
-          {error}
-        </Alert>
-      ) : null}
+      <ActionError failure={error} />
       <div className="flex flex-wrap justify-end gap-2">
         <Button onClick={onClose} disabled={pending}>
           Cancelar

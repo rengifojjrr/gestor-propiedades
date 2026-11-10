@@ -108,6 +108,41 @@ const fitsWidth = (table: Locator): Promise<boolean> => table.evaluate((el) => e
 const isAction = (request: { method(): string; headers(): Record<string, string> }): boolean =>
   request.method() === "POST" && request.headers()["next-action"] !== undefined;
 
+/** Lo que pide el navegador para volver a pintar la pantalla (`router.refresh`): un GET con la cabecera `RSC`. */
+const isRefresh = (request: { method(): string; headers(): Record<string, string> }): boolean =>
+  request.method() === "GET" && request.headers()["rsc"] !== undefined;
+
+/** Lo que dice la app cuando la llamada a una acción no vuelve: no se sabe si se guardó. */
+const UNSURE_TEXT = "Se perdió la conexión y no se sabe si se guardó. Revisa cómo quedó antes de repetirlo.";
+
+/**
+ * Mala señal: las acciones llegan al servidor (y se guardan) pero su respuesta no vuelve, y los refrescos de la
+ * pantalla no llegan. Deja una marca en la página: si se recargara entera, se perdería. Devuelve cuántos refrescos
+ * se intentaron.
+ */
+async function badSignal(page: Page): Promise<{ refreshes: () => number }> {
+  let refreshes = 0;
+  await page.evaluate(() => {
+    document.body.dataset.marca = "sin recargar";
+  });
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    if (isAction(request)) {
+      await route.fetch();
+      return route.abort();
+    }
+    if (isRefresh(request)) {
+      refreshes += 1;
+      return route.abort();
+    }
+    return route.fallback();
+  });
+  return { refreshes: () => refreshes };
+}
+
+/** ¿Sigue la misma página, sin haberse recargado? */
+const notReloaded = (page: Page): Promise<string | undefined> => page.evaluate(() => document.body.dataset.marca);
+
 /** Los archivos de la carpeta del cobro en Storage, como los ve su dueño. */
 async function storedFiles(client: Db, userId: string, txId: string): Promise<string[]> {
   const { data, error } = await client.storage.from(BUCKET).list(`${userId}/${txId}`);
@@ -465,7 +500,7 @@ test.describe.serial("detalle del cobro", () => {
     await expect(history(page)).toContainText("Reabierto");
   });
 
-  test("un reembolso que se guardó aunque se perdió la respuesta: el diálogo lo dice y reintentarlo no lo suma otra vez", async ({
+  test("con mala señal no se pierde nada: si no vuelven ni la acción ni el refresco, el diálogo, lo escrito y el aviso siguen; «Ver cómo quedó» enseña que se guardó y reintentarlo no lo suma otra vez", async ({
     page,
   }) => {
     const id = await charge(`CORTE-${randomUUID().slice(0, 8)}`);
@@ -474,28 +509,71 @@ test.describe.serial("detalle del cobro", () => {
     await (await action(page, "Registrar reembolso")).click();
     const refund = page.getByRole("dialog", { name: "Reembolso" });
     await refund.getByLabel("Monto del reembolso").fill("30");
+    await refund.getByLabel("Nota").fill("Devolución parcial");
 
-    // El servidor recibe la acción y la guarda, pero la respuesta no vuelve.
-    await page.route("**/*", async (route) => {
-      if (!isAction(route.request())) return route.fallback();
-      await route.fetch();
-      await route.abort();
-    });
+    const signal = await badSignal(page);
     await refund.getByRole("button", { name: "Registrar reembolso" }).click();
-    const unsure = refund.getByRole("alert");
-    await expect(unsure).toContainText("Puede que se haya guardado");
-    await expect(unsure).toContainText("revisa el cobro antes de repetirlo");
+    await expect(refund.getByRole("alert")).toHaveText(UNSURE_TEXT);
+    // Nada se refresca solo: con mala señal, el refresco fallido recargaría la página entera.
+    await page.waitForTimeout(1_000);
+    expect(signal.refreshes()).toBe(0);
+    expect(await notReloaded(page)).toBe("sin recargar");
+    await expect(refund.getByRole("alert")).toHaveText(UNSURE_TEXT);
     await expect(refund.getByLabel("Monto del reembolso")).toHaveValue("30");
-    // La pantalla se refresca detrás: enseña que el reembolso sí quedó.
-    await expect(page.getByTestId("reembolsado")).toHaveText("$30,00");
+    await expect(refund.getByLabel("Nota")).toHaveValue("Devolución parcial");
+    await expect(page.getByTestId("reembolsado")).toHaveCount(0);
     await expectCleanScreen(page);
 
-    // Repetirlo desde el mismo diálogo da conflicto: no se suma otra vez.
+    // Vuelve la señal: «Ver cómo quedó» pinta la pantalla de detrás, que enseña que el reembolso sí quedó.
     await page.unroute("**/*");
+    await refund.getByRole("button", { name: "Ver cómo quedó" }).click();
+    await expect(page.getByTestId("reembolsado")).toHaveText("$30,00");
+    await expect(refund.getByLabel("Monto del reembolso")).toHaveValue("30");
+
+    // Repetirlo desde el mismo diálogo da conflicto: no se suma otra vez.
     await refund.getByRole("button", { name: "Registrar reembolso" }).click();
     await expect(refund.getByRole("alert")).toContainText("Este cobro cambió mientras lo editabas");
     const [saved] = await serverData().getSnapshots(client, [id]);
     expect(saved?.refunded).toBe("30.00");
+  });
+
+  test("con mala señal, al cerrar el diálogo de la duda se pinta la pantalla de detrás: el depósito sí quedó", async ({
+    page,
+  }) => {
+    const id = await charge(`CORTE-DEP-${randomUUID().slice(0, 8)}`);
+    await login(page, user);
+    await page.goto(`/pasarelas/cobros/${id}`);
+    await page.getByRole("region", { name: "Acciones" }).getByRole("button", { name: "Marcar depositado" }).click();
+    const deposit = page.getByRole("dialog", { name: "Marcar depositado" });
+
+    await badSignal(page);
+    await deposit.getByRole("button", { name: "Marcar depositado" }).click();
+    await expect(deposit.getByRole("alert")).toHaveText(UNSURE_TEXT);
+    expect(await notReloaded(page)).toBe("sin recargar");
+    await expect(page.getByTestId("depositado-el")).toHaveCount(0);
+
+    await page.unroute("**/*");
+    await deposit.getByRole("button", { name: "Cancelar" }).click();
+    await expect(deposit).toBeHidden();
+    await expect(page.getByTestId("depositado-el")).toBeVisible();
+  });
+
+  test("depositar desde una pantalla vieja (otra pestaña abrió una disputa) da conflicto: no se deposita", async ({
+    page,
+  }) => {
+    const id = await charge(`VIEJA-${randomUUID().slice(0, 8)}`);
+    await login(page, user);
+    await page.goto(`/pasarelas/cobros/${id}`);
+    const today = todayNY(new Date());
+    // Otra pestaña abre una disputa mientras esta sigue con el cobro por caer.
+    await serverData().disputeTx(client, id, { action: "abrir", on: today });
+
+    await page.getByRole("region", { name: "Acciones" }).getByRole("button", { name: "Marcar depositado" }).click();
+    const deposit = page.getByRole("dialog", { name: "Marcar depositado" });
+    await deposit.getByRole("button", { name: "Marcar depositado" }).click();
+    await expect(deposit.getByRole("alert")).toContainText("Este cobro cambió mientras lo editabas");
+    const [saved] = await serverData().getSnapshots(client, [id]);
+    expect(saved).toMatchObject({ status: "registrado", depositedOn: null, disputeState: "abierta" });
   });
 
   test("una comisión informada por la pasarela, tras un reembolso parcial, dice que es proporcional", async ({ page }) => {

@@ -20,7 +20,10 @@ export const metadata: Metadata = { title: "Cobros" };
 const PATH = "/pasarelas/cobros";
 const EXPORT_PATH = "/pasarelas/cobros/exportar";
 const PAGE_SIZE = 50;
-/** El contador de la lista: recibe el foco tras una acción en lote (la barra desaparece con el botón pulsado). */
+/**
+ * El contador de la lista (o, si no hay cobros, el aviso de la lista vacía): recibe el foco tras una acción en lote,
+ * que se lleva la barra con el botón pulsado y puede vaciar la lista.
+ */
 const COUNTER_ID = "cobros-contador";
 
 /** Los filtros que van en «Más filtros». */
@@ -166,47 +169,48 @@ export default async function CobrosPage({ searchParams }: PageProps<"/pasarelas
         )}
         <TxTotals totals={totals} />
 
-        {list.total === 0 ? (
-          <EmptyState
-            icon={<ReceiptText aria-hidden className="size-8" />}
-            title="No hay cobros con estos filtros"
-            description="Cambia el período, la búsqueda o los filtros, o registra un cobro nuevo."
-            action={
-              <ButtonLink href="/pasarelas/registrar" variant="primary">
-                Registrar cobro
-              </ButtonLink>
-            }
-          />
-        ) : rows.length === 0 ? (
-          <EmptyState
-            title="Esta página ya no tiene cobros"
-            description="El filtro tiene menos páginas. Vuelve a la primera."
-            action={<ButtonLink href={hrefWith(PATH, query, {})}>Ir a la primera página</ButtonLink>}
-          />
-        ) : (
-          <div className="flex flex-col gap-3">
-            <p id={COUNTER_ID} tabIndex={-1} className="text-ink-soft">
-              Cobros {first}–{first + rows.length - 1} de {list.total}
-            </p>
-            {/* Con otros filtros u otra página, la selección empieza de cero. */}
-            <TxSelectionProvider key={query.toString()} ids={rows.map((tx) => tx.id)}>
-              <TxBulkBar
-                transactions={rows.map(({ id, currency }) => ({ id, currency }))}
-                today={today}
-                focusAfterId={COUNTER_ID}
+        {/* Con otros filtros u otra página, la selección empieza de cero. Va por fuera de la lista: si una acción en
+            lote la vacía, lleva el foco al aviso de la lista vacía. */}
+        <TxSelectionProvider key={query.toString()} ids={rows.map((tx) => tx.id)} focusAfterId={COUNTER_ID}>
+          {list.total === 0 ? (
+            <div id={COUNTER_ID} tabIndex={-1}>
+              <EmptyState
+                icon={<ReceiptText aria-hidden className="size-8" />}
+                title="No hay cobros con estos filtros"
+                description="Cambia el período, la búsqueda o los filtros, o registra un cobro nuevo."
+                action={
+                  <ButtonLink href="/pasarelas/registrar" variant="primary">
+                    Registrar cobro
+                  </ButtonLink>
+                }
               />
+            </div>
+          ) : rows.length === 0 ? (
+            <div id={COUNTER_ID} tabIndex={-1}>
+              <EmptyState
+                title="Esta página ya no tiene cobros"
+                description="El filtro tiene menos páginas. Vuelve a la primera."
+                action={<ButtonLink href={hrefWith(PATH, query, {})}>Ir a la primera página</ButtonLink>}
+              />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <p id={COUNTER_ID} tabIndex={-1} className="text-ink-soft">
+                Cobros {first}–{first + rows.length - 1} de {list.total}
+              </p>
+              <TxBulkBar transactions={rows.map(({ id, currency }) => ({ id, currency }))} today={today} />
               <div className="md:hidden">
                 <TxCards rows={rows} today={today} />
               </div>
               <div className="hidden md:block">
                 <TxTable rows={rows} today={today} />
               </div>
-            </TxSelectionProvider>
-            <Suspense fallback={null}>
-              <Pagination page={page} pageSize={PAGE_SIZE} total={list.total} />
-            </Suspense>
-          </div>
-        )}
+              <Suspense fallback={null}>
+                <Pagination page={page} pageSize={PAGE_SIZE} total={list.total} />
+              </Suspense>
+            </div>
+          )}
+        </TxSelectionProvider>
       </div>
     </>
   );

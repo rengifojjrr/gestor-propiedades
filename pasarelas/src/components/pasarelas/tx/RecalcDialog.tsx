@@ -1,9 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import {
-  Alert,
   Button,
   DateText,
   Dialog,
@@ -20,7 +18,8 @@ import { isISODate } from "@/lib/pasarelas/dates";
 import { isMoney } from "@/lib/pasarelas/decimal";
 import type { Currency, DiffRow } from "@/lib/pasarelas/types";
 import { applyRecalc, previewRecalc } from "@/server/pasarelas/actions/transactions";
-import { callAction } from "../callAction";
+import { ActionError, useRefreshOnClose } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { batchDone, cobros } from "./plural";
 
 type Mode = "hoy" | "fecha_del_cobro";
@@ -44,6 +43,11 @@ export type RecalcDialogProps = {
   onClose: () => void;
   /** Tras aplicar, con cuántos cambiaron (antes de `onClose`). */
   onDone?: (count: number) => void;
+  /**
+   * El detalle de un cobro manda la versión que se está viendo (su `updatedAt`; entonces `transactions` es ese
+   * solo cobro): si cambió desde entonces, el servidor da conflicto en vez de recalcular sobre otra cosa.
+   */
+  expectedUpdatedAt?: string;
 };
 
 /**
@@ -51,7 +55,7 @@ export type RecalcDialogProps = {
  * defecto, o «la de la fecha del cobro») y se ve el antes y el después de cada uno (`previewRecalc`, que no
  * escribe); solo entonces se puede aplicar (`applyRecalc`).
  */
-export function RecalcDialog({ transactions, open, onClose, onDone }: RecalcDialogProps) {
+export function RecalcDialog({ transactions, open, onClose, onDone, expectedUpdatedAt }: RecalcDialogProps) {
   return (
     <Dialog
       open={open}
@@ -60,13 +64,19 @@ export function RecalcDialog({ transactions, open, onClose, onDone }: RecalcDial
       description={`${cobros(transactions.length)}. Se vuelven a calcular las comisiones y el reparto; antes de aplicar ves qué cambia.`}
     >
       {/* Solo existe mientras está abierto: cada vez empieza en «Tarifa vigente hoy» y sin vista previa. */}
-      <RecalcForm transactions={transactions} onClose={onClose} onDone={onDone} />
+      <RecalcForm
+        transactions={transactions}
+        onClose={onClose}
+        onDone={onDone}
+        expectedUpdatedAt={expectedUpdatedAt}
+      />
     </Dialog>
   );
 }
 
-function RecalcForm({ transactions, onClose, onDone }: Omit<RecalcDialogProps, "open">) {
-  const router = useRouter();
+function RecalcForm({ transactions, onClose, onDone, expectedUpdatedAt: current }: Omit<RecalcDialogProps, "open">) {
+  // La versión que se vio al abrir: aunque la pantalla se refresque detrás, se manda esa.
+  const [expectedUpdatedAt] = useState(current);
   const ids = transactions.map((tx) => tx.id);
   const currencies = new Map(transactions.map((tx) => [tx.id, tx.currency]));
   /** La vista previa solo trae cobros de los que se le pasaron: todos tienen su moneda. */
@@ -77,9 +87,10 @@ function RecalcForm({ transactions, onClose, onDone }: Omit<RecalcDialogProps, "
   };
   const [mode, setMode] = useState<Mode>("hoy");
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
   const name = useId();
+  useRefreshOnClose(error);
 
   function choose(next: Mode) {
     setMode(next);
@@ -93,19 +104,19 @@ function RecalcForm({ transactions, onClose, onDone }: Omit<RecalcDialogProps, "
       // Solo lee: si no vuelve, no hay nada que revisar; basta con volver a pedirla.
       const result = await callAction(
         () => previewRecalc({ ids, mode }),
-        () => undefined,
         "No se pudo traer el antes y el después por un fallo de conexión. Inténtalo de nuevo.",
       );
-      setError(result.ok ? null : result.error);
+      // Solo leía: no hay ninguna duda de si se guardó algo.
+      setError(result.ok ? null : { text: result.error, unsure: false });
       setPreview(result.ok ? result.data : null);
     });
   }
 
   function apply(changing: string[]) {
     startTransition(async () => {
-      const result = await callAction(() => applyRecalc({ ids: changing, mode }), router.refresh);
+      const result = await callAction(() => applyRecalc({ ids: changing, mode, expectedUpdatedAt }));
       if (!result.ok) {
-        setError(result.error);
+        setError(failureOf(result));
         return;
       }
       notify.success(batchDone(result.data.count, changing.length, { one: "recalculado", many: "recalculados" }));
@@ -177,11 +188,7 @@ function RecalcForm({ transactions, onClose, onDone }: Omit<RecalcDialogProps, "
         </div>
       )}
 
-      {error ? (
-        <Alert tone="danger" announce>
-          {error}
-        </Alert>
-      ) : null}
+      <ActionError failure={error} />
 
       <div className="flex flex-wrap justify-end gap-2">
         <Button onClick={onClose} disabled={pending}>

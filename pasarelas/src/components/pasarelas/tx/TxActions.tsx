@@ -1,9 +1,8 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { Fragment, useId, useState, useSyncExternalStore, useTransition, type FormEvent, type ReactNode } from "react";
-import { Alert, Button, ButtonLink, Card, CardBody, ConfirmDialog, Dialog, Field, Input, notify } from "@/components/ui";
+import { Button, ButtonLink, Card, CardBody, ConfirmDialog, Dialog, Field, Input, notify } from "@/components/ui";
 import type { ISODate, TxSnapshot } from "@/lib/pasarelas/types";
 import type { ActionResult } from "@/server/pasarelas/result";
 import {
@@ -15,7 +14,8 @@ import {
   setEstimatedDate,
   trashTransactions,
 } from "@/server/pasarelas/actions/transactions";
-import { callAction } from "../callAction";
+import { ActionError, useRefreshOnClose } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { allowedActions, primaryAction, type TxAction } from "./allowed";
 import { DepositDialog } from "./DepositDialog";
 import { DisputeDialog } from "./DisputeDialog";
@@ -47,7 +47,6 @@ export type TxActionsProps = {
  * versión que se está viendo (`updatedAt`). Tras cada una, el servidor vuelve a pintar el detalle.
  */
 export function TxActions({ tx, today }: TxActionsProps) {
-  const router = useRouter();
   const titleId = useId();
   const moreId = useId();
   const can = new Set(allowedActions(tx));
@@ -56,7 +55,7 @@ export function TxActions({ tx, today }: TxActionsProps) {
   const [more, setMore] = useState(false);
   // Antes de hidratar, «Más acciones» no respondería: se ve, pero desactivado.
   const hydrated = useSyncExternalStore(noSubscription, () => true, () => false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
   const close = () => setOpen(null);
 
@@ -72,14 +71,14 @@ export function TxActions({ tx, today }: TxActionsProps) {
   function run(action: () => Promise<ActionResult<unknown>>, done: string) {
     setError(null);
     startTransition(async () => {
-      const result = await callAction(action, router.refresh);
+      const result = await callAction(action);
       setOpen(null);
       if (!result.ok) {
-        setError(result.error);
+        setError(failureOf(result));
         return;
       }
       if (changedNone(result.data)) {
-        setError(STALE_TEXT);
+        setError({ text: STALE_TEXT, unsure: false });
         return;
       }
       notify.success(done);
@@ -205,11 +204,7 @@ export function TxActions({ tx, today }: TxActionsProps) {
             ))}
           </div>
         ) : null}
-        {error ? (
-          <Alert tone="danger" announce>
-            {error}
-          </Alert>
-        ) : null}
+        <ActionError failure={error} />
       </CardBody>
 
       <EstimatedDialog
@@ -228,6 +223,7 @@ export function TxActions({ tx, today }: TxActionsProps) {
         today={today}
         earliest={tx.occurredOn}
         onlyPending={false}
+        expectedUpdatedAt={tx.updatedAt}
       />
       <RefundDialog tx={tx} modes={refundModes} open={open === "reembolso"} onClose={close} today={today} />
       <DisputeDialog
@@ -237,7 +233,12 @@ export function TxActions({ tx, today }: TxActionsProps) {
         onClose={close}
         today={today}
       />
-      <RecalcDialog transactions={[{ id: tx.id, currency: tx.currency }]} open={open === "recalcular"} onClose={close} />
+      <RecalcDialog
+        transactions={[{ id: tx.id, currency: tx.currency }]}
+        open={open === "recalcular"}
+        onClose={close}
+        expectedUpdatedAt={tx.updatedAt}
+      />
       <ConfirmDialog
         open={open === "revertir"}
         onClose={close}
@@ -295,22 +296,21 @@ function EstimatedDialog({ tx, canAutomatic, today, open, onClose }: EstimatedDi
 }
 
 function EstimatedForm({ tx: current, canAutomatic, today, onClose }: Omit<EstimatedDialogProps, "open">) {
-  const router = useRouter();
   // La versión que se vio al abrir: aunque la pantalla se refresque detrás, se manda esa.
   const [tx] = useState(current);
   const [date, setDate] = useState(tx.estimatedDepositOn ?? today);
   const [dateError, setDateError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
+  useRefreshOnClose(error);
 
   function save(next: ISODate | null) {
     startTransition(async () => {
-      const result = await callAction(
-        () => setEstimatedDate({ id: tx.id, expectedUpdatedAt: tx.updatedAt, date: next }),
-        router.refresh,
+      const result = await callAction(() =>
+        setEstimatedDate({ id: tx.id, expectedUpdatedAt: tx.updatedAt, date: next }),
       );
       if (!result.ok) {
-        setError(result.error);
+        setError(failureOf(result));
         setDateError(result.fieldErrors?.date?.[0] ?? null);
         return;
       }
@@ -340,11 +340,7 @@ function EstimatedForm({ tx: current, canAutomatic, today, onClose }: Omit<Estim
           }}
         />
       </Field>
-      {error ? (
-        <Alert tone="danger" announce>
-          {error}
-        </Alert>
-      ) : null}
+      <ActionError failure={error} />
       <div className="flex flex-wrap justify-end gap-2">
         <Button onClick={onClose} disabled={pending}>
           Cancelar

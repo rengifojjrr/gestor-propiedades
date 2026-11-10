@@ -1,13 +1,13 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useId, useState, useTransition, type FormEvent } from "react";
 import { Alert, Button, Dialog, Field, Input, MoneyInput, Textarea, notify } from "@/components/ui";
 import { formatAmount, parseMoney } from "@/lib/pasarelas/money";
 import type { ISODate, TxSnapshot } from "@/lib/pasarelas/types";
 import { planRefund, planRefundTotal } from "@/lib/pasarelas/write";
 import { refundTransaction, setRefundTotal } from "@/server/pasarelas/actions/transactions";
-import { callAction } from "../callAction";
+import { ActionError, useRefreshOnClose } from "../ActionError";
+import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { previewChange } from "./preview";
 import { ChangesTable } from "./RecalcDialog";
 
@@ -55,7 +55,6 @@ export function RefundDialog({ tx, modes, open, onClose, today }: RefundDialogPr
 type FieldErrors = Partial<Record<"amount" | "on" | "note" | "total", string>>;
 
 function RefundForm({ tx: current, modes, onClose, today }: Omit<RefundDialogProps, "open">) {
-  const router = useRouter();
   // Lo que vio la persona al abrir: aunque la pantalla se refresque detrás, la vista previa y la versión son esas.
   const [tx] = useState(current);
   const name = useId();
@@ -65,8 +64,9 @@ function RefundForm({ tx: current, modes, onClose, today }: Omit<RefundDialogPro
   const [note, setNote] = useState("");
   const [total, setTotal] = useState(() => formatAmount(tx.refunded));
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
+  useRefreshOnClose(error);
 
   // El antes y el después de lo escrito, si ya es un monto.
   const typed = parseMoney(mode === "agregar" ? amount : total);
@@ -95,10 +95,9 @@ function RefundForm({ tx: current, modes, onClose, today }: Omit<RefundDialogPro
           mode === "agregar"
             ? refundTransaction({ ...seen, amount, on, note })
             : setRefundTotal({ ...seen, total }),
-        router.refresh,
       );
       if (!result.ok) {
-        setError(result.error);
+        setError(failureOf(result));
         const fields = result.fieldErrors ?? {};
         setErrors({ amount: fields.amount?.[0], on: fields.on?.[0], note: fields.note?.[0], total: fields.total?.[0] });
         return;
@@ -161,11 +160,7 @@ function RefundForm({ tx: current, modes, onClose, today }: Omit<RefundDialogPro
         <Alert tone="warning">{preview.error}</Alert>
       )}
 
-      {error ? (
-        <Alert tone="danger" announce>
-          {error}
-        </Alert>
-      ) : null}
+      <ActionError failure={error} />
 
       <div className="flex flex-wrap justify-end gap-2">
         <Button onClick={onClose} disabled={pending}>
