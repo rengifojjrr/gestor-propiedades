@@ -1,0 +1,5 @@
+balance_transaction_id,created_utc,available_on_utc,currency,gross,fee,net,reporting_category,source_id,description,customer_email
+txn_demo_1001,2026-11-02 15:00:00,2026-11-04 00:00:00,usd,100.00,3.20,96.80,charge,ch_demo_0001,Pago demo 1,cliente1@example.com
+txn_demo_1002,2026-11-03 16:00:00,2026-11-09 00:00:00,usd,50.00,0.80,49.20,payment,py_demo_0002,Pago demo 2,cliente2@example.com
+txn_demo_1003,2026-11-04 10:00:00,2026-11-04 10:00:00,usd,-20.00,0.00,-20.00,refund,re_demo_0003,Reembolso demo,cliente1@example.com
+txn_demo_1004,2026-11-05 09:00:00,2026-11-05 09:00:00,usd,-146.00,0.00,-146.00,payout,po_demo_0004,Depósito demo,

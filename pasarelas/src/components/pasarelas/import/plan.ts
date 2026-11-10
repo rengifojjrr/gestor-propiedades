@@ -69,7 +69,7 @@ export function proposeMapping(headers: readonly string[], saved: SavedImportMap
   if (saved !== undefined && saved.format === format && validateMapping(headers, saved.mapping).length === 0) {
     return { format, mapping: saved.mapping, from: "guardado" };
   }
-  const preset = presetFor(format);
+  const preset = presetFor(format, headers);
   return preset === null ? { format, mapping: { ...BLANK }, from: "a_mano" } : { format, mapping: preset, from: "formato" };
 }
 

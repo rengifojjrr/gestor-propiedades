@@ -25,6 +25,15 @@ describe("proposeMapping", () => {
     });
   });
 
+  it("en el informe de saldo de Stripe con source_id, la referencia es source_id (el id del cobro)", () => {
+    const headers = headersOf("stripe-saldo-fuente.csv");
+    expect(proposeMapping(headers, undefined)).toEqual({
+      format: "stripe_saldo",
+      mapping: { ...saldo, reference: "source_id" },
+      from: "formato",
+    });
+  });
+
   it("usa el mapeo guardado para esa pasarela si es del mismo formato y sirve para el archivo", () => {
     const mapping: ColumnMapping = { ...saldo, fixedZone: "America/New_York" };
     expect(proposeMapping(headersOf("stripe-saldo.csv"), { format: "stripe_saldo", mapping })).toEqual({

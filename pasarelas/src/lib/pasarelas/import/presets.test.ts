@@ -3,7 +3,7 @@ import Papa from "papaparse";
 import { describe, expect, test } from "vitest";
 import { detectFormat } from "./detect";
 import { mapRows, validateMapping, type ImportRow } from "./mapping";
-import { presetFor, type ColumnMapping } from "./presets";
+import { presetFor, referenceWarning, type ColumnMapping } from "./presets";
 
 /** Lee un archivo de ejemplo como lo leerá el navegador: papaparse con encabezados. */
 function leer(nombre: string): { headers: string[]; rows: Record<string, string>[] } {
@@ -99,6 +99,65 @@ describe("presetFor: el mapeo por defecto de cada formato", () => {
     const uno = presetFor("paypal_actividad")!;
     uno.reference = "Name";
     expect(presetFor("paypal_actividad")!.reference).toBe("Transaction ID");
+  });
+
+  test("Stripe, saldo: si el archivo trae source_id (el id del cobro), esa es la referencia", () => {
+    const { headers } = leer("stripe-saldo-fuente.csv");
+    expect(presetFor("stripe_saldo", headers)).toEqual<ColumnMapping>({
+      ...presetFor("stripe_saldo")!,
+      reference: "source_id",
+    });
+    // Sin distinguir mayúsculas ni la marca BOM, como el resto de las columnas.
+    expect(presetFor("stripe_saldo", ["\uFEFFbalance_transaction_id", " SOURCE_ID "])!.reference).toBe("source_id");
+    // Sin esa columna, el id del movimiento; en otro formato, la columna no cambia nada.
+    expect(presetFor("stripe_saldo", leer("stripe-saldo.csv").headers)!.reference).toBe("balance_transaction_id");
+    expect(presetFor("stripe_pagos", ["source_id"])!.reference).toBe("id");
+  });
+});
+
+describe("referenceWarning: cuando la referencia no coincide con lo registrado a mano", () => {
+  const saldo = presetFor("stripe_saldo")!;
+  const sinFuente = leer("stripe-saldo.csv").headers;
+  const conFuente = leer("stripe-saldo-fuente.csv").headers;
+
+  test("Stripe, saldo, sin source_id: avisa que las txn_… no coinciden y cómo pedir la columna", () => {
+    expect(referenceWarning("stripe_saldo", sinFuente, saldo)).toBe(
+      "Este informe no trae la columna source_id, así que la referencia de cada cobro es la del movimiento (txn_…). " +
+        "No coincide con la de los cobros que registraste a mano ni con la de la exportación de pagos (ch_…): si " +
+        "alguno ya está registrado, se repetiría. Al pedir el informe en Stripe, agrega la columna source_id.",
+    );
+  });
+
+  test("Stripe, saldo, con source_id pero eligiendo la del movimiento (un mapeo recordado): también avisa", () => {
+    expect(referenceWarning("stripe_saldo", conFuente, saldo)).toBe(
+      "La referencia de cada cobro es la del movimiento (txn_…), que no coincide con la de los cobros que " +
+        "registraste a mano (ch_…). El archivo trae source_id: elígela como referencia en «Ajustar columnas», salvo " +
+        "que ya hayas importado estos cobros con la del movimiento (se repetirían).",
+    );
+  });
+
+  test("con source_id como referencia, u otro formato, no hay nada que avisar", () => {
+    expect(referenceWarning("stripe_saldo", conFuente, presetFor("stripe_saldo", conFuente)!)).toBeNull();
+    expect(referenceWarning("stripe_saldo", sinFuente, { ...saldo, reference: " Balance_Transaction_ID" })).not.toBeNull();
+    expect(referenceWarning("stripe_pagos", sinFuente, { ...saldo })).toBeNull();
+    expect(referenceWarning("otro", sinFuente, { ...saldo })).toBeNull();
+  });
+});
+
+describe("Stripe, movimientos de saldo con source_id (tests/fixtures/stripe-saldo-fuente.csv)", () => {
+  const { headers, rows } = leer("stripe-saldo-fuente.csv");
+  const formato = detectFormat(headers);
+  const resultado = mapRows(rows, presetFor(formato, headers)!, formato);
+
+  test("se reconoce el formato y cada cobro lleva el id del cobro (ch_…, py_…), no el del movimiento", () => {
+    expect(formato).toBe("stripe_saldo");
+    expect(resultado.ok.map((r) => r.reference)).toEqual(["ch_demo_0001", "py_demo_0002"]);
+    expect(resultado.skipped).toEqual([
+      { line: 4, reason: REEMBOLSO },
+      { line: 5, reason: RETIRO },
+    ]);
+    expect(resultado.errors).toEqual([]);
+    sinDatosDelComprador(resultado);
   });
 });
 

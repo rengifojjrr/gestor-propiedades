@@ -13,6 +13,18 @@
  *   https://docs.stripe.com/reports/reporting-categories
  *   Las versiones `.3` y `.7` del informe traen por defecto `created` (en la zona que se pidió, que el archivo no
  *   dice) y `created_utc` solo si se agrega: sin `created_utc` el archivo no se reconoce y se mapea a mano.
+ *   La referencia (consultado el 2026-11-10 en la misma página): `source_id` existe en todas las versiones del
+ *   informe itemizado («The Stripe object to which this transaction is related.»), pero solo `.1` la trae por
+ *   defecto; en las demás hay que agregarla al pedir el informe. Según «Balance transaction types»
+ *   (https://docs.stripe.com/reports/balance-transaction-types: «Balance transactions include a source field that
+ *   contains the ID of the related Stripe object») y la API del movimiento de saldo
+ *   (https://docs.stripe.com/api/balance_transactions/object, `source`), en la categoría `charge` es el cargo
+ *   (`ch_…`, el id que enseña el panel) y en `payment` (métodos de pago locales) el objeto del pago, que se ve como
+ *   `py_…`; ese prefijo `py_` no aparece escrito en ninguna página oficial que se encontrara. `balance_transaction_id`
+ *   (`txn_…`) es el id del movimiento: no coincide con lo registrado a mano ni con la exportación de pagos. Por eso
+ *   `presetFor` usa `source_id` cuando el archivo la trae y `referenceWarning` avisa cuando no.
+ *   (También existe `charge_id`, «Unique identifier for the original charge… Available for charges, refunds and
+ *   disputes»; la guía de duplicados de `docs/PASARELAS.md` §2.4 fija `source`, y es la que se usa.)
  *
  * - Stripe, pagos (`stripe_pagos`): la exportación de la lista de pagos del panel.
  *   https://support.stripe.com/questions/exporting-payment-data
@@ -34,7 +46,8 @@
  *   El separador decimal no está documentado: el mapeo por defecto usa el punto (cuentas de EE. UU.).
  */
 import type { Currency } from "../types";
-import type { ImportFormat } from "./detect";
+// Solo funciones, que se llaman después de cargar los dos módulos: el ciclo con `detect.ts` no molesta.
+import { normalizeHeader, type ImportFormat } from "./detect";
 
 /**
  * Qué columna del archivo es cada dato. Los nombres se comparan sin distinguir mayúsculas, espacios alrededor ni la
@@ -113,9 +126,43 @@ const PRESETS: Readonly<Record<Exclude<ImportFormat, "otro">, Readonly<ColumnMap
   },
 };
 
-/** El mapeo por defecto de un formato reconocido (una copia: se puede ajustar sin tocar el original). */
-export function presetFor(format: ImportFormat): ColumnMapping | null {
-  return format === "otro" ? null : { ...PRESETS[format] };
+/** En Stripe, saldo: el id del objeto que movió el saldo (el cobro, `ch_…`), opcional en el informe. */
+export const STRIPE_SOURCE_ID = "source_id";
+const STRIPE_TXN_ID = "balance_transaction_id";
+
+const hasColumn = (headers: readonly string[], column: string): boolean =>
+  headers.some((header) => normalizeHeader(header) === column);
+
+/**
+ * El mapeo por defecto de un formato reconocido (una copia: se puede ajustar sin tocar el original). Con los
+ * encabezados del archivo, en Stripe (saldo) la referencia es `source_id` si el archivo la trae: es el id del cobro,
+ * el mismo que se ve en el panel y se anota al registrar a mano. Si no, el id del movimiento (`txn_…`).
+ */
+export function presetFor(format: ImportFormat, headers: readonly string[] = []): ColumnMapping | null {
+  if (format === "otro") return null;
+  const preset = { ...PRESETS[format] };
+  if (format === "stripe_saldo" && hasColumn(headers, STRIPE_SOURCE_ID)) preset.reference = STRIPE_SOURCE_ID;
+  return preset;
+}
+
+/**
+ * El aviso de «Así lo entendí» cuando la referencia elegida no coincide con la de los cobros registrados a mano: en
+ * Stripe (saldo), la del movimiento (`txn_…`). Así se sabe que esas filas no se reconocerán como repetidas por su
+ * referencia. `null` si no hay nada que avisar.
+ */
+export function referenceWarning(
+  format: ImportFormat,
+  headers: readonly string[],
+  mapping: ColumnMapping,
+): string | null {
+  if (format !== "stripe_saldo" || normalizeHeader(mapping.reference) !== STRIPE_TXN_ID) return null;
+  return hasColumn(headers, STRIPE_SOURCE_ID)
+    ? "La referencia de cada cobro es la del movimiento (txn_…), que no coincide con la de los cobros que " +
+        "registraste a mano (ch_…). El archivo trae source_id: elígela como referencia en «Ajustar columnas», salvo " +
+        "que ya hayas importado estos cobros con la del movimiento (se repetirían)."
+    : "Este informe no trae la columna source_id, así que la referencia de cada cobro es la del movimiento (txn_…). " +
+        "No coincide con la de los cobros que registraste a mano ni con la de la exportación de pagos (ch_…): si " +
+        "alguno ya está registrado, se repetiría. Al pedir el informe en Stripe, agrega la columna source_id.";
 }
 
 /** Columnas de Stripe, pagos, que el importador lee por su nombre además del mapeo. */
