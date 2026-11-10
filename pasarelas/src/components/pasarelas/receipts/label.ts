@@ -1,4 +1,4 @@
-import { monthKey, monthLabel, nyDate } from "@/lib/pasarelas/dates";
+import { formatDate, nyDate } from "@/lib/pasarelas/dates";
 
 /**
  * Cómo se nombra un comprobante en pantalla. Nunca por el nombre original del archivo (puede traer datos de otra
@@ -17,11 +17,10 @@ export function receiptFormat(mime: string): string {
   return FORMAT[mime] ?? mime;
 }
 
-/** `2026-11-10T15:00:00Z` → «Imagen · 10 nov 2026» (el día en Nueva York en que se agregó). */
+/** `2026-11-10T15:00:00Z` → «Imagen · mar 10 nov 2026» (el día en Nueva York en que se agregó, con `formatDate`). */
 export function receiptLabel(receipt: { mime: string; createdAt: string }): string {
   const kind = receipt.mime === "application/pdf" ? "PDF" : receipt.mime.startsWith("image/") ? "Imagen" : "Archivo";
-  const day = nyDate(receipt.createdAt);
-  return `${kind} · ${Number(day.slice(8))} ${monthLabel(monthKey(day))}`;
+  return `${kind} · ${formatDate(nyDate(receipt.createdAt))}`;
 }
 
 const KB = 1024;

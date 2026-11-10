@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import { receiptFormat, receiptLabel, receiptSize } from "./label";
 
 describe("receiptLabel: un comprobante se reconoce por su tipo y su fecha, nunca por el nombre del archivo", () => {
-  it("una imagen o un PDF, con el día en que se agregó (en Nueva York)", () => {
-    expect(receiptLabel({ mime: "image/webp", createdAt: "2026-11-10T15:00:00Z" })).toBe("Imagen · 10 nov 2026");
-    expect(receiptLabel({ mime: "application/pdf", createdAt: "2026-11-10T15:00:00Z" })).toBe("PDF · 10 nov 2026");
+  it("una imagen o un PDF, con el día en que se agregó (en Nueva York) en el formato de la casa", () => {
+    expect(receiptLabel({ mime: "image/webp", createdAt: "2026-11-10T15:00:00Z" })).toBe("Imagen · mar 10 nov 2026");
+    expect(receiptLabel({ mime: "application/pdf", createdAt: "2026-11-10T15:00:00Z" })).toBe("PDF · mar 10 nov 2026");
     // 01:30 en UTC todavía es el día anterior en Nueva York.
-    expect(receiptLabel({ mime: "image/png", createdAt: "2026-11-11T01:30:00Z" })).toBe("Imagen · 10 nov 2026");
+    expect(receiptLabel({ mime: "image/png", createdAt: "2026-11-11T01:30:00Z" })).toBe("Imagen · mar 10 nov 2026");
   });
 
   it("un tipo que no se conoce se nombra como archivo", () => {
-    expect(receiptLabel({ mime: "text/plain", createdAt: "2026-01-02T15:00:00Z" })).toBe("Archivo · 2 ene 2026");
+    expect(receiptLabel({ mime: "text/plain", createdAt: "2026-01-02T15:00:00Z" })).toBe("Archivo · vie 2 ene 2026");
   });
 });
 
