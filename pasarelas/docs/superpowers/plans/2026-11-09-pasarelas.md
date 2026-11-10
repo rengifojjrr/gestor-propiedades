@@ -1469,6 +1469,22 @@ versión con la misma fecha si ningún cobro la usa.
    «Versión nueva».
 2. «Nuevo beneficiario» dentro del editor: lo crea y lo deja en una línea nueva.
 
+### Task 42: Pagos internacionales: un recargo propio de la pasarela
+
+Pedido del dueño: una pasarela cobra distinto a los pagos internacionales, y al registrar un cobro quiere elegir si fue
+nacional o internacional. Stripe y PayPal lo cobran como un RECARGO sobre la tarifa nacional (Stripe: +1,5 % por
+tarjeta internacional), así que se modela como una opción de la pasarela de tipo `internacional`. El motor ya la sabe
+aplicar.
+
+**Dueña de:** una migración nueva y aditiva (columna `kind` en `pay_gateway_extras`, una internacional activa por
+pasarela, `pay_create_gateway` que la guarda), lo de opciones de pasarela en el servidor, `gateways/**`, las pantallas
+de pasarelas, `RegisterForm`, `EditForm`, `TxDetail`, `import/SettingsCard` y sus pruebas.
+
+1. Al crear la pasarela y en su ficha: el bloque «Pagos internacionales» (recargo en % y fijo), con la cuenta completa
+   a la vista.
+2. Al registrar y al editar un cobro: «¿Nacional o internacional?», que aplica o no el recargo, con la vista previa al
+   momento. El detalle dice el origen.
+
 ### Task 22: Documentación, revisión y entrega
 
 **Archivos:** `docs/PASARELAS.md`, `README.md`, raíz `README.md`.
