@@ -428,17 +428,27 @@ create trigger pay_transactions_touch
   when (old.receipts_count = new.receipts_count)
   execute function private.pay_touch_updated_at();
 
+-- Las cinco funciones de disparador que siguen son SECURITY DEFINER. Un disparador AFTER corre con el rol de quien
+-- lanzó la sentencia, y cuando se borra un usuario por la API de Auth (o desde el panel) ese rol es el del
+-- servicio de Auth: no tiene permisos sobre las tablas pay_ ni sobre el esquema private, y el borrado en cascada
+-- fallaba en estos disparadores. Con SECURITY DEFINER corren como el dueño de las tablas, borre quien borre.
+-- No abren nada: no reciben parámetros, no se pueden llamar a mano (nadie tiene permiso de ejecución), llevan
+-- search_path vacío y solo miran la fila que disparó —que ya pasó la RLS y está atada a su dueño por la clave
+-- foránea compuesta con user_id—: comprueban y lanzan, o ajustan el contador del cobro de ese mismo usuario.
 create or replace function private.pay_receipts_count_sync()
 returns trigger
 language plpgsql
+security definer
 set search_path = ''
 as $$
 begin
   if tg_op = 'INSERT' then
-    update public.pay_transactions set receipts_count = receipts_count + 1 where id = new.transaction_id;
+    update public.pay_transactions set receipts_count = receipts_count + 1
+    where id = new.transaction_id and user_id = new.user_id;
     return new;
   end if;
-  update public.pay_transactions set receipts_count = greatest(receipts_count - 1, 0) where id = old.transaction_id;
+  update public.pay_transactions set receipts_count = greatest(receipts_count - 1, 0)
+  where id = old.transaction_id and user_id = old.user_id;
   return old;
 end;
 $$;
@@ -472,6 +482,7 @@ $$;
 create or replace function private.pay_transactions_alloc_check()
 returns trigger
 language plpgsql
+security definer
 set search_path = ''
 as $$
 begin
@@ -488,6 +499,7 @@ create constraint trigger pay_transactions_alloc_check
 create or replace function private.pay_allocations_sum_check()
 returns trigger
 language plpgsql
+security definer
 set search_path = ''
 as $$
 begin
@@ -538,6 +550,7 @@ $$;
 create or replace function private.pay_scheme_versions_check()
 returns trigger
 language plpgsql
+security definer
 set search_path = ''
 as $$
 begin
@@ -554,6 +567,7 @@ create constraint trigger pay_scheme_versions_check
 create or replace function private.pay_scheme_lines_check()
 returns trigger
 language plpgsql
+security definer
 set search_path = ''
 as $$
 begin
@@ -997,18 +1011,17 @@ grant execute on function public.pay_save_transactions(jsonb, boolean) to authen
 grant execute on function public.pay_save_scheme(jsonb) to authenticated, service_role;
 grant execute on function public.pay_create_gateway(jsonb) to authenticated, service_role;
 
--- Funciones internas (esquema private): las de disparador no necesitan permiso de ejecución para quien escribe;
--- las de comprobación sí, porque los disparadores las llaman con el rol del usuario.
+-- Funciones internas (esquema private): nadie necesita permiso de ejecución sobre ellas. Las de disparador las
+-- lanza la base, y las de comprobación solo las llaman esos disparadores, que corren como el dueño de las tablas
+-- (SECURITY DEFINER, ver la sección 3).
 revoke all on function private.pay_touch_updated_at() from public, anon, authenticated;
 revoke all on function private.pay_receipts_count_sync() from public, anon, authenticated;
 revoke all on function private.pay_transactions_alloc_check() from public, anon, authenticated;
 revoke all on function private.pay_allocations_sum_check() from public, anon, authenticated;
 revoke all on function private.pay_scheme_versions_check() from public, anon, authenticated;
 revoke all on function private.pay_scheme_lines_check() from public, anon, authenticated;
-revoke all on function private.pay_assert_allocations(uuid) from public, anon;
-revoke all on function private.pay_assert_scheme_version(uuid) from public, anon;
-grant execute on function private.pay_assert_allocations(uuid) to authenticated, service_role;
-grant execute on function private.pay_assert_scheme_version(uuid) to authenticated, service_role;
+revoke all on function private.pay_assert_allocations(uuid) from public, anon, authenticated;
+revoke all on function private.pay_assert_scheme_version(uuid) from public, anon, authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 -- 7. Storage: bucket privado «comprobantes»
