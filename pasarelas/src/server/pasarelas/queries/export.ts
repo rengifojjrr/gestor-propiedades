@@ -215,7 +215,6 @@ const EXPORT_COLUMNS = {
     path: AS_IS,
     mime: AS_IS,
     size_bytes: AS_IS,
-    original_name: AS_IS,
     created_at: AS_IS,
   },
   pay_transaction_events: {

@@ -134,7 +134,7 @@ const TABLAS: Tabla[] = [
       mime: "image/png",
       size_bytes: 1234,
     }),
-    cambio: { original_name: "cambiado.png" },
+    cambio: { size_bytes: 4321 },
   },
   {
     nombre: "pay_transaction_events",

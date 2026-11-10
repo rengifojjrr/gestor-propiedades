@@ -31,7 +31,7 @@ async function upload(name: string, body: Buffer, contentType: string): Promise<
 
 async function receiptRow(id: string) {
   return unwrap(
-    await admin.from("pay_transaction_receipts").select("mime, size_bytes, original_name").eq("id", id).single(),
+    await admin.from("pay_transaction_receipts").select("mime, size_bytes").eq("id", id).single(),
     "comprobante",
   );
 }
@@ -81,8 +81,7 @@ describe("registerReceipt guarda lo que dice Storage", () => {
       sizeBytes: 5000,
     });
 
-    // El nombre original del archivo no se guarda: puede traer datos de otra persona.
-    expect(await receiptRow(id)).toEqual({ mime: "image/png", size_bytes: PNG.length, original_name: null });
+    expect(await receiptRow(id)).toEqual({ mime: "image/png", size_bytes: PNG.length });
   });
 
   it("un PDF guarda su tipo y sus bytes reales", async () => {
@@ -96,7 +95,7 @@ describe("registerReceipt guarda lo que dice Storage", () => {
       sizeBytes: 1,
     });
 
-    expect(await receiptRow(id)).toEqual({ mime: "application/pdf", size_bytes: pdf.length, original_name: null });
+    expect(await receiptRow(id)).toEqual({ mime: "application/pdf", size_bytes: pdf.length });
   });
 });
 

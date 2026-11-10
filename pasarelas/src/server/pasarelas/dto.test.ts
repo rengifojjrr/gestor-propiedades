@@ -226,7 +226,6 @@ describe("toTxDetail", () => {
         path: "user-1/tx-e1/recibo.png",
         mime: "image/png",
         size_bytes: 2048,
-        original_name: "Recibo demo.png",
         created_at: "2026-11-13T15:32:00+00:00",
       },
     ];
@@ -253,10 +252,11 @@ describe("toTxDetail", () => {
         path: "user-1/tx-e1/recibo.png",
         mime: "image/png",
         sizeBytes: 2048,
-        originalName: "Recibo demo.png",
         createdAt: "2026-11-13T15:32:00+00:00",
       },
     ]);
+    // El nombre original del archivo no existe: ni se lee ni viaja al navegador.
+    expect(detail.receipts[0]).not.toHaveProperty("originalName");
     expect(detail.events).toEqual([
       {
         id: "ev-2",

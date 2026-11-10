@@ -105,8 +105,8 @@ async function logReceipt(
  * el tipo y el tamaño declarados se admiten y que el archivo de verdad está en Storage.
  *
  * Lo que se guarda es el tipo y el tamaño que dice Storage, no lo que declara el navegador. Si lo de Storage no se
- * admite, borra el archivo y rechaza. El nombre original del archivo no se guarda: puede traer datos de otra
- * persona (la columna `original_name` queda nula). Deja en el historial del cobro el evento `comprobante_agregado`.
+ * admite, borra el archivo y rechaza. El nombre original del archivo no se guarda (no hay dónde): puede traer
+ * datos de otra persona. Deja en el historial del cobro el evento `comprobante_agregado`.
  */
 export async function registerReceipt(
   supabase: Db,
@@ -134,7 +134,6 @@ export async function registerReceipt(
       path: a.path,
       mime: stored.mime,
       size_bytes: stored.sizeBytes,
-      original_name: null,
     })
     .select("id")
     .single()

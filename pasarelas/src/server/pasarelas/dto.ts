@@ -69,7 +69,7 @@ export const TX_LIST_COLUMNS =
 export const TX_COLUMNS = `${TX_LIST_COLUMNS}, breakdown` as const;
 
 export const ALLOCATION_COLUMNS = "beneficiary_id, amount::text, pct::text, is_remainder";
-export const RECEIPT_COLUMNS = "id, path, mime, size_bytes, original_name, created_at";
+export const RECEIPT_COLUMNS = "id, path, mime, size_bytes, created_at";
 export const EVENT_COLUMNS = "id, at, kind, summary, data";
 
 // ─── Lo que llega (una fila por lista de columnas) ──────────────────────────────────────────────────────────
@@ -191,7 +191,6 @@ export type ReceiptRow = {
   path: string;
   mime: string;
   size_bytes: number;
-  original_name: string | null;
   created_at: string;
 };
 export type EventRow = { id: string; at: string; kind: string; summary: string; data: Json | null };
@@ -223,7 +222,6 @@ export type TxReceipt = {
   path: string;
   mime: string;
   sizeBytes: number;
-  originalName: string | null;
   createdAt: string;
 };
 export type TxEvent = {
@@ -510,7 +508,6 @@ export function toTxReceipt(row: ReceiptRow): TxReceipt {
     path: row.path,
     mime: row.mime,
     sizeBytes: row.size_bytes,
-    originalName: row.original_name,
     createdAt: row.created_at,
   };
 }

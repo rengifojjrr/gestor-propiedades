@@ -103,7 +103,7 @@ Cada tabla tiene `unique (id, user_id)` y las claves foráneas son compuestas `(
 | `pay_scheme_lines` | scheme_version_id, beneficiary_id, pct (>0), sort | un beneficiario una sola vez por versión |
 | `pay_transactions` | ver §4.1 | |
 | `pay_allocations` | transaction_id, beneficiary_id, amount (puede ser negativo), base, pct, is_remainder | un beneficiario una vez por cobro |
-| `pay_transaction_receipts` | transaction_id, path, mime, size_bytes, original_name | `path` empieza por `{user_id}/{transaction_id}/`; mime en la lista; ≤ 10 MB |
+| `pay_transaction_receipts` | transaction_id, path, mime, size_bytes | `path` empieza por `{user_id}/{transaction_id}/`; mime en la lista; ≤ 10 MB. Sin el nombre original del archivo (puede traer datos de otra persona) |
 | `pay_transaction_events` | transaction_id, at, kind, summary, data (jsonb: antes/después) | **solo se agregan**: el historial del cobro |
 | `pay_settlements` | beneficiary_id, paid_on, **currency**, amount (≠ 0), method, receipt_path, receipt_mime, receipt_size, note | positivo = pago al beneficiario; negativo = devolución del beneficiario |
 | `pay_holidays` | day, name | único por (usuario, día); editable |

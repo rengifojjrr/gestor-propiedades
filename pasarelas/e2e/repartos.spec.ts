@@ -379,7 +379,7 @@ test.describe("los comprobantes de un cobro", () => {
   async function receipts() {
     const { data } = await admin
       .from("pay_transaction_receipts")
-      .select("id, path, mime, original_name, created_at")
+      .select("id, path, mime, created_at")
       .eq("transaction_id", receiptTxId)
       .order("created_at")
       .throwOnError();
@@ -400,9 +400,8 @@ test.describe("los comprobantes de un cobro", () => {
     const items = card.getByRole("list", { name: "Comprobantes" }).getByRole("listitem");
     await expect(items).toHaveCount(2);
 
-    // El nombre del archivo no se guarda ni se ve.
+    // El nombre del archivo no se guarda (no hay dónde) ni se ve.
     const rows = await receipts();
-    expect(rows.map((row) => row.original_name)).toEqual([null, null]);
     await expect(card).not.toContainText("Grupo A");
     await expect(card).not.toContainText("Grupo B");
     const labels = rows.map((row) => receiptLabel({ mime: row.mime, createdAt: row.created_at }));

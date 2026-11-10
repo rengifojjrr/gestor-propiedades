@@ -307,14 +307,14 @@ isOneToOne: false
                   ]
                 },"pay_transaction_receipts": {
                   Row: {
-                    "created_at": string,"id": string,"mime": string,"original_name": string | null,"path": string,"size_bytes": number,"transaction_id": string,"user_id": string
+                    "created_at": string,"id": string,"mime": string,"path": string,"size_bytes": number,"transaction_id": string,"user_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "created_at"?: string,"id"?: string,"mime": string,"original_name"?: string | null,"path": string,"size_bytes": number,"transaction_id": string,"user_id"?: string
+                    "created_at"?: string,"id"?: string,"mime": string,"path": string,"size_bytes": number,"transaction_id": string,"user_id"?: string
                   }
                   Update: {
-                    "created_at"?: string,"id"?: string,"mime"?: string,"original_name"?: string | null,"path"?: string,"size_bytes"?: number,"transaction_id"?: string,"user_id"?: string
+                    "created_at"?: string,"id"?: string,"mime"?: string,"path"?: string,"size_bytes"?: number,"transaction_id"?: string,"user_id"?: string
                   }
                   Relationships: [
                     {

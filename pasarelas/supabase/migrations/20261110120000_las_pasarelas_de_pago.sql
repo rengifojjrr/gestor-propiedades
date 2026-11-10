@@ -380,7 +380,6 @@ create table public.pay_transaction_receipts (
   path text not null unique,
   mime text not null check (mime in ('image/jpeg', 'image/png', 'image/webp', 'application/pdf')),
   size_bytes integer not null check (size_bytes > 0 and size_bytes <= 10485760),
-  original_name text check (original_name is null or char_length(original_name) <= 200),
   created_at timestamptz not null default now(),
   unique (id, user_id),
   constraint pay_transaction_receipts_path_check check (

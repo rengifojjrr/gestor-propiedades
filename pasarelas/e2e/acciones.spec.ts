@@ -62,7 +62,7 @@ async function filesIn(folder: string): Promise<string[]> {
 async function receiptsOf(transactionId: string) {
   const { data, error } = await admin
     .from("pay_transaction_receipts")
-    .select("id, path, mime, size_bytes, original_name")
+    .select("id, path, mime, size_bytes")
     .eq("transaction_id", transactionId);
   if (error) throw new Error(`No se pudieron leer los comprobantes: ${error.message}`);
   return data;
@@ -159,7 +159,7 @@ test.describe.serial("acciones del servidor y comprobantes", () => {
 
     const [receipt, ...more] = await receiptsOf(txId);
     expect(more).toEqual([]);
-    expect(receipt).toMatchObject({ mime: "image/webp", original_name: null });
+    expect(receipt).toMatchObject({ mime: "image/webp" });
     expect(receipt?.path).toMatch(new RegExp(`^${owner.id}/${txId}/[0-9a-f-]{36}\\.webp$`));
     receiptId = receipt?.id ?? "";
     receiptPath = receipt?.path ?? "";

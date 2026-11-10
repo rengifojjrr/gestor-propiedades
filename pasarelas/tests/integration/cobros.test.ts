@@ -1072,7 +1072,7 @@ describe("registerReceipt, removeReceipt y receiptSignedUrl", () => {
     unwrap(
       await admin
         .from("pay_transaction_receipts")
-        .select("id, path, mime, size_bytes, original_name")
+        .select("id, path, mime, size_bytes")
         .eq("transaction_id", txId)
         .order("created_at"),
       "comprobantes",
@@ -1097,7 +1097,7 @@ describe("registerReceipt, removeReceipt y receiptSignedUrl", () => {
     const id = await registerReceipt(user.client, user.id, receipt);
 
     expect(await receiptRows()).toEqual([
-      { id, path: `${folder}/recibo.png`, mime: "image/png", size_bytes: PNG.length, original_name: null },
+      { id, path: `${folder}/recibo.png`, mime: "image/png", size_bytes: PNG.length },
     ]);
     expect(await rowOf(txId)).toMatchObject({ receipts_count: 1 });
     expect(ids((await listTx(user.client, { receipt: "con" }, "fecha_desc", 1, TODAY)).rows)).toEqual([txId]);
@@ -1431,7 +1431,6 @@ describe("getTx, getSnapshots y lastTx", () => {
         path: `${user.id}/${id}/recibo.png`,
         mime: "image/png",
         sizeBytes: PNG.length,
-        originalName: null,
         createdAt: expect.any(String) as string,
       },
     ]);
