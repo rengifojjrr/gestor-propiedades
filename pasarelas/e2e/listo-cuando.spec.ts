@@ -319,10 +319,12 @@ test.describe.serial("«Listo cuando»", () => {
     await expect(paypalGroup).toContainText("$47,76");
 
     // Cuánto se le debe a cada grupo.
-    const splits = page.getByRole("table", { name: "Repartos por beneficiario" });
-    await expect(splits.getByRole("row", { name: /Grupo A/ })).toContainText("$45,15");
-    await expect(splits.getByRole("row", { name: /Grupo B/ })).toContainText("$27,09");
-    await expect(splits.getByRole("row", { name: /Grupo C/ })).toContainText("$18,06");
+    // En el celular, una tarjeta por beneficiario (la tabla no cabe a 390 px; ver resumen.spec.ts).
+    const splits = page.getByRole("list", { name: "Repartos por beneficiario" });
+    const split = (name: string) => splits.getByRole("listitem").filter({ hasText: name });
+    await expect(split("Grupo A")).toContainText("$45,15");
+    await expect(split("Grupo B")).toContainText("$27,09");
+    await expect(split("Grupo C")).toContainText("$18,06");
     // Los dibujos llegan después de la página: axe y el ancho se miran con ellos ya pintados.
     await expect(page.locator("figure .recharts-surface")).toHaveCount(5);
     await expectCleanScreen(page);
