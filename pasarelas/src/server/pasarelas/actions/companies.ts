@@ -1,6 +1,7 @@
 "use server";
 
 import "server-only";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { ZERO, cmp } from "@/lib/pasarelas";
 import { runAction } from "../action";
@@ -90,9 +91,17 @@ export async function setCompanyActive(input: unknown): Promise<ActionResult> {
   return runAction(schema, input, ({ supabase }, { id, active }) => ops.setCompanyActive(supabase, id, active));
 }
 
-/** Borra una empresa sin cobros, con sus archivos de logo de la carpeta del usuario de la sesión. */
+/**
+ * Borra una empresa sin cobros, con sus archivos de logo de la carpeta del usuario de la sesión. Si sale bien,
+ * lleva a la lista: la ficha ya no existe, y volver a pintarla daría «Esta página no existe».
+ */
 export async function deleteCompany(input: unknown): Promise<ActionResult> {
-  return runAction(zById, input, ({ supabase, session }, { id }) => ops.deleteCompany(supabase, session.userId, id));
+  const result = await runAction(zById, input, ({ supabase, session }, { id }) =>
+    ops.deleteCompany(supabase, session.userId, id),
+  );
+  // Fuera de `runAction` (que ya revalidó): `redirect()` lanza, y dentro se tomaría por un fallo.
+  if (result.ok) redirect("/pasarelas/empresas");
+  return result;
 }
 
 /** Guarda (o, con `path: null`, quita) el logo que el navegador ya subió a la carpeta de la empresa. */

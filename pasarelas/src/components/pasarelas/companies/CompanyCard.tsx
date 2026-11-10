@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useId, useState } from "react";
+import { unstable_rethrow } from "next/navigation";
+import { useId, useState, useTransition } from "react";
 import { Button, Card, CardBody, CardHeader, CardTitle, ConfirmDialog, Dialog, Switch, notify } from "@/components/ui";
 import { deleteCompany, setCompanyActive } from "@/server/pasarelas/actions/companies";
 import type { ActionResult } from "@/server/pasarelas/result";
@@ -21,11 +21,15 @@ export type CompanyCardProps = {
   schemes: readonly { id: string; name: string }[];
 };
 
-/** Lo que devuelve una acción, o el error de red si la llamada no llegó. */
+/**
+ * Lo que devuelve una acción, o el error de red si la llamada no llegó. La redirección de una acción también llega
+ * como un error: esa se deja pasar, para que Next la siga.
+ */
 async function call(action: () => Promise<ActionResult>): Promise<ActionResult> {
   try {
     return await action();
-  } catch {
+  } catch (error) {
+    unstable_rethrow(error);
     return { ok: false, error: NETWORK_TEXT };
   }
 }
@@ -35,31 +39,28 @@ const shortUrl = (url: string) => url.replace(/^https?:\/\//i, "").replace(/\/$/
 
 /** La ficha de la empresa: logo, web, moneda, esquema y notas; editarla, activarla o desactivarla y borrarla. */
 export function CompanyCard({ company, logoUrl, schemeName, schemes }: CompanyCardProps) {
-  const router = useRouter();
   const titleId = useId();
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [toggling, setToggling] = useState(false);
+  const [removing, startRemove] = useTransition();
+  const busy = toggling || removing;
 
   async function toggle(active: boolean) {
-    setBusy(true);
+    setToggling(true);
     const result = await call(() => setCompanyActive({ id: company.id, active }));
-    setBusy(false);
+    setToggling(false);
     if (result.ok) notify.success(active ? "Empresa activada" : "Empresa desactivada");
     else notify.error(result.error);
   }
 
-  async function remove() {
-    setBusy(true);
-    const result = await call(() => deleteCompany({ id: company.id }));
-    setBusy(false);
-    setConfirming(false);
-    if (!result.ok) {
-      notify.error(result.error);
-      return;
-    }
-    notify.success(`«${company.name}» borrada`);
-    router.push("/pasarelas/empresas");
+  // Dentro de una transición: si sale bien, la acción lleva a la lista y Next sigue esa redirección.
+  function remove() {
+    startRemove(async () => {
+      const result = await call(() => deleteCompany({ id: company.id }));
+      setConfirming(false);
+      if (!result.ok) notify.error(result.error);
+    });
   }
 
   return (
@@ -118,7 +119,7 @@ export function CompanyCard({ company, logoUrl, schemeName, schemes }: CompanyCa
       <ConfirmDialog
         open={confirming}
         onClose={() => setConfirming(false)}
-        onConfirm={() => void remove()}
+        onConfirm={remove}
         title={`¿Borrar «${company.name}»?`}
         description="Se borran la empresa, sus canales, sus pasarelas y su logo, y no se puede deshacer. Si ya tiene cobros no se puede borrar: desactívala."
         confirmLabel="Borrar empresa"

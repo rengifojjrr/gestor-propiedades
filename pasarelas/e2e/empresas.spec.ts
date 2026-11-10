@@ -301,8 +301,21 @@ test.describe.serial("empresas", () => {
 
     await page.goto(`/pasarelas/empresas/${tiendaId}`);
     await page.getByRole("button", { name: "Borrar empresa" }).click();
+    // La acción misma lleva a la lista (su respuesta es una redirección que ya trae la lista): no vuelve a pintar
+    // la ficha borrada, que daría «Esta página no existe», para después ir a la lista.
+    const actionResponses: { redirect: string | null; body: string }[] = [];
+    await page.route(`**/pasarelas/empresas/${tiendaId}`, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      const response = await route.fetch();
+      const body = await response.text();
+      actionResponses.push({ redirect: response.headers()["x-action-redirect"] ?? null, body });
+      return route.fulfill({ response, body });
+    });
     await page.getByRole("alertdialog").getByRole("button", { name: "Borrar empresa" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Empresas" })).toBeVisible();
     await expect(page.getByRole("link", { name: /Tienda Demo/ })).toHaveCount(0);
+    expect(actionResponses).toHaveLength(1);
+    expect(actionResponses[0]?.redirect).toMatch(/^\/pasarelas\/empresas(;|$)/);
+    expect(actionResponses[0]?.body).toContain("Nueva empresa");
   });
 });
