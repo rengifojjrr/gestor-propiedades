@@ -4,7 +4,7 @@ import type { Currency, ISODate, Money, Pct } from "@/lib/pasarelas";
 import type { Db } from "../dto";
 import { RECEIPTS_BUCKET } from "../ops/receipts";
 import { zId } from "../zod";
-import { readAll } from "./config";
+import { readAll } from "./paging";
 
 /**
  * Las lecturas de la pantalla Empresas: la lista, la ficha de una empresa (con sus canales, sus cuentas de pasarela
@@ -188,7 +188,7 @@ export async function listCompanies(supabase: Db): Promise<CompanyListItem[]> {
           .order("id")
           .range(from, to)
           .throwOnError(),
-      "empresas",
+      "de empresas",
     ),
     readAll(
       (from, to) =>
@@ -199,7 +199,7 @@ export async function listCompanies(supabase: Db): Promise<CompanyListItem[]> {
           .order("currency")
           .range(from, to)
           .throwOnError(),
-      "empresas",
+      "de empresas",
     ),
   ]);
   const byCompany = new Map<string, CompanyTotal[]>();

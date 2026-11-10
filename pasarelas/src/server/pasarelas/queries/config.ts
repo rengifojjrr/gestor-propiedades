@@ -17,34 +17,13 @@ import {
   toPayConfig,
   type Db,
 } from "../dto";
+import { EXACT_COUNT, readAll as readAllRows, type PageRead } from "./paging";
 
 /** Los años de feriados bancarios que se siembran la primera vez. */
 const SEEDED_YEARS = [2026, 2027] as const;
 
-/** El tope de filas por petición de la API. */
-const PAGE_SIZE = 1000;
-const EXACT_COUNT = { count: "exact" } as const;
-
-/**
- * Todas las filas de una lectura. La API da 1000 por petición como mucho, sin avisar de que hay más: se pide por
- * tramos hasta tener las que la propia lectura dice que hay. Con menos de 1000 filas es una sola petición. Si un
- * tramo llega sin ese total no se puede saber si están todas: se lanza, en vez de dar la lectura por completa.
- * `what` nombra en ese error lo que se lee («configuración», «empresas»): la usan también otras lecturas.
- */
-export async function readAll<Row>(
-  page: (from: number, to: number) => PromiseLike<{ data: Row[]; count: number | null }>,
-  what = "configuración",
-): Promise<Row[]> {
-  const rows: Row[] = [];
-  for (;;) {
-    const { data, count } = await page(rows.length, rows.length + PAGE_SIZE - 1);
-    if (count === null) {
-      throw new Error(`Una lectura de ${what} llegó sin el total de filas (count): no se sabe si están todas.`);
-    }
-    rows.push(...data);
-    if (data.length === 0 || rows.length >= count) return rows;
-  }
-}
+/** Todas las filas de una lectura de configuración (por tramos: `readAll`). */
+const readAll = <Row>(page: PageRead<Row>): Promise<Row[]> => readAllRows(page, "de configuración");
 
 /**
  * Toda la configuración del usuario, en la forma que usa el motor. Incluye lo inactivo (cada elemento trae su

@@ -16,6 +16,7 @@ import {
 } from "@/lib/pasarelas";
 import type { Currency, CurrencySummary, DepositGroup, ISODate, LeanTx, Money, PayConfig } from "@/lib/pasarelas";
 import type { Db } from "../dto";
+import { EXACT_COUNT, readAll as readAllRows, type PageRead } from "./paging";
 import { chunked, leanTx, parseTxFilters, type TxFilters } from "./transactions";
 
 /**
@@ -29,9 +30,6 @@ import { chunked, leanTx, parseTxFilters, type TxFilters } from "./transactions"
 export const SUMMARY_DAYS = 14;
 
 const TX_LIST = "/pasarelas/cobros";
-/** El tope de filas por petición de la API. */
-const PAGE_SIZE = 1000;
-const EXACT_COUNT = { count: "exact" } as const;
 
 /** Las claves de la URL que el Resumen filtra, en el orden en que pasan a los enlaces de la lista de cobros. */
 const SCOPE_KEYS = ["periodo", "desde", "hasta", "empresa", "canal", "pasarela"] as const;
@@ -215,21 +213,8 @@ const money = (value: string): Money => toMoney(dec(value));
 
 // ─── Lecturas ───────────────────────────────────────────────────────────────────────────────────────────────
 
-/**
- * Todas las filas de una lectura, por tramos de 1000 (el tope de la API) hasta tener las que la propia lectura
- * dice que hay. Si un tramo llega sin ese total no se puede saber si están todas: se lanza.
- */
-async function readAll<Row>(
-  page: (from: number, to: number) => PromiseLike<{ data: Row[]; count: number | null }>,
-): Promise<Row[]> {
-  const rows: Row[] = [];
-  for (;;) {
-    const { data, count } = await page(rows.length, rows.length + PAGE_SIZE - 1);
-    if (count === null) throw new Error("Una lectura del Resumen llegó sin el total de filas (count).");
-    rows.push(...data);
-    if (data.length === 0 || rows.length >= count) return rows;
-  }
-}
+/** Todas las filas de una lectura del Resumen (por tramos: `readAll`). */
+const readAll = <Row>(page: PageRead<Row>): Promise<Row[]> => readAllRows(page, "del Resumen");
 
 /**
  * Lo asignado a cada beneficiario, por moneda, en los repartos de esos cobros. Los fallidos no asignan nada (como
