@@ -1,0 +1,124 @@
+"use client";
+
+import Link from "next/link";
+import { Checkbox, DateText, Money, TBody, THead, Table, Td, Th, Tr } from "@/components/ui";
+import { formatDate } from "@/lib/pasarelas/dates";
+import { formatMoney } from "@/lib/pasarelas/money";
+import type { ISODate } from "@/lib/pasarelas/types";
+import type { TxListItem } from "@/server/pasarelas/dto";
+import { StatusBadge } from "./StatusBadge";
+import { SelectAllCheckbox, useTxSelection } from "./TxBulkBar";
+
+/** Un cobro de la lista con los nombres ya resueltos contra la configuración. */
+export type TxRowView = TxListItem & { companyName: string; channelName: string | null; gatewayName: string };
+
+/** Cómo se nombra un cobro en la lista: su referencia o, si no tiene, su fecha y lo cobrado. */
+function describe(tx: TxRowView): string {
+  return tx.reference ?? `del ${formatDate(tx.occurredOn)} por ${formatMoney(tx.grossOriginal, tx.currency)}`;
+}
+
+/** El nombre de la casilla que elige el cobro: «Seleccionar el cobro pi_123». */
+export const selectLabel = (tx: TxRowView): string => `Seleccionar el cobro ${describe(tx)}`;
+
+/** El enlace al detalle: la referencia, o «Ver cobro» con su fecha y monto para el lector de pantalla. */
+export function TxLink({ tx, className }: { tx: TxRowView; className?: string }) {
+  return (
+    <Link href={`/pasarelas/cobros/${tx.id}`} className={className}>
+      {tx.reference ?? (
+        <>
+          Ver cobro<span className="sr-only"> {describe(tx)}</span>
+        </>
+      )}
+    </Link>
+  );
+}
+
+/** La casilla de un cobro, con su nombre solo para el lector de pantalla (la fila ya dice de qué cobro se trata). */
+export function TxCheckbox({ tx }: { tx: TxRowView }) {
+  const { isSelected, toggle } = useTxSelection();
+  return (
+    <Checkbox
+      label={<span className="sr-only">{selectLabel(tx)}</span>}
+      checked={isSelected(tx.id)}
+      onChange={(event) => toggle(tx.id, event.currentTarget.checked)}
+    />
+  );
+}
+
+/** Cuándo cae o cayó: la fecha real si ya se depositó; si no, la estimada. */
+export function DepositDate({ tx }: { tx: TxRowView }) {
+  if (tx.status === "depositado" && tx.depositedOn !== null) {
+    return (
+      <span className="flex flex-col">
+        <span className="text-sm text-ink-soft">Cayó</span>
+        <DateText value={tx.depositedOn} />
+      </span>
+    );
+  }
+  if (tx.estimatedDepositOn !== null) {
+    return (
+      <span className="flex flex-col">
+        <span className="text-sm text-ink-soft">Estimado</span>
+        <DateText value={tx.estimatedDepositOn} />
+      </span>
+    );
+  }
+  return <span className="text-ink-soft">—</span>;
+}
+
+/** La lista de cobros como tabla (desde 768 px), con una casilla por fila para elegir. */
+export function TxTable({ rows, today }: { rows: TxRowView[]; today: ISODate }) {
+  return (
+    <Table label="Cobros">
+      <THead>
+        <Tr>
+          <Th className="w-12 py-0">
+            <SelectAllCheckbox />
+          </Th>
+          <Th>Fecha</Th>
+          <Th>Cobro</Th>
+          <Th>Estado</Th>
+          <Th numeric>Bruto</Th>
+          <Th numeric>Comisiones</Th>
+          <Th numeric>Neto</Th>
+          <Th>Depósito</Th>
+        </Tr>
+      </THead>
+      <TBody>
+        {rows.map((tx) => (
+          <Tr key={tx.id}>
+            <Td className="py-0">
+              <TxCheckbox tx={tx} />
+            </Td>
+            <Td>
+              <DateText value={tx.occurredOn} />
+            </Td>
+            <Td>
+              <span className="flex flex-col">
+                <TxLink tx={tx} className="font-semibold text-brand hover:underline" />
+                <span className="text-sm text-ink-soft">
+                  {tx.companyName} · {tx.gatewayName}
+                </span>
+              </span>
+            </Td>
+            <Td>
+              <StatusBadge tx={tx} today={today} />
+            </Td>
+            <Td numeric>
+              <Money value={tx.gross} currency={tx.currency} />
+            </Td>
+            <Td numeric>
+              <Money value={tx.fees} currency={tx.currency} />
+            </Td>
+            <Td numeric>
+              <Money value={tx.net} currency={tx.currency} />
+            </Td>
+            <Td>
+              <DepositDate tx={tx} />
+            </Td>
+          </Tr>
+        ))}
+      </TBody>
+    </Table>
+  );
+}
