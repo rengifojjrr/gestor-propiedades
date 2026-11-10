@@ -615,6 +615,81 @@ describe("mapRows: qué es un cobro en Stripe, pagos", () => {
   });
 });
 
+describe("mapRows: qué es un cobro en «otro» (columnas de estado o tipo elegidas a mano)", () => {
+  const motivo = (cambios: Record<string, string>, mapeo: Partial<ColumnMapping>) => {
+    const r = una(cambios, mapeo);
+    expect(r.errors).toEqual([]);
+    return r.ok.length === 1 ? "cobro" : r.skipped[0]!.reason;
+  };
+  const porEstado = (estado: string) => motivo({ estado }, { status: "estado" });
+  const porTipo = (tipo: string) => motivo({ tipo }, { type: "tipo" });
+
+  test.each([
+    ["completed", "cobro"],
+    ["Succeeded", "cobro"],
+    ["PAID", "cobro"],
+    ["Approved", "cobro"],
+    ["Completado", "cobro"],
+    ["Pagada", "cobro"],
+    ["aprobado", "cobro"],
+    ["Exitoso", "cobro"],
+    ["Failed", "cobro fallido o cancelado"],
+    ["Denied", "cobro fallido o cancelado"],
+    ["Canceled", "cobro fallido o cancelado"],
+    ["Fallido", "cobro fallido o cancelado"],
+    ["Rechazado", "cobro fallido o cancelado"],
+    ["cancelada", "cobro fallido o cancelado"],
+    ["Pending", "cobro pendiente o sin capturar"],
+    ["Processing", "cobro pendiente o sin capturar"],
+    ["Pendiente", "cobro pendiente o sin capturar"],
+    ["En  proceso", "cobro pendiente o sin capturar"],
+    ["Raro", "«Raro» no es un cobro logrado"],
+    [" ", "sin estado: no se sabe si es un cobro"],
+  ])("estado «%s» → %s", (estado, esperado) => {
+    expect(porEstado(estado)).toBe(esperado);
+  });
+
+  test.each([
+    ["Payment", "cobro"],
+    ["Charge", "cobro"],
+    ["Venta", "cobro"],
+    ["Cobro con tarjeta", "cobro"],
+    ["Pago", "cobro"],
+    ["Refund", "reembolso: el importador solo trae cobros (el reembolso se registra en el detalle del cobro)"],
+    ["Devolución de pago", "reembolso: el importador solo trae cobros (el reembolso se registra en el detalle del cobro)"],
+    ["Reembolso parcial", "reembolso: el importador solo trae cobros (el reembolso se registra en el detalle del cobro)"],
+    ["Payout", "retiro, depósito o transferencia de saldo: no es un cobro"],
+    ["Retiro al banco", "retiro, depósito o transferencia de saldo: no es un cobro"],
+    ["Depósito", "retiro, depósito o transferencia de saldo: no es un cobro"],
+    ["Transferencia", "retiro, depósito o transferencia de saldo: no es un cobro"],
+    ["Fee", "comisión suelta: no es un cobro"],
+    ["Comisión de pago", "comisión suelta: no es un cobro"],
+    ["Adjustment", "ajuste, disputa o contracargo: no es un cobro"],
+    ["Ajuste", "ajuste, disputa o contracargo: no es un cobro"],
+    ["Contracargo", "ajuste, disputa o contracargo: no es un cobro"],
+    ["Retención", "retención o liberación de saldo: no es un cobro"],
+    ["Liberación de retención", "retención o liberación de saldo: no es un cobro"],
+    ["Conversión de moneda", "conversión de moneda: no es un cobro"],
+    ["Bonificación", "«Bonificación» no es un cobro logrado"],
+    ["", "sin tipo: no se sabe si es un cobro"],
+  ])("tipo «%s» → %s", (tipo, esperado) => {
+    expect(porTipo(tipo)).toBe(esperado);
+  });
+
+  test("con las dos columnas, primero el tipo y después el estado", () => {
+    const ambos = { status: "estado", type: "tipo" };
+    expect(motivo({ tipo: "Pago", estado: "Fallido" }, ambos)).toBe("cobro fallido o cancelado");
+    expect(motivo({ tipo: "Reembolso", estado: "Completado" }, ambos)).toBe(
+      "reembolso: el importador solo trae cobros (el reembolso se registra en el detalle del cobro)",
+    );
+    expect(motivo({ tipo: "Venta", estado: "Pagado" }, ambos)).toBe("cobro");
+  });
+
+  test("sin columnas de estado ni de tipo, cada fila positiva es un cobro", () => {
+    expect(motivo({ estado: "Fallido", tipo: "Reembolso" }, {})).toBe("cobro");
+  });
+});
+
 describe("mapRows: qué es un cobro en PayPal", () => {
   const PAYPAL = presetFor("paypal_actividad")!;
   const filaPaypal = (Type: string, Status = "Completed", Gross = "10.00") => ({

@@ -208,16 +208,71 @@ function lookup(table: Map<string, string | null>, value: string, what: "tipo" |
   return reason === undefined ? unknown(value.trim()) : reason;
 }
 
-function paypalType(value: string): string | null {
-  const text = value.trim().toLowerCase();
+/** Busca por palabras, en orden; vacío o sin ninguna palabra conocida también es motivo para omitir. */
+function byWords(words: readonly [RegExp, string | null][], value: string, text: string): string | null {
   if (text === "") return missing("tipo");
-  const hit = PAYPAL_TYPE_WORDS.find(([words]) => words.test(text));
+  const hit = words.find(([re]) => re.test(text));
   return hit === undefined ? unknown(value.trim()) : hit[1];
+}
+
+function paypalType(value: string): string | null {
+  return byWords(PAYPAL_TYPE_WORDS, value, value.trim().toLowerCase());
+}
+
+// ─── «otro»: un vocabulario genérico, en inglés y en español ────────────────────────────────────────────────
+//
+// Si la persona eligió a mano una columna de estado o de tipo, se filtra con ella: no se puede pasar por alto (un
+// «fallido» importado como cobro) ni adivinar (lo que no se reconoce se omite con su motivo, no se importa).
+
+/** Minúsculas, sin acentos y con los espacios de dentro reducidos a uno: «Devolución  parcial» → «devolucion parcial». */
+const plain = (value: string): string =>
+  value.trim().toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/\s+/g, " ");
+
+/** Estado genérico (null = es un cobro). En español, con las dos terminaciones. */
+const GENERIC_STATUSES = byValue([
+  [
+    ["completed", "complete", "succeeded", "successful", "success", "paid", "approved", "settled", "captured",
+      "completado", "completada", "pagado", "pagada", "aprobado", "aprobada", "exitoso", "exitosa", "cobrado",
+      "cobrada", "liquidado", "liquidada"],
+    null,
+  ],
+  [
+    ["failed", "failure", "denied", "declined", "rejected", "canceled", "cancelled", "voided", "expired", "error",
+      "fallido", "fallida", "rechazado", "rechazada", "cancelado", "cancelada", "anulado", "anulada", "denegado",
+      "denegada", "vencido", "vencida"],
+    SKIP.failed,
+  ],
+  [
+    ["pending", "processing", "in progress", "authorized", "uncaptured", "incomplete", "pendiente", "en proceso",
+      "procesando", "autorizado", "autorizada", "sin capturar", "incompleto", "incompleta"],
+    SKIP.pending,
+  ],
+]);
+
+/**
+ * Tipo genérico, por palabras (ya sin acentos) y en este orden, como en PayPal: una liberación de retención es
+ * retención, un reembolso de un pago es reembolso, una comisión de un pago es comisión. Al final, lo que es un cobro.
+ */
+const GENERIC_TYPE_WORDS: [RegExp, string | null][] = [
+  [/\b(hold|holds|release|reserve|retencion|retenciones|liberacion|reserva)\b/, SKIP.hold],
+  [/\b(refund|refunds|refunded|reversal|reembolso|reembolsos|reembolsado|reembolsada|devolucion|devoluciones|reverso)\b/, SKIP.refund],
+  [/\b(chargeback|dispute|adjustment|correction|contracargo|disputa|ajuste|ajustes|correccion)\b/, SKIP.adjustment],
+  [/\b(withdrawal|payout|deposit|transfer|retiro|retiros|deposito|depositos|transferencia|transferencias)\b/, SKIP.bank],
+  [/\b(conversion|exchange|cambio)\b/, SKIP.conversion],
+  [/\b(fee|fees|comision|comisiones)\b/, SKIP.fee],
+  [/\b(payment|charge|sale|donation|cobro|cobros|pago|pagos|venta|ventas|donacion)\b/, null],
+];
+
+function genericStatus(value: string): string | null {
+  const key = plain(value);
+  if (key === "") return missing("estado");
+  const reason = GENERIC_STATUSES.get(key);
+  return reason === undefined ? unknown(value.trim()) : reason;
 }
 
 /**
  * Por qué una fila NO es un cobro logrado, o `null` si lo es (el monto positivo se comprueba después, al leerlo).
- * «otro» no sabe nada de tipos ni de estados: cada fila es un cobro.
+ * En «otro», el tipo y el estado (si se eligieron) se leen con un vocabulario genérico.
  */
 export function skipReason(format: ImportFormat, facts: RowFacts): string | null {
   switch (format) {
@@ -234,6 +289,9 @@ export function skipReason(format: ImportFormat, facts: RowFacts): string | null
         (facts.status === null ? null : lookup(PAYPAL_STATUSES, facts.status, "estado"))
       );
     case "otro":
-      return null;
+      return (
+        (facts.type === null ? null : byWords(GENERIC_TYPE_WORDS, facts.type, plain(facts.type))) ??
+        (facts.status === null ? null : genericStatus(facts.status))
+      );
   }
 }
