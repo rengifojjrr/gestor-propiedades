@@ -15,16 +15,18 @@ const RECEIPTS_BUCKET = "comprobantes";
 
 const UPLOAD_TEXT = "No se pudo subir el comprobante. Inténtalo de nuevo.";
 const NO_SESSION_TEXT = "Tu sesión terminó. Vuelve a entrar.";
+const UNSURE_TEXT =
+  "No se pudo confirmar si el comprobante quedó guardado. Revisa los comprobantes antes de volver a subirlo.";
 
 /**
  * Sube el archivo, tal cual, a `{userId}/{folderId}/{uuid}.{ext}` y dice qué subió. Antes lo comprueba
- * (`checkReceiptFile`) y mira que su contenido sea el tipo que declara (Storage solo mira lo declarado). El nombre en Storage no es el original: ese
- * viaja aparte, en `originalName`.
+ * (`checkReceiptFile`) y mira que su contenido sea el tipo que declara (Storage solo mira lo declarado). El nombre
+ * en Storage no es el original, y el original no viaja: puede traer datos de otra persona.
  */
 export async function uploadToFolder(
   file: File,
   folderId: string,
-): Promise<{ path: string; mime: string; sizeBytes: number; originalName: string }> {
+): Promise<{ path: string; mime: string; sizeBytes: number }> {
   const problem = checkReceiptFile(file) ?? (await checkReceiptContent(file));
   if (problem !== null) throw new ReceiptFileError(problem);
   const supabase = createClient();
@@ -36,21 +38,35 @@ export async function uploadToFolder(
   const path = `${userId}/${folderId}/${crypto.randomUUID()}.${RECEIPT_EXTENSION[mime]}`;
   const { error } = await supabase.storage.from(RECEIPTS_BUCKET).upload(path, file, { contentType: mime, upsert: false });
   if (error) throw new ReceiptFileError(UPLOAD_TEXT);
-  return { path, mime, sizeBytes: file.size, originalName: file.name };
+  return { path, mime, sizeBytes: file.size };
 }
 
-/** Borra un archivo que se subió pero no se pudo registrar. Si no se puede, queda en la carpeta del cobro. */
-async function discard(path: string): Promise<void> {
-  try {
-    await createClient().storage.from(RECEIPTS_BUCKET).remove([path]);
-  } catch {
-    // Lo borrará la papelera con el cobro: no se le enseña a la persona un segundo error.
+/**
+ * Guarda en el servidor lo que apunta a un archivo ya subido (`path`; `null` si no se subió ninguno). Si el servidor
+ * lo rechaza (`ok: false`), borra el archivo: nada lo va a usar. Si la llamada lanza (se cortó la conexión), NO lo
+ * borra, porque no se sabe si lo guardó y el archivo puede ser suyo; lanza lo mismo. Si no se puede borrar, el
+ * archivo queda en su carpeta y se va con ella (al borrar el cobro o la empresa).
+ */
+export async function saveUploaded<T>(
+  path: string | null,
+  save: () => Promise<ActionResult<T>>,
+): Promise<ActionResult<T>> {
+  const result = await save();
+  if (!result.ok && path !== null) {
+    try {
+      await createClient().storage.from(RECEIPTS_BUCKET).remove([path]);
+    } catch {
+      // La persona ya tiene el rechazo en pantalla: no se le enseña un segundo error.
+    }
   }
+  return result;
 }
 
 /**
  * Agrega un comprobante a un cobro: lo comprueba, achica la imagen (un PDF va tal cual), lo sube y registra su
- * fila. Si el registro falla, borra el archivo subido. Devuelve el id del comprobante o el mensaje para la persona.
+ * fila. Si el servidor rechaza el registro, borra el archivo subido; si no se sabe qué pasó (la respuesta no llegó),
+ * lo deja y pide revisar los comprobantes antes de repetir. Devuelve el id del comprobante o el mensaje para la
+ * persona. Nunca lanza.
  */
 export async function uploadReceipt(file: File, transactionId: string): Promise<ActionResult<{ id: string }>> {
   const problem = checkReceiptFile(file);
@@ -61,12 +77,9 @@ export async function uploadReceipt(file: File, transactionId: string): Promise<
   } catch (error) {
     return { ok: false, error: error instanceof ReceiptFileError ? error.message : UPLOAD_TEXT };
   }
-  let result: ActionResult<{ id: string }>;
   try {
-    result = await registerReceiptAction({ transactionId, ...uploaded, originalName: file.name });
+    return await saveUploaded(uploaded.path, () => registerReceiptAction({ transactionId, ...uploaded }));
   } catch {
-    result = { ok: false, error: UPLOAD_TEXT };
+    return { ok: false, error: UNSURE_TEXT };
   }
-  if (!result.ok) await discard(uploaded.path);
-  return result;
 }

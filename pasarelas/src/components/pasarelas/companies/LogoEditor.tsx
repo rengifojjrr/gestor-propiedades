@@ -4,37 +4,27 @@ import { ImageUp, LoaderCircle } from "lucide-react";
 import { useId, useState, useSyncExternalStore, type ChangeEvent } from "react";
 import { ReceiptFileError, checkReceiptFile } from "@/components/pasarelas/receipts/check";
 import { downscaleImage } from "@/components/pasarelas/receipts/downscale";
-import { uploadToFolder } from "@/components/pasarelas/receipts/upload";
+import { saveUploaded, uploadToFolder } from "@/components/pasarelas/receipts/upload";
 import { Button, cn, notify } from "@/components/ui";
 import { buttonClass } from "@/components/ui/Button";
-import { createClient } from "@/lib/supabase/client";
 import { setCompanyLogo } from "@/server/pasarelas/actions/companies";
 import { CompanyLogo } from "./CompanyLogo";
 
-/** El bucket privado donde viven los comprobantes y los logos (cada empresa en su carpeta). */
-const BUCKET = "comprobantes";
 /** Un logo se ve pequeño: con 512 px por lado sobra. */
 const LOGO_SIDE = 512;
 const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const TYPE_TEXT = "El logo tiene que ser una imagen JPG, PNG o WebP.";
 const UPLOAD_TEXT = "No se pudo subir el logo. Inténtalo de nuevo.";
+const UNSURE_TEXT = "No se pudo confirmar si se guardó el cambio del logo. Recarga la página para ver cómo quedó.";
 
 /** `useSyncExternalStore` sin nada que escuchar: solo distingue el HTML del servidor de la página ya hidratada. */
 const noSubscription = () => () => {};
 
-/** Borra un archivo subido que no se pudo guardar como logo. Si no se puede, se irá al borrar la empresa. */
-async function discard(path: string): Promise<void> {
-  try {
-    await createClient().storage.from(BUCKET).remove([path]);
-  } catch {
-    // La persona ya tiene un error en pantalla: no se le enseña otro.
-  }
-}
-
 /**
  * El logo de la empresa: verlo, subir otro o quitarlo. La imagen se achica y se recodifica en el navegador (lo que
  * además le quita los metadatos), se sube directo a la carpeta de la empresa y después `setCompanyLogo` guarda su
- * ruta, que borra la anterior.
+ * ruta, que borra la anterior. Si el servidor rechaza el logo, el archivo subido se borra; si la respuesta no llega,
+ * no (no se sabe si quedó guardado).
  */
 export function LogoEditor({ companyId, name, url }: { companyId: string; name: string; url: string | null }) {
   const id = useId();
@@ -45,13 +35,14 @@ export function LogoEditor({ companyId, name, url }: { companyId: string; name: 
   const hydrated = useSyncExternalStore(noSubscription, () => true, () => false);
   const locked = busy || !hydrated;
 
+  /** Guarda el logo subido en `path` (o lo quita con `null`). Un rechazo del servidor borra el archivo subido. */
   async function save(path: string | null): Promise<boolean> {
     try {
-      const result = await setCompanyLogo({ companyId, path });
+      const result = await saveUploaded(path, () => setCompanyLogo({ companyId, path }));
       if (result.ok) return true;
       setError(result.error);
     } catch {
-      setError(UPLOAD_TEXT);
+      setError(UNSURE_TEXT);
     }
     return false;
   }
@@ -71,10 +62,7 @@ export function LogoEditor({ companyId, name, url }: { companyId: string; name: 
     } catch (failure) {
       setError(failure instanceof ReceiptFileError ? failure.message : UPLOAD_TEXT);
     }
-    if (path !== null) {
-      if (await save(path)) notify.success("Logo guardado");
-      else await discard(path);
-    }
+    if (path !== null && (await save(path))) notify.success("Logo guardado");
     setBusy(false);
   }
 
