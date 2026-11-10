@@ -257,10 +257,32 @@ test.describe("componentes", () => {
       .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().width));
     expect(widths).toHaveLength(2);
     expect(widths[0]).toBe(widths[1]);
+  });
 
-    await expect(figures.locator("time", { hasText: "vie 13 nov 2026" }).first()).toHaveAttribute(
+  test("fechas: las escribe el motor, en español y en hora de Nueva York", async ({ page }) => {
+    await openKit(page);
+    const figures = page.getByRole("region", { name: "Cifras" });
+    // La galería solo pasa la fecha ("2026-11-13") o el instante en UTC: el texto sale de formatDate y formatDateTime.
+    const date = figures.getByText("vie 13 nov 2026", { exact: true });
+    await expect(date).toHaveAttribute("datetime", "2026-11-13");
+    expect(await date.evaluate((el) => el.tagName)).toBe("TIME");
+    await expect(figures.getByText("vie 13 nov 2026, 10:30", { exact: true })).toHaveAttribute(
       "datetime",
-      "2026-11-13",
+      "2026-11-13T15:30:00Z",
+    );
+    // 03:30 UTC del sábado 14 todavía es viernes 13 en Nueva York: el día no se corre.
+    await expect(figures.getByText("vie 13 nov 2026, 22:30", { exact: true })).toHaveAttribute(
+      "datetime",
+      "2026-11-14T03:30:00Z",
+    );
+    // Ninguna fecha de la galería queda en ISO crudo a la vista.
+    const raw = await page
+      .locator("time")
+      .evaluateAll((els) => els.map((el) => el.textContent ?? "").filter((text) => /\d{4}-\d{2}-\d{2}/.test(text)));
+    expect(raw).toEqual([]);
+    await expect(page.getByRole("region", { name: "Tarjetas" }).getByText("mar 17 nov 2026", { exact: true })).toHaveAttribute(
+      "datetime",
+      "2026-11-17",
     );
   });
 

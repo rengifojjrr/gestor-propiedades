@@ -130,7 +130,9 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 - **Los colores por defecto de Tailwind están apagados**: `bg-white` o `text-gray-500` no hacen nada. Usa los tokens de
   `src/app/globals.css` (`bg-surface`, `text-ink-soft`, `border-rule`…), que ya traen su par para el modo oscuro.
 - Dinero y porcentajes se pintan con `<Money value currency />` y `<Percent value />`, que llaman a `formatMoney` y
-  `formatPct`; las fechas, con `<DateText value />` y `<DateTimeText value />`. No se formatea a mano en una pantalla.
+  `formatPct`; las fechas, con `<DateText value />` y `<DateTimeText value />`, que llaman a `formatDate` y
+  `formatDateTime` (hora de Nueva York). No se formatea a mano en una pantalla. Los cuatro **lanzan** con un valor
+  que no sea válido: si puede venir `null` (un depósito sin fecha), la pantalla decide qué pintar antes de llamarlos.
 - axe se pasa con `expectNoSeriousAxe` de `e2e/axe.ts` (concilia los tipos de las dos versiones de `playwright-core`
   del lockfile). Si hace falta desde otro archivo de ayuda, se reexporta de ahí: no se duplica.
 
