@@ -7,7 +7,7 @@ import { ReceiptPicker } from "@/components/pasarelas/receipts/ReceiptPicker";
 import { checkReceiptFile } from "@/components/pasarelas/receipts/check";
 import { receiptFormat, receiptLabel, receiptSize } from "@/components/pasarelas/receipts/label";
 import { OPEN_FAILED_TEXT, openSignedPdf } from "@/components/pasarelas/receipts/openPdf";
-import { noRefresh, refreshQuietly } from "@/components/pasarelas/receipts/refresh";
+import { refreshQuietly } from "@/components/pasarelas/receipts/refresh";
 import { RECEIPT_UNSURE_TEXT, uploadReceipt } from "@/components/pasarelas/receipts/upload";
 import {
   Alert,
@@ -36,7 +36,7 @@ const nameOf = (receipt: TxReceipt, index: number): string => `Comprobante ${ind
 
 /** Una URL firmada recién pedida, o el mensaje si no se pudo (también si la llamada no volvió). Nunca lanza. */
 const signedUrl = (id: string): Promise<ActionResult<{ url: string }>> =>
-  callAction(() => receiptUrlAction({ id }), noRefresh, OPEN_FAILED_TEXT);
+  callAction(() => receiptUrlAction({ id }), OPEN_FAILED_TEXT);
 
 export type ReceiptsCardProps = {
   transactionId: string;
@@ -115,7 +115,7 @@ export function ReceiptsCard({ transactionId, receipts, editable }: ReceiptsCard
     if (removing === null) return;
     const { id } = removing;
     startTransition(async () => {
-      const result = await callAction(() => removeReceiptAction({ id }), noRefresh, REMOVE_UNSURE_TEXT);
+      const result = await callAction(() => removeReceiptAction({ id }), REMOVE_UNSURE_TEXT);
       setRemoving(null);
       if (!result.ok && result.error === REMOVE_UNSURE_TEXT) {
         setUnsure(result.error);

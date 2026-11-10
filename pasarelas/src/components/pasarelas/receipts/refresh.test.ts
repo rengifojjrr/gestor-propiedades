@@ -1,11 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
-import { noRefresh, refreshQuietly } from "./refresh";
+import { refreshQuietly } from "./refresh";
 
 describe("refresh", () => {
-  test("noRefresh no hace nada", () => {
-    expect(noRefresh()).toBeUndefined();
-  });
-
   test("refreshQuietly refresca", () => {
     const refresh = vi.fn();
     refreshQuietly(refresh);

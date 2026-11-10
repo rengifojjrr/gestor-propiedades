@@ -7,7 +7,7 @@ import { Alert, Button, ConfirmDialog, Dialog, notify } from "@/components/ui";
 import { deleteSettlement, settlementReceiptUrl } from "@/server/pasarelas/actions/settlements";
 import { callAction } from "../callAction";
 import { OPEN_FAILED_TEXT, openSignedPdf } from "../receipts/openPdf";
-import { noRefresh, refreshQuietly } from "../receipts/refresh";
+import { refreshQuietly } from "../receipts/refresh";
 
 const DELETE_UNSURE_TEXT =
   "No se pudo confirmar si la liquidación se borró por un fallo de conexión. Mira cómo quedó antes de repetirlo.";
@@ -35,7 +35,7 @@ export function SettlementActions({
   const [error, setError] = useState<string | null>(null);
   const pdf = receiptMime === "application/pdf";
 
-  const signedUrl = () => callAction(() => settlementReceiptUrl({ id }), noRefresh, OPEN_FAILED_TEXT);
+  const signedUrl = () => callAction(() => settlementReceiptUrl({ id }), OPEN_FAILED_TEXT);
 
   function view() {
     setError(null);
@@ -57,7 +57,7 @@ export function SettlementActions({
 
   function remove() {
     startTransition(async () => {
-      const result = await callAction(() => deleteSettlement({ id }), noRefresh, DELETE_UNSURE_TEXT);
+      const result = await callAction(() => deleteSettlement({ id }), DELETE_UNSURE_TEXT);
       setConfirming(false);
       if (!result.ok) {
         setError(result.error);

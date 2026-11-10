@@ -27,12 +27,6 @@ const TABLAS = [
   "pay_settlements",
   "pay_holidays",
 ];
-/**
- * Columnas que ya no existen en la migración. Una base creada antes de quitarlas todavía las tiene, y aun así la
- * exportación no las trae: el contrato es la migración, no la base de turno.
- */
-const RETIRADAS: Record<string, string[]> = { pay_transaction_receipts: ["original_name"] };
-
 /** Las vistas de totales no se exportan: se calculan de las tablas. */
 const VISTAS = ["pay_beneficiary_balances", "pay_company_totals", "pay_gateway_totals", "pay_bank_account_totals"];
 
@@ -142,9 +136,7 @@ describe("exportAll", () => {
       await sinTipos(a.client).from(tabla).select("*").eq("id", primera.id).single(),
       `${tabla} con select('*')`,
     ) as Fila;
-    const columnas = Object.keys(enLaBase)
-      .filter((columna) => !(RETIRADAS[tabla] ?? []).includes(columna))
-      .sort();
+    const columnas = Object.keys(enLaBase).sort();
     for (const fila of exportadas) expect(Object.keys(fila).sort()).toEqual(columnas);
 
     // Lo que no es dinero sale idéntico; el dinero, como texto que vale lo mismo.
