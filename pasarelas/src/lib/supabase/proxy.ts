@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { DEFAULT_NEXT_PATH, loginPath } from "@/lib/auth/next-path";
+import { NEXT_PARAM, loginPath, safeNextPath } from "@/lib/auth/next-path";
 import type { Database } from "./types";
 
 const LOGIN = "/login";
@@ -12,7 +12,7 @@ const NO_CACHE_HEADERS = ["cache-control", "expires", "pragma"];
  * Lo que corre en cada petición (src/proxy.ts): refresca la sesión y decide solo «hay sesión / no hay sesión».
  *
  * - Sin sesión, todo menos la entrada (`/login` y lo que cuelga de ella) manda a `/login?siguiente=<ruta>`.
- * - Con sesión, `/login` manda al Resumen.
+ * - Con sesión, `/login` manda a `siguiente` si es una ruta de este sitio (`safeNextPath`) y, si no, al Resumen.
  *
  * El segundo factor NO se mira aquí: lo hace `requireSession()` en cada pantalla y en cada acción, y quien de
  * verdad defiende los datos es la RLS de la base.
@@ -47,7 +47,9 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   const isEntrance = pathname === LOGIN || pathname.startsWith(`${LOGIN}/`);
 
   if (!hasSession && !isEntrance) return redirectKeeping(request, response, loginPath(`${pathname}${search}`));
-  if (hasSession && pathname === LOGIN) return redirectKeeping(request, response, DEFAULT_NEXT_PATH);
+  if (hasSession && pathname === LOGIN) {
+    return redirectKeeping(request, response, safeNextPath(request.nextUrl.searchParams.get(NEXT_PARAM)));
+  }
   return response;
 }
 
