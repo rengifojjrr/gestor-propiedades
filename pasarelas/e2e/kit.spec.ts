@@ -431,27 +431,30 @@ test.describe("pulido del kit", () => {
     await expect(calls).toHaveText("Llamadas: onClose 1");
   });
 
-  test("diálogo: usar su barra de desplazamiento no lo cierra", async ({ page }) => {
-    test.skip(isPhone(page), "En el celular la barra va superpuesta y no se puede tocar");
-    // Tan bajo que el diálogo no cabe y tiene que desplazarse por dentro.
-    await page.setViewportSize({ width: 1280, height: 300 });
+  test("diálogo: un clic en su borde (llega al propio <dialog>, como los de su barra de desplazamiento) no lo cierra", async ({ page }) => {
     await openKit(page);
+    const calls = page.getByTestId("llamadas-dialogo");
     await page.getByRole("button", { name: "Abrir diálogo" }).click();
     const dialog = page.getByRole("dialog", { name: "Marcar como depositado" });
     await expect(dialog).toBeVisible();
-    const bar = await dialog.evaluate((el: HTMLElement) => {
+    // El borde izquierdo, a media altura: es del <dialog> (no de su contenido) y está dentro de su caja.
+    const edge = await dialog.evaluate((el) => {
       const box = el.getBoundingClientRect();
-      const width = el.offsetWidth - el.clientWidth - 2; // sin los dos bordes de 1 px
-      return { width, overflows: el.scrollHeight > el.clientHeight, x: box.right - 1 - width / 2, top: box.top, height: box.height };
+      const point = { x: Math.floor(box.left), y: Math.floor(box.top + box.height / 2) };
+      return { ...point, isTheDialog: document.elementFromPoint(point.x, point.y) === el };
     });
-    expect(bar.overflows).toBe(true);
-    expect(bar.width).toBeGreaterThan(4);
+    expect(edge.isTheDialog).toBe(true);
 
-    // Un clic en el riel de la barra, cerca del final: desplaza el contenido y el diálogo sigue ahí.
-    await page.mouse.click(bar.x, bar.top + bar.height - 30);
-    await expect.poll(() => dialog.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    await page.mouse.click(edge.x, edge.y);
     await expect(dialog).toBeVisible();
-    await expect(page.getByTestId("llamadas-dialogo")).toHaveText("Llamadas: onClose 0");
+
+    // Tampoco si se aprieta ahí y se suelta ya sobre el fondo (como al arrastrar la barra y salirse).
+    await page.mouse.move(edge.x, edge.y);
+    await page.mouse.down();
+    await page.mouse.move(BACKDROP.x, BACKDROP.y, { steps: 8 });
+    await page.mouse.up();
+    await expect(dialog).toBeVisible();
+    await expect(calls).toHaveText("Llamadas: onClose 0");
   });
 
   const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
