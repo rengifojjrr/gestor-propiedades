@@ -3,7 +3,7 @@
 import { useId, useState } from "react";
 import { Alert, Card, CardBody, CardHeader, CardTitle, notify, SubmitButton } from "@/components/ui";
 import { updateGateway } from "@/server/pasarelas/actions/gateways";
-import { type FieldErrors, type GatewayDraft } from "./drafts";
+import { NETWORK_TEXT, type FieldErrors, type GatewayDraft } from "./drafts";
 import { GatewayFieldsInputs } from "./GatewayFieldsInputs";
 
 /** «Datos» de la pasarela: se editan aquí. Su tarifa y sus opciones van aparte. */
@@ -14,7 +14,14 @@ export function GatewaySettingsForm({ id, initial }: { id: string; initial: Gate
   const [errors, setErrors] = useState<FieldErrors>(undefined);
 
   async function submit() {
-    const result = await updateGateway({ id, ...value });
+    let result;
+    try {
+      result = await updateGateway({ id, ...value });
+    } catch {
+      // Sin conexión: se dice aquí, sin perder lo escrito (si no, la pantalla entera pasaría a su error).
+      setError(NETWORK_TEXT);
+      return;
+    }
     if (!result.ok) {
       setError(result.error);
       setErrors(result.fieldErrors);

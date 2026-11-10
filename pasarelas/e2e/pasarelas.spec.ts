@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 import { ZONE, addDays, todayNY, wallTimeToInstant } from "../src/lib/pasarelas/dates";
 import { signInAal1, type Db } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
@@ -44,6 +44,18 @@ async function charge(on: string, extra: { status?: "depositado"; depositedOn?: 
 async function gatewayLine(id: string): Promise<string | undefined> {
   const [tx] = await serverData().getSnapshots(client, [id]);
   return tx?.breakdown.lines.find((line) => line.kind === "pasarela")?.amount;
+}
+
+/** Lo que dice un formulario cuando la llamada no llegó: no se sabe si se guardó. */
+const NETWORK_TEXT =
+  "Se perdió la conexión y no se sabe si se guardó. Revísalo antes de repetirlo: lo escrito sigue aquí.";
+
+/** Corta la conexión de las acciones (los POST) que se manden a `url`, hasta que se devuelva. */
+async function cutActions(page: Page, url: string): Promise<() => Promise<void>> {
+  const handler = (route: Route) =>
+    route.request().method() === "POST" ? route.abort("internetdisconnected") : route.continue();
+  await page.route(url, handler);
+  return () => page.unroute(url, handler);
 }
 
 async function checkScreen(page: Page): Promise<void> {
@@ -203,5 +215,46 @@ test("opciones con su interruptor y su diálogo, y los datos de la pasarela", as
   await expect(page.getByRole("region", { name: "Tiempo real de depósito" })).toContainText("3 días hábiles");
   await page.reload();
   await expect(page.getByRole("region", { name: "Datos" }).getByLabel("Días al depósito")).toHaveValue("3");
+  await checkScreen(page);
+});
+
+test("si se corta la conexión al crear una pasarela se dice en el formulario, y lo escrito sigue ahí", async ({ page }) => {
+  await login(page, user);
+  await page.goto("/pasarelas/pasarelas/nueva");
+  await page.getByLabel("Nombre", { exact: true }).fill("Zelle Demo");
+  await page.getByLabel("Comisión", { exact: true }).fill("0");
+  await page.getByRole("button", { name: "Agregar opción" }).click();
+  const option = page.getByRole("group", { name: "Opción 1" });
+  await option.getByLabel("Nombre de la opción").fill("Envío Demo");
+  await option.getByLabel("Porcentaje").fill("1");
+
+  const restore = await cutActions(page, "**/pasarelas/pasarelas/nueva");
+  await page.getByRole("button", { name: "Crear pasarela" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: NETWORK_TEXT })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Agregar pasarela" })).toBeVisible();
+  await expect(page.getByLabel("Nombre", { exact: true })).toHaveValue("Zelle Demo");
+  await expect(page.getByLabel("Comisión", { exact: true })).toHaveValue("0");
+  await expect(option.getByLabel("Nombre de la opción")).toHaveValue("Envío Demo");
+  await expect(option.getByLabel("Porcentaje")).toHaveValue("1");
+  await checkScreen(page);
+
+  await restore();
+  await page.getByRole("button", { name: "Crear pasarela" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Zelle Demo" })).toBeVisible();
+});
+
+test("si se corta la conexión al guardar los datos de una pasarela se dice en su tarjeta, y lo escrito sigue ahí", async ({
+  page,
+}) => {
+  await login(page, user);
+  await page.goto(`/pasarelas/pasarelas/${user.basics.gatewayId}`);
+  const data = page.getByRole("region", { name: "Datos" });
+  await data.getByLabel("Días al depósito").fill("5");
+
+  await cutActions(page, `**/pasarelas/pasarelas/${user.basics.gatewayId}`);
+  await data.getByRole("button", { name: "Guardar cambios" }).click();
+  await expect(data.getByRole("alert")).toHaveText(NETWORK_TEXT);
+  await expect(page.getByRole("heading", { level: 1, name: "Stripe" })).toBeVisible();
+  await expect(data.getByLabel("Días al depósito")).toHaveValue("5");
   await checkScreen(page);
 });

@@ -23,6 +23,13 @@ export type SchemeDraft = {
 type LineDraft = { key: string; beneficiaryId: string; pct: string };
 type FieldErrors = Record<string, string[] | undefined> | undefined;
 
+/**
+ * Lo que dice el editor cuando la llamada no llegó o no volvió (sin conexión). La petición pudo llegar y perderse
+ * solo la respuesta: por eso no invita a repetir a ciegas.
+ */
+const NETWORK_TEXT =
+  "Se perdió la conexión y no se sabe si se guardó. Revísalo antes de repetirlo: lo escrito sigue aquí.";
+
 /** "33.3333" → "33,3333": como lo escribiría una persona. */
 const pctDraft = (pct: Pct): string => pct.replace(".", ",");
 
@@ -70,14 +77,21 @@ export function SchemeEditor({
     setLines((rows) => rows.map((row) => (row.key === key ? { ...row, ...patch } : row)));
 
   async function submit() {
-    const result = await saveScheme({
-      schemeId,
-      name,
-      base,
-      remainderBeneficiaryId: remainder || null,
-      effectiveFrom: sinceStart ? SINCE_START : date,
-      lines: lines.map((line) => ({ beneficiaryId: line.beneficiaryId, pct: line.pct })),
-    });
+    let result;
+    try {
+      result = await saveScheme({
+        schemeId,
+        name,
+        base,
+        remainderBeneficiaryId: remainder || null,
+        effectiveFrom: sinceStart ? SINCE_START : date,
+        lines: lines.map((line) => ({ beneficiaryId: line.beneficiaryId, pct: line.pct })),
+      });
+    } catch {
+      // Sin conexión: se dice aquí, sin perder lo escrito (si no, la pantalla entera pasaría a su error).
+      setError(NETWORK_TEXT);
+      return;
+    }
     if (!result.ok) {
       setError(result.error);
       setErrors(result.fieldErrors);

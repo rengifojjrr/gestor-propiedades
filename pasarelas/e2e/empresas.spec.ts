@@ -327,6 +327,28 @@ test.describe.serial("empresas", () => {
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
   });
 
+  test("si se corta la conexión al guardar un esquema se dice en el editor, y lo escrito sigue ahí", async ({ page }) => {
+    await login(page, owner);
+    await page.goto(`/pasarelas/repartos/esquemas/${owner.basics.schemeId}`);
+    const editor = page.getByRole("region", { name: "Versión nueva" });
+    await editor.getByLabel("Nombre del esquema").fill("Reparto 60/20/20");
+    const first = editor.getByRole("group", { name: "Línea 1" }).getByLabel("Porcentaje");
+    await first.fill("60");
+    await editor.getByRole("group", { name: "Línea 2" }).getByLabel("Porcentaje").fill("20");
+
+    await page.route(`**/pasarelas/repartos/esquemas/${owner.basics.schemeId}`, (route) =>
+      route.request().method() === "POST" ? route.abort("internetdisconnected") : route.continue(),
+    );
+    await editor.getByRole("button", { name: "Guardar versión nueva" }).click();
+    await expect(editor.getByRole("alert")).toHaveText(
+      "Se perdió la conexión y no se sabe si se guardó. Revísalo antes de repetirlo: lo escrito sigue aquí.",
+    );
+    await expect(page.getByRole("heading", { level: 1, name: "Reparto 50/30/20" })).toBeVisible();
+    await expect(editor.getByLabel("Nombre del esquema")).toHaveValue("Reparto 60/20/20");
+    await expect(first).toHaveValue("60");
+    await expectCleanScreen(page);
+  });
+
   test("las notas no admiten un número de tarjeta; una empresa con cobros no se borra y una sin cobros sí", async ({
     page,
   }) => {
