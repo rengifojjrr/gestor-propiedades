@@ -44,6 +44,9 @@ export default defineConfig({
     ? undefined
     : {
         command: `npm run build && npm run start -- -p ${PORT}`,
+        // La galería del kit (/kit) no existe en un build de producción salvo con esta variable:
+        // aquí va encendida para que `e2e/kit.spec.ts` pueda probarla.
+        env: { PASARELAS_KIT: "1" },
         // Se espera la raíz, que siempre responde (con la página o con la redirección a la entrada).
         url: LOCAL_URL,
         // Reutilizar lo que hubiera en el puerto probaría el código de otro (otra tarea, otro worktree) sin
