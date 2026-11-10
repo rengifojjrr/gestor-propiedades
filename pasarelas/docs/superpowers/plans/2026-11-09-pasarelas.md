@@ -1126,7 +1126,14 @@ Reglas:
 **Consume:** tarea 27 (`detectFormat`, `presetFor`, `validateMapping`, `mapRows`), `planCreate`, `saveTx`,
 `runAction`, `getPayConfig`. **Produce (acciones):** `importTransactions` (`{ companyId, gatewayId, channelId,
 extraIds, useReportedFee, rows: ImportRow[] }` en lotes de 500 → `{ created, duplicates }`) y `saveImportMapping`
-(`{ gatewayId, mapping }` → `pay_gateways.import_mapping`).
+(`{ gatewayId, format, mapping }` → `pay_gateways.import_mapping`).
+
+> **Forma de `pay_gateways.import_mapping`** (decidida al implementar): un sobre `{ format: ImportFormat, mapping:
+> ColumnMapping }`, no el `ColumnMapping` suelto. El formato sirve para avisar cuando llega a la misma pasarela un
+> archivo de otro formato (Stripe saldo y Stripe pagos dan referencias distintas al mismo cobro: «Ojo: puede duplicar
+> cobros», con la casilla «Son otros cobros: importar igual»). `getImportMappings` (`queries/import.ts`) valida esa
+> forma con Zod e **ignora sin avisar** lo que no la tenga: la semilla (tarea 20) o cualquier otra tarea que escriba
+> el mapeo tiene que usar el sobre.
 
 - [ ] El archivo se lee **en el navegador** con papaparse (no se sube): se detecta el formato por encabezados, se
       propone el mapeo y se puede ajustar; el mapeo se recuerda por pasarela. Se eligen empresa, pasarela, canal y
