@@ -16,7 +16,8 @@ function CurrencyTotals({ totals, showCurrency }: { totals: BankAccountTotals; s
   return (
     <div className="flex flex-col gap-3">
       {showCurrency ? <p className="text-sm font-semibold text-ink-soft">{totals.currency}</p> : null}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Lado a lado si caben; si una cifra es larga (miles en otra moneda), la segunda baja: nada se desborda. */}
+      <div className="flex flex-wrap gap-x-10 gap-y-3">
         <Stat
           label="Depositado"
           value={<Money value={totals.depositedNet} currency={totals.currency} />}
