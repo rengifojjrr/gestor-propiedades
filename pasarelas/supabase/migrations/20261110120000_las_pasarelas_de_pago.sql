@@ -774,6 +774,8 @@ from public.pay_transactions t
 where t.deleted_at is null and t.status <> 'fallido'
 group by t.user_id, t.gateway_id, t.currency;
 
+-- «Por caer» (pending_*) es lo que se VE como registrado o en tránsito, igual que `isPending` del motor: sin
+-- depositar, sin la disputa abierta (la columna puede ser nula) y sin reembolso total (le queda bruto vigente).
 create view public.pay_bank_account_totals
 with (security_invoker = true) as
 select
@@ -782,8 +784,10 @@ select
   t.currency,
   (count(*) filter (where t.status = 'depositado'))::integer as deposited_count,
   coalesce(sum(t.net_amount) filter (where t.status = 'depositado'), 0)::numeric(16,2) as deposited_net,
-  (count(*) filter (where t.status in ('registrado', 'en_transito')))::integer as pending_count,
-  coalesce(sum(t.net_amount) filter (where t.status in ('registrado', 'en_transito')), 0)::numeric(16,2) as pending_net,
+  (count(*) filter (where t.status in ('registrado', 'en_transito') and t.gross_amount > 0
+     and t.dispute_state is distinct from 'abierta'))::integer as pending_count,
+  coalesce(sum(t.net_amount) filter (where t.status in ('registrado', 'en_transito') and t.gross_amount > 0
+     and t.dispute_state is distinct from 'abierta'), 0)::numeric(16,2) as pending_net,
   round(avg(t.deposited_on - t.occurred_on) filter (where t.status = 'depositado'), 2) as avg_days,
   (percentile_cont(0.5) within group (order by (t.deposited_on - t.occurred_on))
      filter (where t.status = 'depositado'))::numeric(8,2) as median_days

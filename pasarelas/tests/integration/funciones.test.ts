@@ -574,6 +574,56 @@ describe("las vistas de totales cuadran con lo guardado", () => {
     });
   });
 
+  it("por caer en una cuenta: no cuentan el cobro con la disputa abierta ni el reembolsado del todo", async () => {
+    // Usuario aparte, con tres cobros E1 sin depositar en la misma cuenta.
+    const otro = (await createUser()).client;
+    const suyo = await seedBasics(otro);
+    const grupos = suyo.beneficiaryIds;
+    const reparto = (a: string, b: string, c: string): SaveItem["allocations"] => [
+      { beneficiary_id: grupos.a, amount: a, base: "neto", pct: "50", is_remainder: false },
+      { beneficiary_id: grupos.b, amount: b, base: "neto", pct: "30", is_remainder: false },
+      { beneficiary_id: grupos.c, amount: c, base: "neto", pct: "20", is_remainder: false },
+    ];
+    // E6: disputa abierta con costo de 15,00.
+    const enDisputa = e1Item(suyo, {
+      dispute_state: "abierta",
+      dispute_opened_on: "2026-11-14",
+      fees_total: "24.70",
+      net_amount: "75.30",
+      alloc_base_amount: "75.30",
+    });
+    enDisputa.allocations = reparto("37.65", "22.59", "15.06");
+    // E4: reembolso total; la pasarela no devuelve su comisión.
+    const reembolsado = e1Item(suyo, {
+      status: "en_transito",
+      refunded_amount: "100.00",
+      gross_amount: "0.00",
+      fees_total: "3.20",
+      net_amount: "-3.20",
+      alloc_base_amount: "-3.20",
+    });
+    reembolsado.allocations = reparto("-1.60", "-0.96", "-0.64");
+
+    await saveTransactions(otro, [e1Item(suyo), enDisputa, reembolsado]);
+
+    const cuenta = unwrap(
+      await otro
+        .from("pay_bank_account_totals")
+        .select("bank_account_id, currency, pending_count, pending_net::text, deposited_count, deposited_net::text"),
+      "totales por cuenta",
+    );
+    expect(cuenta).toEqual([
+      {
+        bank_account_id: suyo.bankAccountId,
+        currency: "USD",
+        pending_count: 1,
+        pending_net: "90.30",
+        deposited_count: 0,
+        deposited_net: "0.00",
+      },
+    ]);
+  });
+
   it("liquidado todo y después reembolsado (E4): los saldos quedan en −46,75 · −28,05 · −18,70", async () => {
     unwrap(
       await db
