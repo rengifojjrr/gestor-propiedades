@@ -12,8 +12,9 @@ export const metadata: Metadata = { title: "Registrar cobro" };
 
 /**
  * «Registrar cobro». La configuración llega entera al formulario: la vista previa calcula con ella en el navegador,
- * con el mismo motor que el servidor. Lo que depende del reloj o del azar (la hora de «ahora» y el id del primer
- * cobro) se calcula aquí, una vez: así el servidor y el navegador pintan lo mismo.
+ * con el mismo motor que el servidor. La hora de «ahora» se calcula aquí, una vez: así el servidor y el navegador
+ * pintan lo mismo. El id del cobro no viene de aquí: nace en el navegador (ver `RegisterForm`), para que una página
+ * guardada por el navegador y vuelta a mostrar con «Atrás» no traiga el id de un cobro ya guardado.
  */
 export default async function RegistrarPage() {
   await requireSession();
@@ -56,12 +57,5 @@ export default async function RegistrarPage() {
           currency: tx.currency,
         };
 
-  return (
-    <RegisterForm
-      cfg={cfg}
-      initialId={crypto.randomUUID()}
-      now={instantToLocalInput(new Date().toISOString())}
-      last={last}
-    />
-  );
+  return <RegisterForm cfg={cfg} now={instantToLocalInput(new Date().toISOString())} last={last} />;
 }

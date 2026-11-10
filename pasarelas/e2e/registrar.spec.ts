@@ -267,6 +267,42 @@ test.describe.serial("registrar cobro", () => {
     await expectCleanScreen(page);
   });
 
+  test("«Atrás»: volver al formulario desde otra pantalla y guardar otro cobro deja dos cobros", async ({ page }) => {
+    const tag = randomUUID().slice(0, 8);
+    const monto = page.getByLabel("Monto");
+
+    await login(page, owner);
+    await openForm(page);
+    await chooseE1(page);
+    const refA = `ATRAS-A-${tag}`;
+    await monto.fill("70");
+    await page.getByLabel("Referencia").fill(refA);
+    await page.getByRole("button", { name: "Guardar" }).click();
+    await expect(monto).toHaveValue("");
+    await expect.poll(async () => (await savedWith(ownerDb, refA)).length).toBe(1);
+
+    // A otra pantalla del menú y de vuelta con «Atrás»: el formulario sale de nuevo, y el cobro que se guarde ahora
+    // es otro, no el anterior.
+    await page.getByRole("navigation", { name: "Principal" }).getByRole("link", { name: "Cobros", exact: true }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Cobros" })).toBeVisible();
+    await page.goBack();
+    await expect(page.getByRole("heading", { level: 1, name: "Registrar cobro" })).toBeVisible();
+
+    await chooseE1(page);
+    const refB = `ATRAS-B-${tag}`;
+    await monto.fill("35");
+    await page.getByLabel("Referencia").fill(refB);
+    await page.getByRole("button", { name: "Guardar" }).click();
+    await expect(monto).toHaveValue("");
+    await expect(page.getByRole("main").getByRole("alert")).toHaveCount(0);
+
+    await expect.poll(async () => (await savedWith(ownerDb, refB)).length).toBe(1);
+    const [savedA] = await savedWith(ownerDb, refA);
+    const [savedB] = await savedWith(ownerDb, refB);
+    expect(savedB?.id).not.toBe(savedA?.id);
+    await expectCleanScreen(page);
+  });
+
   test("si la subida del comprobante falla, el cobro queda guardado y «Reintentar comprobante» lo sube a ese cobro", async ({
     page,
   }) => {

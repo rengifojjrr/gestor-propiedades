@@ -30,8 +30,6 @@ export type RegisterSelection = {
 export type RegisterFormProps = {
   /** La configuración del usuario: la misma con la que calcula el servidor. */
   cfg: PayConfig;
-  /** El id del primer cobro, puesto por la página (en el servidor): el mismo al pintar y al hidratar. */
-  initialId: string;
   /** «Ahora» en Nueva York (`AAAA-MM-DDTHH:mm`), calculado por la página. */
   now: string;
   /** La selección del último cobro, para «Repetir el último». */
@@ -69,10 +67,11 @@ type PendingReceipt = {
  * moneda → fecha y hora → referencia → comprobante, y lo demás en «Más opciones». La vista previa se calcula al
  * momento con el mismo motor que el servidor; lo que se guarda lo vuelve a calcular el servidor.
  *
- * El id del cobro viaja con el envío: el mismo envío repetido no registra dos cobros. Cambia solo después de un
- * guardado correcto.
+ * El id del cobro viaja con el envío: el mismo envío repetido no registra dos cobros. Nace en el navegador al montar
+ * el formulario (no se pinta, así que no cambia lo que se hidrata) y cambia después de cada guardado correcto: un
+ * formulario que vuelve a montarse, p. ej. al volver con «Atrás», nunca reusa el id de un cobro ya guardado.
  */
-export function RegisterForm({ cfg, initialId, now, last }: RegisterFormProps) {
+export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
   const router = useRouter();
   const companies = cfg.companies.filter((company) => company.active);
   const gateways = cfg.gateways.filter((gateway) => gateway.active);
@@ -113,7 +112,7 @@ export function RegisterForm({ cfg, initialId, now, last }: RegisterFormProps) {
   const [depositedOn, setDepositedOn] = useState("");
   const [note, setNote] = useState("");
 
-  const [id, setId] = useState(initialId);
+  const [id, setId] = useState(() => crypto.randomUUID());
   const [saving, setSaving] = useState(false);
   // El estado tarda un pintado en llegar al botón: esta marca frena en el acto un segundo envío.
   const savingRef = useRef(false);
