@@ -6,7 +6,8 @@ import tseslint from 'typescript-eslint';
 
 export default defineConfig([
   // `pasarelas/` es otro proyecto (Next + Supabase) con su propio ESLint: aquí no se recorre.
-  globalIgnores(['dist', 'dev-dist', 'node_modules', '_referencias', 'playwright-report', 'test-results', '.npm-cache', 'public', 'pasarelas']),
+  // `.claude/` guarda los worktrees temporales de los agentes (copias enteras del repo): no son código del gestor.
+  globalIgnores(['dist', 'dev-dist', 'node_modules', '_referencias', 'playwright-report', 'test-results', '.npm-cache', 'public', 'pasarelas', '.claude']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [js.configs.recommended, tseslint.configs.recommended],
