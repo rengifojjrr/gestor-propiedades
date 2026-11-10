@@ -146,11 +146,12 @@ const FIELDS: readonly [Field, string, boolean][] = [
  * Columnas con datos del comprador (correo, nombre, teléfono, dirección completa o por partes: ciudad, código postal,
  * estado o provincia, país), por su nombre ya normalizado. «city», «state» y «país» van como palabra suelta, para
  * no tocar «Velocity», «Statement Descriptor» ni «Status»; el borde de palabra es cualquier cosa que no sea letra
- * ni dígito, así que el guion bajo también separa («billing_state»). «Estado» no se toca porque casi siempre es el
- * estado del cobro.
+ * ni dígito, así que el guion bajo también separa («billing_state»). Las partes de la dirección de facturación o de
+ * envío escritas todo junto («BillingCity», «ShipToState») se reconocen por su prefijo. «Estado» no se toca porque
+ * casi siempre es el estado del cobro.
  */
 const BUYER_COLUMN =
-  /mail|correo|name|nombre|address|direcci|domicilio|customer|cliente|buyer|comprador|payer|pagador|phone|tel[eé]fono|ciudad|town|localidad|municipio|zip|postal|province|provincia|country|(?<![\p{L}\p{N}])(?:city|state|pa[ií]s)(?![\p{L}\p{N}])/u;
+  /mail|correo|name|nombre|address|direcci|domicilio|customer|cliente|buyer|comprador|payer|pagador|phone|tel[eé]fono|ciudad|town|localidad|municipio|zip|postal|province|provincia|country|(?:billing|shipping|ship ?to|bill ?to)[\s_-]?(?:city|state|region)|(?<![\p{L}\p{N}])(?:city|state|pa[ií]s)(?![\p{L}\p{N}])/u;
 
 const CURRENCY = /^[A-Z]{3}$/;
 

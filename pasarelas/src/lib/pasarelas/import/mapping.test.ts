@@ -200,6 +200,12 @@ describe("validateMapping", () => {
     "shipping_city",
     "customer_country",
     "direccion_pais",
+    // Todo junto, sin separador: el prefijo de facturación o de envío lo delata.
+    "BillingCity",
+    "ShippingCity",
+    "ShipToCity",
+    "ShipToState",
+    "BillToRegion",
   ])("la nota y la referencia no pueden salir de «%s» (datos del comprador)", (columna) => {
     const encabezados = [...ENCABEZADOS, columna];
     const motivo = (campo: string) =>
