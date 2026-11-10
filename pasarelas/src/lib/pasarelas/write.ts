@@ -353,7 +353,11 @@ function sameIds(a: readonly string[], b: readonly string[]): boolean {
 /**
  * La edición de un cobro. Solo se vuelven a resolver las reglas de lo que cambió (pasarela, canal, opciones,
  * esquema o fecha); lo demás conserva lo congelado, igual que el reembolso, la disputa y el «fallido». La fecha
- * estimada se recalcula si cambió la fecha, la pasarela o las opciones, salvo que esté puesta a mano.
+ * estimada se recalcula si cambió la fecha, la empresa, la pasarela o las opciones, salvo que esté puesta a mano.
+ *
+ * La cuenta destino es la que diga la edición (`bankAccountId`). Si no dice ninguna y cambia la empresa o la
+ * pasarela, vuelve a ser la de la cuenta de esa pasarela en esa empresa (o ninguna): la de antes era de otra. Ese
+ * cambio es una consecuencia y el resumen del historial no lo lista, igual que no lista la fecha estimada.
  *
  * Una disputa perdida es un reembolso total (spec §5.2.7): ahí lo reembolsado sigue al monto, suba o baje.
  *
@@ -411,7 +415,11 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
     anyRule || grossOriginal !== tx.grossOriginal || currency !== tx.currency
       ? compute(reResolve(prev.rules, cfg, sel, again), state, currency)
       : prev;
-  const movesDeposit = (changed.date || changed.gateway || changed.extras) && !tx.estimatedIsManual;
+  // Los días y la cuenta destino salen de la cuenta de la pasarela en la empresa: cambian con cualquiera de las dos.
+  const movesDeposit =
+    (changed.date || changed.company || changed.gateway || changed.extras) && !tx.estimatedIsManual;
+  const movesAccount = (changed.company || changed.gateway) && input.bankAccountId === undefined;
+  const automatic = () => payout(cfg, sel, b.rules.extras);
   return update(
     tx,
     {
@@ -423,8 +431,8 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
       gatewayId: sel.gatewayId,
       reference: input.reference,
       note: input.note,
-      bankAccountId: input.bankAccountId,
-      estimatedDepositOn: movesDeposit ? payout(cfg, sel, b.rules.extras).on : undefined,
+      bankAccountId: movesAccount ? automatic().bankAccountId : input.bankAccountId,
+      estimatedDepositOn: movesDeposit ? automatic().on : undefined,
     },
     "editado",
     `Editado: ${labels.join(", ")}`,

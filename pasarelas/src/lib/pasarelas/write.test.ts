@@ -610,6 +610,45 @@ describe("planEdit", () => {
     save(write, tx);
   });
 
+  test("cambiar de pasarela vuelve a poner la cuenta destino por defecto, salvo que la edición diga otra", () => {
+    const tx = savedE1();
+    expect(tx.bankAccountId).toBe(DEMO.bankAccountId);
+
+    // La empresa no tiene cuenta de PayPal: no hay cuenta destino por defecto.
+    const bare = planEdit(withPayPal(cfgDemo()), tx, { gatewayId: "gw-paypal", extraIds: [] });
+    expect(bare.fields.bankAccountId).toBeNull();
+    expect(bare.event.summary).toBe("Editado: pasarela, opciones");
+    save(bare, tx);
+
+    // Con su cuenta de PayPal, que cae en otra cuenta destino: esa.
+    const cfg = withPayPal(cfgDemo());
+    cfg.bankAccounts.push({ id: "ba-paypal", alias: "Cuenta de PayPal", last4: "1111", currency: "USD", active: true });
+    cfg.companyGateways.push({
+      id: "cg-escuela-paypal",
+      companyId: DEMO.companyId,
+      gatewayId: "gw-paypal",
+      bankAccountId: "ba-paypal",
+      payoutDaysOverride: null,
+      defaultExtraIds: null,
+      active: true,
+    });
+    const moved = planEdit(cfg, tx, { gatewayId: "gw-paypal", extraIds: [] });
+    expect(moved.fields.bankAccountId).toBe("ba-paypal");
+    save(moved, tx);
+
+    // Dicha en la edición (aunque sea la misma de antes): no se toca.
+    const kept = planEdit(cfg, tx, { gatewayId: "gw-paypal", extraIds: [], bankAccountId: DEMO.bankAccountId });
+    expect("bankAccountId" in kept.fields).toBe(false);
+    save(kept, tx);
+  });
+
+  test("sin cambiar de empresa ni de pasarela, la cuenta destino elegida a mano se conserva", () => {
+    const tx = savedE1({ bankAccountId: "ba-otra" });
+    const write = planEdit(cfgDemo(), tx, { extraIds: [], occurredAt: "2026-11-16T15:30:00Z" });
+    expect("bankAccountId" in write.fields).toBe(false);
+    expect(save(write, tx).bankAccountId).toBe("ba-otra");
+  });
+
   test("cambiar de pasarela sin decir qué opciones lleva no se adivina: las viejas no son de la nueva", () => {
     expectRuleError(() => planEdit(withPayPal(cfgDemo()), savedE1(), { gatewayId: "gw-paypal" }), "opcion");
   });
@@ -789,13 +828,77 @@ describe("planEdit", () => {
       save(write, tx);
     });
 
-    test("un cobro sin canal: solo cambia la empresa", () => {
+    /** «Tienda Demo» con su propia cuenta de Stripe: cae en otra cuenta destino y tarda 5 días hábiles. */
+    function cfgWithShopAccount(): PayConfig {
+      const cfg = cfgWithShop();
+      cfg.bankAccounts.push({
+        id: "ba-tienda",
+        alias: "Cuenta de la tienda",
+        last4: "9876",
+        currency: "USD",
+        active: true,
+      });
+      cfg.companyGateways.push({
+        id: "cg-tienda-stripe",
+        companyId: "co-tienda",
+        gatewayId: DEMO.gatewayId,
+        bankAccountId: "ba-tienda",
+        payoutDaysOverride: 5,
+        defaultExtraIds: null,
+        active: true,
+      });
+      return cfg;
+    }
+
+    test("un cobro sin canal: cambia la empresa, y la cuenta destino pasa a ser la suya (aquí, ninguna)", () => {
       const tx = savedE1({ channelId: null });
+      expect(tx.bankAccountId).toBe(DEMO.bankAccountId);
+      // «Tienda Demo» no tiene cuenta de Stripe: no hay cuenta destino por defecto. Con «Pago rápido» cae el mismo
+      // día, así que la fecha estimada no se mueve.
       const write = planEdit(cfgWithShop(), tx, { companyId: "co-tienda" });
-      expect(write.fields).toEqual({ companyId: "co-tienda" });
+      expect(write.fields).toEqual({ companyId: "co-tienda", bankAccountId: null });
       expect(write.allocations).toBeNull();
       expect(write.event.summary).toBe("Editado: empresa");
       save(write, tx);
+    });
+
+    test("la fecha estimada automática y la cuenta destino son las de la empresa nueva", () => {
+      const tx = savedE1({ channelId: null, extraIds: [] });
+      expect([tx.estimatedDepositOn, tx.bankAccountId]).toEqual([MARTES, DEMO.bankAccountId]);
+      const write = planEdit(cfgWithShopAccount(), tx, { companyId: "co-tienda" });
+      // Viernes 13 + 5 días hábiles (los de la cuenta de Stripe de la tienda) = viernes 20.
+      expect(write.fields).toEqual({
+        companyId: "co-tienda",
+        bankAccountId: "ba-tienda",
+        estimatedDepositOn: "2026-11-20",
+      });
+      expect(write.allocations).toBeNull();
+      expect(write.event.summary).toBe("Editado: empresa");
+      expect(write.event.data).toMatchObject({
+        antes: { fechaEstimada: MARTES },
+        despues: { fechaEstimada: "2026-11-20" },
+      });
+      save(write, tx);
+    });
+
+    test("una fecha estimada puesta a mano no se pisa al cambiar de empresa; la cuenta destino sí cambia", () => {
+      const tx = savedE1({ channelId: null, extraIds: [], estimatedDepositOn: "2026-11-25" });
+      const write = planEdit(cfgWithShopAccount(), tx, { companyId: "co-tienda" });
+      expect(write.fields).toEqual({ companyId: "co-tienda", bankAccountId: "ba-tienda" });
+      expect(save(write, tx).estimatedDepositOn).toBe("2026-11-25");
+    });
+
+    test("con la cuenta destino dicha en la edición, manda esa y no la de la empresa nueva", () => {
+      const tx = savedE1({ channelId: null });
+      const kept = planEdit(cfgWithShopAccount(), tx, { companyId: "co-tienda", bankAccountId: DEMO.bankAccountId });
+      expect("bankAccountId" in kept.fields).toBe(false);
+      expect(kept.event.summary).toBe("Editado: empresa");
+      save(kept, tx);
+
+      const none = planEdit(cfgWithShopAccount(), tx, { companyId: "co-tienda", bankAccountId: null });
+      expect(none.fields.bankAccountId).toBeNull();
+      expect(none.event.summary).toBe("Editado: empresa, cuenta destino");
+      save(none, tx);
     });
 
     test("a una empresa que no existe, no", () => {
