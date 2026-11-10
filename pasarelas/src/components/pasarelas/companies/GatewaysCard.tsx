@@ -25,11 +25,22 @@ import {
 } from "@/components/ui";
 import { deleteCompanyGateway, saveCompanyGateway } from "@/server/pasarelas/actions/companies";
 import type { CompanyGateway } from "@/server/pasarelas/queries/companies";
+import { savedWithRefresh } from "../tx/plural";
 import { ExternalLink } from "./ExternalLink";
 import { useActionForm } from "./useActionForm";
 
 const NETWORK_TEXT = "No se pudo quitar. Revisa tu conexión e inténtalo de nuevo.";
 const LINK_CLASS = "font-semibold text-brand underline";
+
+/**
+ * El aviso tras guardar o quitar la cuenta: lo hecho y cuántas fechas estimadas por caer cambiaron; si no se
+ * pudieron recalcular, un aviso de error aparte (la cuenta sí quedó guardada).
+ */
+function announce(done: string, refreshed: number | null): void {
+  const said = savedWithRefresh(done, refreshed);
+  notify.success(said.success);
+  if (said.error !== null) notify.error(said.error);
+}
 
 /** Una pasarela del usuario, con lo que hace falta para elegirla y describir su cuenta en la empresa. */
 export type GatewayOption = {
@@ -118,7 +129,8 @@ function AccountForm({
       }),
     );
     if (!result.ok) return;
-    notify.success(account ? "Pasarela guardada" : "Pasarela agregada");
+    // Sus días al depósito mueven la fecha estimada de lo que está por caer: se dice cuántas cambiaron.
+    announce(account ? "Pasarela guardada." : "Pasarela agregada.", result.data.refreshed);
     onSaved();
   }
 
@@ -292,7 +304,7 @@ export function GatewaysCard({
     }
     setBusy(false);
     setRemoving(null);
-    if (result.ok) notify.success(`${target.name} quitada de la empresa`);
+    if (result.ok) announce(`${target.name} quitada de la empresa.`, result.data.refreshed);
     else notify.error(result.error);
   }
 

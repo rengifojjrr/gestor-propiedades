@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { crc32, deflateSync } from "node:zlib";
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { todayNY } from "../src/lib/pasarelas/dates";
+import { ZONE, todayNY, wallTimeToInstant } from "../src/lib/pasarelas/dates";
 import { adminClient, e1Item, saveTransactions, signInAal1 } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
 import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
+import { serverData } from "./server-data";
 
 /**
  * Empresas: la lista, crear una con su canal y su cuenta de Stripe con links, y la ficha con su resumen. En el
@@ -182,6 +184,52 @@ test.describe.serial("empresas", () => {
     await expect(page.getByRole("dialog", { name: "Agregar pasarela" })).toContainText(
       "Ya agregaste todas tus pasarelas",
     );
+  });
+
+  test("los días propios de la cuenta, al guardarla o quitarla, dicen cuántas fechas estimadas por caer cambiaron", async ({
+    page,
+  }) => {
+    // Su propio usuario: quitar la cuenta de Stripe de «Escuela Demo» no debe tocar las demás pruebas.
+    const user = await newUser();
+    // Un cobro por caer del viernes 16 de marzo de 2029 con Stripe sin opciones: 2 días hábiles, el martes 20.
+    const client = await signInAal1(user.email, user.password);
+    const id = randomUUID();
+    await serverData().createTx(client, {
+      id,
+      companyId: user.basics.companyId,
+      channelId: null,
+      gatewayId: user.basics.gatewayId,
+      extraIds: [],
+      schemeId: null,
+      occurredOn: "2029-03-16",
+      occurredAt: wallTimeToInstant("2029-03-16T12:00", ZONE),
+      currency: "USD",
+      grossOriginal: "100.00",
+      reference: `pi_e2e_cuenta_${randomUUID().slice(0, 8)}`,
+      note: null,
+    });
+    const estimated = async () => (await serverData().getSnapshots(client, [id]))[0]?.estimatedDepositOn;
+    expect(await estimated()).toBe("2029-03-20");
+
+    await login(page, user);
+    await page.goto(`/pasarelas/empresas/${user.basics.companyId}`);
+    const gateways = page.getByRole("region", { name: "Pasarelas de la empresa" });
+    await gateways.getByRole("button", { name: "Editar Stripe" }).click();
+    const dialog = page.getByRole("dialog", { name: "Editar pasarela" });
+    await dialog.getByLabel("Días hasta el depósito").fill("5");
+    await dialog.getByRole("button", { name: "Guardar pasarela" }).click();
+    await expect(dialog).toBeHidden();
+    await expectToast(page, "Pasarela guardada. Se actualizó la fecha estimada de 1 cobro por caer.");
+    // 5 días hábiles desde el viernes 16: el viernes 23.
+    expect(await estimated()).toBe("2029-03-23");
+    await expectCleanScreen(page);
+
+    // Sin la cuenta, vuelven los días de la pasarela.
+    await gateways.getByRole("button", { name: "Quitar Stripe" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Quitar pasarela" }).click();
+    await expectToast(page, "Stripe quitada de la empresa. Se actualizó la fecha estimada de 1 cobro por caer.");
+    expect(await estimated()).toBe("2029-03-20");
+    await expect(gateways.getByText("Sin pasarelas")).toBeVisible();
   });
 
   test("el logo se sube a la carpeta de la empresa, se ve por su URL firmada y al cambiarlo se borra el anterior", async ({
