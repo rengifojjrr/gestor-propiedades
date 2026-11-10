@@ -604,6 +604,71 @@ que el archivo existe en Storage y que la ruta empieza por `{userId}/{transactio
     decimales; `ensureHolidays` siembra una sola vez.
 - [ ] Implementar. `npm run test:int` en verde.
 
+### Task 23: Ajustes tras las revisiones de las tareas 1 y 2
+
+Lo que las revisiones independientes de las tareas 1 y 2 dejaron por arreglar, más dos decisiones del controlador.
+Va antes de la tarea 8. Es la única tarea, además de la 2, que puede ejecutar `npm run db:reset`.
+
+**Archivos:** modificar `supabase/migrations/20261110120000_las_pasarelas_de_pago.sql` (todavía no se ha aplicado a
+ninguna base remota: se edita en su sitio), `src/lib/supabase/database.types.ts` (regenerado),
+`src/lib/pasarelas/types.ts` (solo `EventKind`), `tests/integration/{helpers.ts,cuadres.test.ts,funciones.test.ts}`,
+`scripts/stack.sh`, `playwright.config.ts`, `next.config.ts`, `AGENTS.md`, `README.md`, `.env.example`,
+`docs/superpowers/specs/2026-11-09-pasarelas-design.md` (§4) y, en la raíz del repo, `eslint.config.js`.
+
+**Produce:** `Basics.companyGatewayId`; `EventKind` con `'disputa_anulada'`; errores nuevos que traduce la tarea 9:
+23505 de `pay_beneficiaries_name_uq` y `pay_schemes_name_uq`.
+
+- [ ] **Base — pruebas primero** (`npm run test:int`; cada una debe fallar contra la migración actual):
+  1. **Nombre único** por usuario, sin distinguir mayúsculas ni espacios de los extremos, también en
+     `pay_beneficiaries` (`pay_beneficiaries_name_uq`) y `pay_schemes` (`pay_schemes_name_uq`): repetido → 23505; el
+     mismo nombre en otro usuario → pasa. (Decisión del controlador: se restaura lo que el arreglo de la tarea 2
+     quitó; la prueba que hoy afirma que se pueden repetir cambia de sentido.) Actualiza la tabla del spec §4.
+  2. `pay_beneficiary_balances` **no cuenta los cobros `fallido`**: un fallido con repartos `5.00` y `-5.00`
+     (suman cero) deja en `0.00` lo asignado de ambos beneficiarios.
+  3. **El cobro ata su versión de esquema a su esquema**: clave foránea `(scheme_version_id, scheme_id, user_id)`
+     hacia `pay_scheme_versions (id, scheme_id, user_id)`. Un cobro con `scheme_id` de un esquema y
+     `scheme_version_id` de otro → 23503.
+  4. **`receipts_count` no se escribe a mano**: un `update` directo que lo cambie deja el valor anterior, y una
+     inserción directa lo deja en 0; subir y quitar un comprobante sigue sumando y restando 1.
+  5. **La base del reparto queda atada al cobro** (`pay_transactions_alloc_base_check`): `alloc_base_amount` es el
+     `net_amount` si `alloc_base = 'neto'`, el `gross_amount` si es `'bruto'` y `0` si no hay esquema; y sin esquema
+     (`scheme_version_id` nulo) también son nulos `scheme_id` y `alloc_base`. Casos: `'neto'` con base ≠ neto →
+     23514; `'bruto'` con base ≠ bruto → 23514; sin esquema con `alloc_base = 'neto'` → 23514; los válidos pasan,
+     incluido un `fallido` con esquema (todo en cero).
+  6. **La referencia se guarda siempre recortada**: una inserción directa con espacios en los extremos → 23514; la
+     función `pay_save_transactions` sigue recortándola y aceptándola.
+  7. En un duplicado saltado (`p_skip_duplicates`), `pay_save_transactions` devuelve el **`id` del cobro que ya
+     existe**, con `inserted: false, skipped: true`.
+  8. `pay_transaction_events.kind` admite `disputa_anulada`; un valor inventado sigue dando 23514. `EventKind` en
+     `types.ts` lo incluye (después de `disputa_perdida`).
+- [ ] Aplicar los ocho cambios en la migración (comentados en español), `npm run db:reset`, `npm run db:types`,
+      y `npm run test:int` en verde. La comprobación final de la migración sigue pasando.
+- [ ] `seedBasics` deja además la empresa con su esquema por defecto (`default_scheme_id`) y crea la cuenta de la
+      pasarela de esa empresa en `pay_company_gateways` (Stripe en «Escuela Demo», con la cuenta destino, sin días
+      propios y sin opciones propias); `Basics` gana `companyGatewayId`.
+- [ ] **Raíz del repo, `eslint.config.js`:** `globalIgnores` incluye también `.claude` (los worktrees temporales de
+      los agentes no son código del gestor). Compruébalo creando un archivo con un error de lint en
+      `.claude/worktrees/prueba/pasarelas/.next/x.js`, corriendo `npx eslint .` en la raíz (0 errores) y borrándolo.
+- [ ] **`next.config.ts`:** `allowedDevOrigins: ["127.0.0.1"]`. En desarrollo Next 16.4 bloquea los orígenes que
+      no sean `localhost`; las pruebas entran por `http://127.0.0.1:<puerto>`. Compruébalo: con `next dev` en tu
+      puerto, abre la página con Playwright por `127.0.0.1`, espera 5 s y confirma que el servidor no imprimió
+      «Blocked cross-origin request» y que la consola del navegador no tiene errores del websocket.
+- [ ] **`scripts/stack.sh`:** (a) con el stack caído, `env` termina con su mensaje «No pude leer…» y código 1 (hoy
+      muere en silencio por `set -e`); (b) `env` conserva las demás variables que ya hubiera en `.env.local` (p. ej.
+      `SEED_EMAIL`, `SEED_PASSWORD`) y solo reemplaza las tres que escribe; (c) `start` vuelve a escribir
+      `.env.local` cuando falta o está vacía `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. **No detengas el stack
+      compartido** para probar (a): simúlalo con una copia temporal del guion.
+- [ ] **`playwright.config.ts`:** el `webServer` espera la raíz (`LOCAL_URL`), no `/login`, y
+      `reuseExistingServer: false` (para reutilizar un servidor ya existe `E2E_BASE_URL`).
+- [ ] **`AGENTS.md`, `README.md`, `.env.example`:** no hacer `db:reset` **ni `db:stop`** con el stack compartido;
+      los pies de commit válidos son `Co-Authored-By: Claude <noreply@anthropic.com>` y `Claude-Session: <enlace>`
+      (lo prohibido son nombres o versiones de modelos); receta de punta a punta en modo producción
+      (`E2E_PORT=31xx npm run test:e2e -- --trace off e2e/<archivo>`) junto a la de desarrollo; `npm ci` **sí**
+      funciona con npm 10 (lo que falla es `npm install` cuando tiene que resolver: para agregar dependencias,
+      `npx npm@11 install`); `db:start` solo escribe `.env.local` si falta o si le falta la clave; `.env.example`
+      remite a `npm run db:env`.
+- [ ] Verificar: `npm run typecheck`, `npm run lint`, `npm test`, `npm run test:int`, `npm run build`.
+
 ---
 
 ## Fase 1 · Pantallas
