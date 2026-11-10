@@ -27,23 +27,34 @@ Qué es y por qué: [`docs/PASARELAS.md`](docs/PASARELAS.md). Diseño: `docs/sup
 ## Comandos (desde `pasarelas/`)
 
 ```bash
-npm ci                 # con npm 10 puede fallar («edgesOut»): usa `npx npm@11 ci`
-npm run db:start       # Supabase local con Docker; escribe .env.local
+npm ci                 # instala lo del lockfile; funciona con npm 10 y con npm 11
+npm run db:start       # Supabase local con Docker; escribe .env.local solo si falta o si le falta la clave
+npm run db:env         # vuelve a escribir en .env.local la URL y las claves del stack (conserva lo demás)
 npm run dev            # http://localhost:3000
 npm run typecheck      # next typegen && tsc --noEmit   (tsc a secas falla en un clon limpio)
 npm run lint           # eslint (no existe `next lint`)
 npm test               # Vitest: pruebas puras junto al código
 npm run coverage       # exige 100 % en src/lib/pasarelas
 npm run test:int       # Vitest contra el Supabase local (tests/integration)
-npm run test:e2e       # Playwright (compila y arranca en el puerto 3100) — pásale `--trace off`
+npm run test:e2e       # Playwright (compila y arranca en el puerto 3100, o en E2E_PORT) — pásale `--trace off`
 npm run db:types       # regenera src/lib/supabase/database.types.ts
 npm run db:reset       # BORRA la base local y vuelve a aplicar las migraciones
+npm run db:stop        # detiene el stack local (para TODOS los que lo estén usando)
 ```
 
-El stack local es **uno solo y compartido**: si hay más gente o agentes trabajando, no hagas `db:reset`; crea tus
-propios usuarios de prueba (cada usuario solo ve lo suyo). Para tu propio servidor usa otro puerto:
-`npx next dev -p 3110` y `E2E_BASE_URL=http://127.0.0.1:3110 npm run test:e2e -- --trace off e2e/<archivo>`.
-Dos `next dev` no arrancan en la misma carpeta.
+Para **agregar o cambiar dependencias** con npm 10 usa `npx npm@11 install <paquete>`: lo que puede fallar con
+npm 10 («edgesOut») es `npm install` cuando tiene que resolver el árbol, no `npm ci`.
+
+El stack local es **uno solo y compartido**: si hay más gente o agentes trabajando, no hagas `db:reset` **ni
+`db:stop`**; crea tus propios usuarios de prueba (cada usuario solo ve lo suyo). Para tu propio servidor usa otro
+puerto. Punta a punta, de dos maneras:
+
+- **Modo producción** (compila y arranca su propio servidor con `next build && next start`):
+  `E2E_PORT=31xx npm run test:e2e -- --trace off e2e/<archivo>`. No reutiliza un servidor ajeno: si el puerto está
+  ocupado, falla.
+- **Desarrollo** (contra un servidor que ya tienes corriendo): `npx next dev -p 31xx` y
+  `E2E_BASE_URL=http://127.0.0.1:31xx npm run test:e2e -- --trace off e2e/<archivo>`.
+  Dos `next dev` no arrancan en la misma carpeta.
 
 ## Next 16.4: lo que NO es como lo recuerdas
 
@@ -113,7 +124,9 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 ## Commits
 
 Pequeños, en español, que digan qué cambia y por qué. Nada de `.env*` (salvo `.env.example`), ni datos reales, ni
-nombres de modelos de IA en mensajes, comentarios o documentos.
+nombres o versiones de modelos de IA en mensajes, comentarios o documentos. Los pies de commit
+`Co-Authored-By: Claude <noreply@anthropic.com>` y `Claude-Session: <enlace>` sí son válidos: lo prohibido es
+nombrar el modelo o su versión.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
