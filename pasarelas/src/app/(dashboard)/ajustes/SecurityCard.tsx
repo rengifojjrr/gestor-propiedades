@@ -1,7 +1,16 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition, type ChangeEvent } from "react";
-import { signOut } from "@/app/(auth)/login/actions";
+import { SignOutForm } from "@/app/(auth)/login/SignOutForm";
+import { ActionError } from "@/components/pasarelas/ActionError";
+import {
+  RETRY_TEXT,
+  UNSURE_TEXT,
+  callActionOr,
+  failureOf,
+  type ActionFailure,
+} from "@/components/pasarelas/callAction";
 import {
   Alert,
   Button,
@@ -60,36 +69,59 @@ function inGroups(secret: string): string {
   return secret.match(/.{1,4}/g)?.join(" ") ?? secret;
 }
 
+/** Confirmar o quitar un dispositivo sin respuesta (un corte): no se sabe si quedó. Va con «Ver cómo quedó». */
+const unsure = () => ({ ok: false as const, error: UNSURE_TEXT, unsure: true as const });
+
 function SecondFactor({ factors }: { factors: VerifiedFactor[] }) {
+  const router = useRouter();
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /** Un corte al confirmar el código: no se sabe si el dispositivo quedó activo. */
+  const [confirmFailure, setConfirmFailure] = useState<ActionFailure | null>(null);
+  const [failure, setFailure] = useState<ActionFailure | null>(null);
   const [toRemove, setToRemove] = useState<VerifiedFactor | null>(null);
   const [removing, startRemoving] = useTransition();
 
+  // Si «Ver cómo quedó» enseña el dispositivo del alta ya activo (el código sí había llegado), el alta terminó: no
+  // se sigue pidiendo el código y vuelve el botón para agregar otro.
+  const enrolling =
+    enrollment !== null && factors.every((factor) => factor.id !== enrollment.factorId) ? enrollment : null;
+
   const start = async () => {
-    const result = await startEnrollment();
+    // Repetirlo tras un corte es seguro: `startEnrollment` quita antes el intento que quedó sin verificar.
+    const result = await callActionOr(startEnrollment, () => ({ ok: false as const, error: RETRY_TEXT }));
     setCodeError(null);
-    setError(result.ok ? null : result.error);
+    setConfirmFailure(null);
+    setFailure(result.ok ? null : failureOf(result));
     if (result.ok) setEnrollment(result);
   };
 
   const confirm = async (formData: FormData) => {
-    const result = await confirmEnrollment(formData);
+    const result = await callActionOr(() => confirmEnrollment(formData), unsure);
     if (!result.ok) {
-      setCodeError(result.error);
+      // El error del código va en su campo; la duda de un corte, con «Ver cómo quedó».
+      const problem = failureOf(result);
+      setCodeError(problem.unsure ? null : problem.text);
+      setConfirmFailure(problem.unsure ? problem : null);
       return;
     }
     setEnrollment(null);
     setCodeError(null);
+    setConfirmFailure(null);
     notify.success("Segundo factor activado");
+  };
+
+  const cancel = () => {
+    // Con la duda de un corte en pantalla, la lista se vuelve a pintar: el dispositivo pudo quedar activo.
+    if (confirmFailure) router.refresh();
+    setEnrollment(null);
   };
 
   const remove = (factor: VerifiedFactor) =>
     startRemoving(async () => {
-      const result = await removeFactor(factor.id);
+      const result = await callActionOr(() => removeFactor(factor.id), unsure);
       setToRemove(null);
-      setError(result.ok ? null : result.error);
+      setFailure(result.ok ? null : failureOf(result));
       if (result.ok) notify.success("Dispositivo quitado");
     });
 
@@ -99,7 +131,7 @@ function SecondFactor({ factors }: { factors: VerifiedFactor[] }) {
       <p className="text-ink-soft">
         Además de la contraseña, entrar pide un código de 6 dígitos que genera una app de autenticación en tu teléfono.
       </p>
-      {error ? <Alert tone="danger" announce title={error} /> : null}
+      <ActionError failure={failure} />
 
       {factors.length > 0 ? (
         <ul className="flex flex-col gap-2">
@@ -124,7 +156,7 @@ function SecondFactor({ factors }: { factors: VerifiedFactor[] }) {
         <p>Todavía no tienes ningún dispositivo: tu cuenta se abre solo con la contraseña.</p>
       )}
 
-      {enrollment ? (
+      {enrolling ? (
         <div className="flex flex-col gap-4 rounded-control border border-rule-strong p-3">
           <p>
             Abre tu app de autenticación (por ejemplo, Google Authenticator o Authy), agrega una cuenta y escanea este
@@ -134,7 +166,7 @@ function SecondFactor({ factors }: { factors: VerifiedFactor[] }) {
               `<img>` normal (next/image no aplica a un `data:`) y sobre blanco, también en modo oscuro. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={enrollment.qrCode}
+            src={enrolling.qrCode}
             alt="Código QR para tu app de autenticación"
             width={231}
             height={231}
@@ -143,11 +175,11 @@ function SecondFactor({ factors }: { factors: VerifiedFactor[] }) {
           <div className="flex flex-col gap-1">
             <p className="text-sm text-ink-soft">¿No puedes escanearlo? Escribe esta clave en la app:</p>
             <code data-testid="clave-totp" className="cifra font-sans text-base font-semibold break-words">
-              {inGroups(enrollment.secret)}
+              {inGroups(enrolling.secret)}
             </code>
           </div>
           <form action={confirm} className="flex flex-col gap-3">
-            <input type="hidden" name="factorId" value={enrollment.factorId} />
+            <input type="hidden" name="factorId" value={enrolling.factorId} />
             <Field label="Código de 6 dígitos" hint="El que muestra la app después de escanear." error={codeError}>
               <Input
                 name="code"
@@ -158,9 +190,10 @@ function SecondFactor({ factors }: { factors: VerifiedFactor[] }) {
                 className="cifra text-lg tracking-widest"
               />
             </Field>
+            <ActionError failure={confirmFailure} />
             <div className="flex flex-wrap gap-2">
               <SubmitButton pendingLabel="Verificando…">Verificar y activar</SubmitButton>
-              <Button onClick={() => setEnrollment(null)}>Cancelar</Button>
+              <Button onClick={cancel}>Cancelar</Button>
             </div>
           </form>
         </div>
@@ -193,6 +226,13 @@ function SecondFactor({ factors }: { factors: VerifiedFactor[] }) {
 
 const EMPTY_PASSWORDS = { current: "", password: "", confirm: "" };
 
+/**
+ * Un corte al cambiarla: no se sabe si cambió, y volver a pintar la pantalla no lo enseñaría (no hay «Ver cómo
+ * quedó»). Repetirlo sí lo dice, porque la actual se comprueba antes de cambiar nada.
+ */
+const PASSWORD_UNSURE_TEXT =
+  "Se perdió la conexión y no se sabe si se cambió la contraseña. Vuelve a intentarlo: si te dice que la actual no es correcta, es que ya se cambió y vale la nueva.";
+
 function PasswordChange({ email }: { email: string }) {
   // Campos controlados: si algo falla, lo escrito se queda (React vacía los no controlados al terminar la acción).
   const [values, setValues] = useState(EMPTY_PASSWORDS);
@@ -205,7 +245,10 @@ function PasswordChange({ email }: { email: string }) {
   });
 
   const submit = async (formData: FormData) => {
-    const result = await changePassword(formData);
+    const result = await callActionOr(
+      () => changePassword(formData),
+      (): PasswordProblem => ({ ok: false, error: PASSWORD_UNSURE_TEXT }),
+    );
     if (!result.ok) {
       setProblem(result);
       return;
@@ -252,14 +295,14 @@ function SessionEnd({ email }: { email: string }) {
       <p className="text-ink-soft">
         Entraste como <span className="font-semibold break-all text-ink">{email}</span>.
       </p>
-      <form action={signOut} className="flex flex-wrap gap-2">
+      <SignOutForm className="flex flex-wrap gap-2">
         <Button type="submit" name="scope" value="local">
           Cerrar sesión
         </Button>
         <Button type="submit" name="scope" value="global" variant="ghost" aria-describedby={EVERYWHERE_HINT_ID}>
           Cerrar sesión en todos los dispositivos
         </Button>
-      </form>
+      </SignOutForm>
       {/* Auth cierra la sesión de los otros dispositivos y la base deja de responderles en el acto, aunque su
           token siga firmado hasta que caduca (1 h): lo que puede tardar es que su pantalla abierta lo note. */}
       <p id={EVERYWHERE_HINT_ID} className="text-sm text-ink-soft">

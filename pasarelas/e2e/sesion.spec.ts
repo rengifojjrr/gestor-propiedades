@@ -43,6 +43,8 @@ async function signOutHere(page: Page): Promise<void> {
 const RETRY_TEXT = "Se perdió la conexión. Revisa tu señal y vuelve a intentarlo.";
 /** La duda de un corte: no se sabe si se guardó. Al lado va «Ver cómo quedó». */
 const UNSURE_TEXT = "Se perdió la conexión y no se sabe si se guardó. Revisa cómo quedó antes de repetirlo.";
+const PASSWORD_UNSURE_TEXT =
+  "Se perdió la conexión y no se sabe si se cambió la contraseña. Vuelve a intentarlo: si te dice que la actual no es correcta, es que ya se cambió y vale la nueva.";
 /** El título de `global-error.tsx`, que reemplaza la página entera. */
 const GLOBAL_ERROR = "Algo salió mal";
 
@@ -463,6 +465,148 @@ test.describe("cortes de red", () => {
     await page.getByLabel("Código").fill(totp(secret));
     await page.getByRole("button", { name: "Verificar" }).click();
     await expect(page).toHaveURL(/\/pasarelas$/);
+  });
+
+  test("Seguridad, activar: un corte al empezar invita a repetir (y repetir no deja restos); uno al confirmar, a «Ver cómo quedó»", async ({
+    page,
+  }) => {
+    const user = await newUser();
+    await login(page, user);
+    await openSettings(page);
+
+    // Empezar sí llega al servidor (deja un dispositivo sin verificar), pero la respuesta se pierde.
+    let reconnect = await cutActions(page, "/ajustes", { arrives: true });
+    await page.getByRole("button", { name: "Activar segundo factor" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: RETRY_TEXT })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Ver cómo quedó" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { level: 1, name: "Ajustes" })).toBeVisible();
+    await expectNoSeriousAxe(page);
+
+    await reconnect();
+    await page.getByRole("button", { name: "Activar segundo factor" }).click();
+    const secret = (await page.getByTestId("clave-totp").innerText()).replace(/\s/g, "");
+
+    // Confirmar no llega: no se sabe si quedó.
+    reconnect = await cutActions(page, "/ajustes");
+    await page.getByLabel("Código de 6 dígitos").fill(totp(secret));
+    await page.getByRole("button", { name: "Verificar y activar" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: UNSURE_TEXT })).toBeVisible();
+    await expect(page.getByLabel("Código de 6 dígitos")).toBeVisible();
+    await expectNoSeriousAxe(page);
+
+    // «Ver cómo quedó» enseña que no se activó: el alta sigue pidiendo el código, y con él se activa.
+    await reconnect();
+    await page.getByRole("button", { name: "Ver cómo quedó" }).click();
+    await expect(page.getByText(BANNER)).toBeVisible();
+    await page.getByLabel("Código de 6 dígitos").fill(totp(secret));
+    await page.getByRole("button", { name: "Verificar y activar" }).click();
+    await expect(page.getByText("Segundo factor activado")).toBeVisible();
+    // Uno solo, con su nombre: el intento cortado no dejó un «Autenticador 2».
+    await expect(page.getByRole("listitem").filter({ hasText: "Autenticador" })).toHaveCount(1);
+    await expect(page.getByText("Autenticador 2")).toHaveCount(0);
+  });
+
+  // «Cancelar» con la duda en pantalla también vuelve a pintar la lista, como al cerrar un diálogo con la duda.
+  for (const close of ["Ver cómo quedó", "Cancelar"]) {
+    test(`Seguridad, activar otro: si se pierde la respuesta al confirmar, «${close}» lo enseña activo y el alta no sigue pidiendo el código`, async ({
+      page,
+    }) => {
+      const user = await newUser();
+      const { secret } = await enrollTotp(await signInAal1(user.email, user.password));
+      await loginWithTotp(page, user, secret);
+      await openSettings(page);
+      await page.getByRole("button", { name: "Agregar otro dispositivo" }).click();
+      const second = (await page.getByTestId("clave-totp").innerText()).replace(/\s/g, "");
+
+      const reconnect = await cutActions(page, "/ajustes", { arrives: true });
+      await page.getByLabel("Código de 6 dígitos").fill(totp(second));
+      await page.getByRole("button", { name: "Verificar y activar" }).click();
+      await expect(page.getByRole("alert").filter({ hasText: UNSURE_TEXT })).toBeVisible();
+      await expect(page.getByRole("listitem").filter({ hasText: "Autenticador" })).toHaveCount(0);
+
+      await reconnect();
+      await page.getByRole("button", { name: close, exact: true }).click();
+      await expect(page.getByRole("listitem").filter({ hasText: "Autenticador" })).toBeVisible();
+      // Ya está activo: el alta no se queda pidiendo un código que ya no hace falta.
+      await expect(page.getByLabel("Código de 6 dígitos")).toHaveCount(0);
+      await expect(page.getByTestId("clave-totp")).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Agregar otro dispositivo" })).toBeVisible();
+    });
+  }
+
+  test("Seguridad, quitar: si se pierde la respuesta, se dice en la tarjeta y «Ver cómo quedó» enseña que ya no está", async ({
+    page,
+  }) => {
+    const user = await newUser();
+    const { secret } = await enrollTotp(await signInAal1(user.email, user.password));
+    await loginWithTotp(page, user, secret);
+    await openSettings(page);
+    const quitar = page.getByRole("button", { name: /^Quitar Prueba / });
+    const dialog = page.getByRole("alertdialog");
+    // El botón lo maneja un componente de cliente: se reintenta hasta que la página esté lista.
+    await expect(async () => {
+      await quitar.click();
+      await expect(dialog).toBeVisible({ timeout: 1_000 });
+    }).toPass();
+
+    const reconnect = await cutActions(page, "/ajustes", { arrives: true });
+    await dialog.getByRole("button", { name: "Quitar", exact: true }).click();
+    await expect(page.getByRole("alert").filter({ hasText: UNSURE_TEXT })).toBeVisible();
+    await expect(dialog).toBeHidden();
+    // Nada se refresca solo: la tarjeta todavía lo enseña.
+    await expect(quitar).toBeVisible();
+    await expectNoSeriousAxe(page);
+
+    await reconnect();
+    await page.getByRole("button", { name: "Ver cómo quedó" }).click();
+    await expect(quitar).toHaveCount(0);
+    await expect(page.getByText(BANNER)).toBeVisible();
+  });
+
+  test("Seguridad, contraseña: un corte dice cómo saber si cambió, y lo escrito se queda", async ({ page }) => {
+    const user = await newUser();
+    const nueva = `Nueva-${randomUUID()}`;
+    await login(page, user);
+    await openSettings(page);
+    const { actual, primera, repetida, cambiar } = passwordForm(page);
+    await actual.fill(user.password);
+    await primera.fill(nueva);
+    await repetida.fill(nueva);
+
+    const reconnect = await cutActions(page, "/ajustes", { arrives: true });
+    await cambiar.click();
+    await expect(page.getByRole("alert").filter({ hasText: PASSWORD_UNSURE_TEXT })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Ver cómo quedó" })).toHaveCount(0);
+    await expect(actual).toHaveValue(user.password);
+    await expect(primera).toHaveValue(nueva);
+    await expect(repetida).toHaveValue(nueva);
+    await expectNoSeriousAxe(page);
+
+    // Sí había llegado: al repetir, la de antes ya no es la actual, que es lo que el aviso dice que pasaría.
+    await reconnect();
+    await cambiar.click();
+    await expect(page.getByText("La contraseña actual no es correcta.")).toBeVisible();
+  });
+
+  test("Seguridad, cerrar sesión: un corte ofrece «Ver cómo quedó», que lleva a la entrada si sí se cerró", async ({
+    page,
+  }) => {
+    const user = await newUser();
+    await login(page, user);
+    await openSettings(page);
+
+    const reconnect = await cutActions(page, "/ajustes", { arrives: true });
+    await page.getByRole("button", { name: "Cerrar sesión", exact: true }).click();
+    await expect(page.getByRole("alert").filter({ hasText: UNSURE_TEXT })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Ajustes" })).toBeVisible();
+    await expectNoSeriousAxe(page);
+
+    await reconnect();
+    await page.getByRole("button", { name: "Ver cómo quedó" }).click();
+    await expect(page).toHaveURL(/\/login\?siguiente=%2Fajustes$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Entrar" })).toBeVisible();
+    await login(page, user);
+    await expect(page).toHaveURL(/\/ajustes$/);
   });
 });
 
