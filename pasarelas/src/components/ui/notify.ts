@@ -15,3 +15,11 @@ export const notify = {
     toast.error(message);
   },
 };
+
+/**
+ * Un aviso de éxito con un botón que lleva a lo que se acaba de hacer: `notifyAction("Cobro guardado.",
+ * { label: "Ver cobro", onClick: () => router.push(…) })`. Dura más que uno simple, para dar tiempo a tocarlo.
+ */
+export function notifyAction(message: string, action: { label: string; onClick: () => void }) {
+  toast.success(message, { action, duration: 10_000 });
+}
