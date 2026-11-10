@@ -1,8 +1,8 @@
 "use client";
 
-import { CircleAlert } from "lucide-react";
 import { createContext, use, useId, type ReactNode } from "react";
 import { cn } from "./cn";
+import { FieldError } from "./FieldError";
 
 type FieldControl = { id: string; describedBy: string | undefined; invalid: boolean };
 
@@ -61,12 +61,7 @@ export function Field({ label, hint, error, optional, children, className }: Fie
           {hint}
         </p>
       ) : null}
-      {error ? (
-        <p id={errorId} className="flex items-start gap-1.5 text-sm font-semibold text-danger">
-          <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-          {error}
-        </p>
-      ) : null}
+      {error ? <FieldError id={errorId}>{error}</FieldError> : null}
     </div>
   );
 }
