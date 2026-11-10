@@ -34,7 +34,9 @@ function rulesE1(): Rules {
       refundsReturnFee: false,
       disputeFee: "15.00",
     },
-    extras: [{ id: DEMO.extraId, name: "Pago rápido", pct: "1.5", fixed: "0.00", base: "bruto", payoutDaysOverride: 0 }],
+    extras: [
+      { id: DEMO.extraId, name: "Pago rápido", pct: "1.5", fixed: "0.00", base: "bruto", payoutDaysOverride: 0 },
+    ],
     platform: { channelId: DEMO.channelId, name: "Escuela de marketing", pct: "5", fixed: "0.00" },
     scheme: {
       schemeId: DEMO.schemeId,
@@ -92,7 +94,13 @@ function withPayPal(cfg: PayConfig): PayConfig {
 
 /** La tarifa nueva de Stripe (3,5 % + 0,30) que rige desde el sábado 14. */
 function withTomorrowFee(cfg: PayConfig): PayConfig {
-  stripe(cfg).feeVersions.push({ id: "fv-stripe-2", pct: "3.5", fixed: "0.30", effectiveFrom: "2026-11-14", note: null });
+  stripe(cfg).feeVersions.push({
+    id: "fv-stripe-2",
+    pct: "3.5",
+    fixed: "0.30",
+    effectiveFrom: "2026-11-14",
+    note: null,
+  });
   return cfg;
 }
 
@@ -322,7 +330,13 @@ describe("resolveRules", () => {
 
     test("canal de otra empresa", () => {
       const cfg = cfgDemo();
-      cfg.companies.push({ id: "co-tienda", name: "Tienda Demo", currency: "USD", defaultSchemeId: null, active: true });
+      cfg.companies.push({
+        id: "co-tienda",
+        name: "Tienda Demo",
+        currency: "USD",
+        defaultSchemeId: null,
+        active: true,
+      });
       expectRuleError(() => resolveRules(cfg, selE1({ companyId: "co-tienda" })), "canal");
     });
 
@@ -366,14 +380,23 @@ describe("reResolve", () => {
     const rules = rulesE1();
     return {
       gateway: { ...rules.gateway, name: "Stripe (antes)", disputeFee: "9.00", refundsReturnFee: true },
-      extras: [{ id: "ex-borrada", name: "Opción borrada", pct: "9", fixed: "0.09", base: "bruto", payoutDaysOverride: 5 }],
+      extras: [
+        { id: "ex-borrada", name: "Opción borrada", pct: "9", fixed: "0.09", base: "bruto", payoutDaysOverride: 5 },
+      ],
       platform: { channelId: "ch-borrado", name: "Canal borrado", pct: "9", fixed: "0.90" },
       scheme: { ...(rules.scheme as NonNullable<Rules["scheme"]>), name: "Reparto (antes)" },
     };
   }
 
   test("si no cambió nada, las reglas congeladas quedan idénticas aunque la configuración ya sea otra", () => {
-    const empty: PayConfig = { ...cfgDemo(), companies: [], channels: [], gateways: [], schemes: [], beneficiaries: [] };
+    const empty: PayConfig = {
+      ...cfgDemo(),
+      companies: [],
+      channels: [],
+      gateways: [],
+      schemes: [],
+      beneficiaries: [],
+    };
     const prev = frozen();
     expect(reResolve(prev, empty, selE1(), NOTHING)).toEqual(frozen());
   });

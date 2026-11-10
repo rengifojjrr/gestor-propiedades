@@ -207,7 +207,9 @@ export function resolvePayout(
   );
   const rest = { dayType: gateway.payoutDayType, bankAccountId: account?.bankAccountId ?? null };
 
-  const fromOptions = extras.flatMap((option) => (option.payoutDaysOverride === null ? [] : [option.payoutDaysOverride]));
+  const fromOptions = extras.flatMap((option) =>
+    option.payoutDaysOverride === null ? [] : [option.payoutDaysOverride],
+  );
   if (fromOptions.length > 0) return { days: Math.min(...fromOptions), source: "opcion", ...rest };
   const fromAccount = account?.payoutDaysOverride ?? null;
   if (fromAccount !== null) return { days: fromAccount, source: "cuenta", ...rest };
