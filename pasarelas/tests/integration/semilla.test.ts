@@ -1,4 +1,6 @@
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { promisify } from "node:util";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   addDays,
@@ -313,5 +315,46 @@ describe("wipeUserData", () => {
     const [rowsA, rowsB] = await Promise.all([leanTx(a.client, {}, TODAY), leanTx(b.client, {}, TODAY)]);
     expect(totalsOf(rowsB)).toEqual(totalsOf(rowsA));
     expect(await balancesByName(b.client)).toEqual(await balancesByName(a.client));
+  });
+});
+
+describe("npm run seed", () => {
+  const run = promisify(execFile);
+  const REMOTE = "https://libro-de-alguien.example.com";
+
+  /** Corre el guion de verdad, con esas variables por encima de las de .env.local, y devuelve cómo terminó. */
+  async function seed(args: string[], env: Record<string, string>): Promise<{ code: number; output: string }> {
+    try {
+      const { stdout, stderr } = await run("npm", ["run", "--silent", "seed", "--", ...args], {
+        env: { ...process.env, SEED_ALLOW_REMOTE: "", ...env },
+      });
+      return { code: 0, output: stdout + stderr };
+    } catch (error) {
+      const failed = error as { code?: number; stdout?: string; stderr?: string };
+      return { code: failed.code ?? -1, output: `${failed.stdout ?? ""}${failed.stderr ?? ""}` };
+    }
+  }
+
+  it("se niega a correr contra una base que no es la local", async () => {
+    const result = await seed([], { NEXT_PUBLIC_SUPABASE_URL: REMOTE });
+
+    expect(result.code).toBe(1);
+    expect(result.output).toContain("SEED_ALLOW_REMOTE=1");
+    expect(result.output).toContain("libro-de-alguien.example.com");
+  });
+
+  it("no admite --reset contra una base remota ni con SEED_ALLOW_REMOTE=1", async () => {
+    const result = await seed(["--reset"], { NEXT_PUBLIC_SUPABASE_URL: REMOTE, SEED_ALLOW_REMOTE: "1" });
+
+    expect(result.code).toBe(1);
+    expect(result.output).toContain("--reset");
+    expect(result.output).toMatch(/nunca.*remota/s);
+  });
+
+  it("no acepta una opción que no conoce", async () => {
+    const result = await seed(["--borrar-todo"], {});
+
+    expect(result.code).toBe(1);
+    expect(result.output).toContain("--borrar-todo");
   });
 });

@@ -23,7 +23,7 @@
     "db:status": "bash scripts/stack.sh status",
     "db:env": "bash scripts/stack.sh env",
     "db:types": "bash scripts/stack.sh types",
-    "seed": "tsx --env-file-if-exists=.env.local scripts/seed-pasarelas-demo.ts"
+    "seed": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/seed-pasarelas-demo.ts"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.7",
