@@ -1,10 +1,17 @@
 "use client";
 
-import { ChevronDown, LoaderCircle, RotateCcw } from "lucide-react";
+import { ChevronDown, LoaderCircle, Paperclip, RotateCcw } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { ReceiptPicker } from "@/components/pasarelas/receipts/ReceiptPicker";
-import { checkReceiptFile } from "@/components/pasarelas/receipts/check";
+import {
+  RECEIPT_ACCEPT,
+  ReceiptFileError,
+  checkReceiptContent,
+  checkReceiptFile,
+} from "@/components/pasarelas/receipts/check";
+import { downscaleImage } from "@/components/pasarelas/receipts/downscale";
 import { uploadReceipt } from "@/components/pasarelas/receipts/upload";
 import { Alert, Button, Field, Input, Money, MoneyInput, PageHeader, Select, Textarea, notify } from "@/components/ui";
 import { notifyAction } from "@/components/ui/notify";
@@ -44,7 +51,15 @@ const MORE_FIELDS = ["schemeId", "bankAccountId", "estimatedDepositOn", "status"
 
 const NOTE_MAX = 280;
 const FIELDS_TEXT = "Revisa los campos marcados.";
+/** Solo cuando falla el guardado del cobro mismo: lo que pase después (el comprobante) tiene sus propios textos. */
 const OFFLINE_TEXT = "No se pudo guardar el cobro. Revisa tu conexión e inténtalo de nuevo.";
+const SAVED_TEXT = "Cobro guardado.";
+/** Con el comprobante fallido, el aviso de éxito lo dice y remite al aviso que deja arreglarlo. */
+const SAVED_WITHOUT_RECEIPT_TEXT = {
+  retry: "Cobro guardado, pero el comprobante no se subió: reinténtalo en el aviso junto a «Guardar».",
+  replace: "Cobro guardado, pero el comprobante no se subió: elige otro archivo en el aviso junto a «Guardar».",
+};
+const UPLOAD_FAILED_TEXT = "No se pudo subir el comprobante. Inténtalo de nuevo.";
 
 type FieldErrors = Record<string, string | undefined>;
 
@@ -56,11 +71,42 @@ type PendingReceipt = {
   file: File;
   transactionId: string;
   error: string;
+  /** El problema es el archivo (no vale, no se puede leer, no es lo que dice ser): con él fallaría otra vez. */
+  unusableFile: boolean;
   gross: MoneyText | null;
   currency: Currency;
   reference: string;
   retrying: boolean;
 };
+
+/** Por qué no se pudo agregar un comprobante a un cobro ya guardado. */
+type ReceiptFailure = Pick<PendingReceipt, "error" | "unusableFile">;
+
+/**
+ * Si el archivo mismo no sirve: repite los pasos de `uploadReceipt` que no tocan la red (comprobarlo, prepararlo y
+ * mirar su contenido). Si pasan, lo que falló fue la subida o el registro, y reintentar con el mismo archivo vale.
+ */
+async function isUnusableFile(file: File): Promise<boolean> {
+  if (checkReceiptFile(file) !== null) return true;
+  try {
+    return (await checkReceiptContent(await downscaleImage(file))) !== null;
+  } catch (error) {
+    return error instanceof ReceiptFileError;
+  }
+}
+
+/** Sube el comprobante a un cobro que ya está guardado. `null` si quedó agregado; si no, qué falló. Nunca lanza. */
+async function attachReceipt(file: File, transactionId: string): Promise<ReceiptFailure | null> {
+  let error: string;
+  try {
+    const upload = await uploadReceipt(file, transactionId);
+    if (upload.ok) return null;
+    error = upload.error;
+  } catch {
+    error = UPLOAD_FAILED_TEXT;
+  }
+  return { error, unusableFile: await isUnusableFile(file) };
+}
 
 /**
  * «Registrar cobro» en un solo paso, en el orden del spec: empresa → canal → pasarela (con sus opciones) → monto y
@@ -123,6 +169,9 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
   // El último cobro cuyo comprobante falló: su aviso se trae a la vista (en el celular «Guardar» queda al pie).
   const [lastFailedId, setLastFailedId] = useState<string | null>(null);
   const pendingRef = useRef<HTMLDivElement>(null);
+  // «Elegir otro archivo»: un solo selector escondido, y el cobro para el que se abrió.
+  const replaceInputRef = useRef<HTMLInputElement>(null);
+  const replaceTargetRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (lastFailedId === null) return;
@@ -215,18 +264,11 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
     setNote("");
   }
 
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (savingRef.current || fileError !== null) return;
-    const problems = missing();
-    if (Object.keys(problems).length > 0) {
-      showErrors(FIELDS_TEXT, problems);
-      return;
-    }
-    savingRef.current = true;
-    setSaving(true);
-    setError(null);
-    setFieldErrors({});
+  /**
+   * Guarda el cobro y dice su id, o pinta por qué no se guardó y devuelve `null`. Es lo único que puede decir «No se
+   * pudo guardar el cobro»: lo que pasa después (el comprobante, el aviso) ya es con el cobro guardado.
+   */
+  async function saveTransaction(): Promise<string | null> {
     try {
       const result = await createTransaction({
         id,
@@ -250,32 +292,53 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
           Object.entries(result.fieldErrors ?? {}).map(([name, messages]) => [name, messages[0]]),
         );
         showErrors(result.error, errors);
-        return;
+        return null;
       }
-      const transactionId = result.data.id;
-      if (file !== null) {
-        const upload = await uploadReceipt(file, transactionId);
-        if (!upload.ok) {
-          const pending: PendingReceipt = {
-            file,
-            transactionId,
-            error: upload.error,
-            gross: parseMoney(amount),
-            currency,
-            reference: reference.trim(),
-            retrying: false,
-          };
-          setPendingReceipts((list) => [...list.filter((item) => item.transactionId !== transactionId), pending]);
-          setLastFailedId(transactionId);
-        }
+      return result.data.id;
+    } catch {
+      showErrors(OFFLINE_TEXT, {});
+      return null;
+    }
+  }
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (savingRef.current || fileError !== null) return;
+    const problems = missing();
+    if (Object.keys(problems).length > 0) {
+      showErrors(FIELDS_TEXT, problems);
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
+    setError(null);
+    setFieldErrors({});
+    try {
+      const transactionId = await saveTransaction();
+      if (transactionId === null) return;
+      const failure = file === null ? null : await attachReceipt(file, transactionId);
+      if (file !== null && failure !== null) {
+        const pending: PendingReceipt = {
+          file,
+          transactionId,
+          ...failure,
+          gross: parseMoney(amount),
+          currency,
+          reference: reference.trim(),
+          retrying: false,
+        };
+        setPendingReceipts((list) => [...list.filter((item) => item.transactionId !== transactionId), pending]);
+        setLastFailedId(transactionId);
       }
-      notifyAction("Cobro guardado.", {
+      const message =
+        failure === null
+          ? SAVED_TEXT
+          : SAVED_WITHOUT_RECEIPT_TEXT[failure.unusableFile ? "replace" : "retry"];
+      notifyAction(message, {
         label: "Ver cobro",
         onClick: () => router.push(`/pasarelas/cobros/${transactionId}`),
       });
       resetForNext();
-    } catch {
-      showErrors(OFFLINE_TEXT, {});
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -289,17 +352,32 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
     );
   }
 
-  /** Vuelve a intentar solo la subida del comprobante, al mismo cobro. */
-  async function retryReceipt(pending: PendingReceipt) {
+  /** Vuelve a intentar agregar el comprobante a ese mismo cobro: con el mismo archivo o con otro. */
+  async function retryReceipt(pending: PendingReceipt, nextFile: File = pending.file) {
     if (pending.retrying) return;
-    updatePending(pending.transactionId, { retrying: true });
-    const upload = await uploadReceipt(pending.file, pending.transactionId);
-    if (upload.ok) {
+    updatePending(pending.transactionId, { file: nextFile, retrying: true });
+    const failure = await attachReceipt(nextFile, pending.transactionId);
+    if (failure === null) {
       setPendingReceipts((list) => list.filter((item) => item.transactionId !== pending.transactionId));
       notify.success("Comprobante agregado.");
     } else {
-      updatePending(pending.transactionId, { retrying: false, error: upload.error });
+      updatePending(pending.transactionId, { retrying: false, ...failure });
     }
+  }
+
+  /** «Elegir otro archivo»: abre el selector para ese cobro. */
+  function chooseAnotherFile(pending: PendingReceipt) {
+    replaceTargetRef.current = pending.transactionId;
+    replaceInputRef.current?.click();
+  }
+
+  function pickReplacement(event: ChangeEvent<HTMLInputElement>) {
+    const picked = event.currentTarget.files?.[0] ?? null;
+    // Vaciar el control deja volver a elegir el mismo archivo.
+    event.currentTarget.value = "";
+    const pending = pendingReceipts.find((item) => item.transactionId === replaceTargetRef.current);
+    replaceTargetRef.current = null;
+    if (picked !== null && pending !== undefined) void retryReceipt(pending, picked);
   }
 
   return (
@@ -520,15 +598,35 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
                       <Button
                         disabled={pending.retrying}
                         aria-busy={pending.retrying || undefined}
-                        onClick={() => void retryReceipt(pending)}
+                        onClick={() =>
+                          pending.unusableFile ? chooseAnotherFile(pending) : void retryReceipt(pending)
+                        }
                       >
-                        {pending.retrying ? <LoaderCircle aria-hidden className="size-5 animate-spin" /> : null}
-                        Reintentar comprobante
+                        {pending.retrying ? (
+                          <LoaderCircle aria-hidden className="size-5 animate-spin" />
+                        ) : pending.unusableFile ? (
+                          <Paperclip aria-hidden className="size-5" />
+                        ) : null}
+                        {pending.unusableFile ? "Elegir otro archivo" : "Reintentar comprobante"}
                       </Button>
+                      <p>
+                        {"También puedes agregarlo después desde "}
+                        <Link href={`/pasarelas/cobros/${pending.transactionId}`} className="font-semibold underline">
+                          el detalle del cobro
+                        </Link>
+                        : si sales de esta pantalla, el cobro sigue guardado; solo se pierde este aviso.
+                      </p>
                     </div>
                   </Alert>
                 </div>
               ))}
+              <input
+                ref={replaceInputRef}
+                type="file"
+                accept={RECEIPT_ACCEPT}
+                hidden
+                onChange={pickReplacement}
+              />
             </div>
           ) : null}
           {error !== null ? (

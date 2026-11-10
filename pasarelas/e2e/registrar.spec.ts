@@ -309,7 +309,8 @@ test.describe.serial("registrar cobro", () => {
     const tag = randomUUID().slice(0, 8);
     const pendingAlerts = page.getByRole("main").getByRole("alert").filter({ hasText: "el comprobante no se subió" });
     const pendingFor = (reference: string) => pendingAlerts.filter({ hasText: reference });
-    const savedToasts = page.getByRole("region", { name: /Avisos/ }).getByRole("listitem").filter({ hasText: "Cobro guardado" });
+    const toasts = page.getByRole("region", { name: /Avisos/ }).getByRole("listitem");
+    const savedToasts = toasts.filter({ hasText: "Cobro guardado" });
 
     /** Llena un cobro de E1 con su comprobante, lo guarda y espera el formulario listo para el siguiente. */
     async function saveWithReceipt(amount: string, reference: string) {
@@ -340,6 +341,20 @@ test.describe.serial("registrar cobro", () => {
     const [savedA, ...moreA] = await savedWith(ownerDb, refA);
     expect(moreA).toEqual([]);
     expect(savedA?.receipts_count).toBe(0);
+    // Un corte de red: se ofrece reintentar con el mismo archivo, o agregarlo después desde el detalle del cobro.
+    await expect(pendingFor(refA).getByRole("button", { name: "Reintentar comprobante" })).toBeVisible();
+    await expect(pendingFor(refA).getByRole("button", { name: "Elegir otro archivo" })).toHaveCount(0);
+    await expect(pendingFor(refA)).toContainText("También puedes agregarlo después desde el detalle del cobro");
+    await expect(pendingFor(refA).getByRole("link", { name: "el detalle del cobro" })).toHaveAttribute(
+      "href",
+      `/pasarelas/cobros/${savedA?.id}`,
+    );
+    // El aviso de éxito no dice solo «Cobro guardado.»: dice que el comprobante no se subió y a dónde mirar.
+    const withoutReceipt = toasts.filter({ hasText: "Cobro guardado, pero el comprobante no se subió" });
+    await expect(withoutReceipt).toBeVisible();
+    await expect(withoutReceipt).toContainText("reinténtalo en el aviso junto a «Guardar»");
+    // Lo que falló fue el comprobante, no el cobro.
+    await expect(page.getByText("No se pudo guardar el cobro")).toHaveCount(0);
     await expect(savedToasts.first()).toHaveCSS("opacity", "1");
     await expectCleanScreen(page);
 
@@ -377,6 +392,65 @@ test.describe.serial("registrar cobro", () => {
     await pendingFor(refB).getByRole("button", { name: "Reintentar comprobante" }).click();
     await expect(pendingAlerts).toHaveCount(0);
     expect((await savedWith(ownerDb, refB))[0]?.receipts_count).toBe(1);
+  });
+
+  test("si el archivo no sirve, el cobro queda guardado y «Elegir otro archivo» le pone otro a ese cobro", async ({
+    page,
+  }) => {
+    const reference = `ROTO-${randomUUID().slice(0, 8)}`;
+    const toasts = page.getByRole("region", { name: /Avisos/ }).getByRole("listitem");
+    const pending = page.getByRole("main").getByRole("alert").filter({ hasText: reference });
+
+    await login(page, owner);
+    await openForm(page);
+    await chooseE1(page);
+    await page.getByLabel("Monto").fill("30");
+    await page.getByLabel("Referencia").fill(reference);
+    // Se llama .png y dice ser PNG (pasa la comprobación al elegirlo), pero no es una imagen: no se puede leer.
+    await page.getByLabel("Elegir archivo").setInputFiles({
+      name: "roto.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("esto no es una imagen"),
+    });
+    await page.getByRole("button", { name: "Guardar" }).click();
+
+    await expect(pending).toContainText("El cobro quedó guardado, pero el comprobante no se subió.");
+    await expect(pending).toContainText("No se pudo leer la imagen");
+    const [saved, ...more] = await savedWith(ownerDb, reference);
+    expect(more).toEqual([]);
+    expect(saved?.receipts_count).toBe(0);
+    // Reintentar con el mismo archivo fallaría igual: se ofrece elegir otro.
+    await expect(pending.getByRole("button", { name: "Reintentar comprobante" })).toHaveCount(0);
+    await expect(pending.getByRole("button", { name: "Elegir otro archivo" })).toBeVisible();
+    await expect(pending.getByRole("link", { name: "el detalle del cobro" })).toHaveAttribute(
+      "href",
+      `/pasarelas/cobros/${saved?.id}`,
+    );
+    const withoutReceipt = toasts.filter({ hasText: "Cobro guardado, pero el comprobante no se subió" });
+    await expect(withoutReceipt).toBeVisible();
+    await expect(withoutReceipt).toContainText("elige otro archivo en el aviso junto a «Guardar»");
+    await expect(page.getByText("No se pudo guardar el cobro")).toHaveCount(0);
+    await expect(withoutReceipt).toHaveCSS("opacity", "1");
+    await expectCleanScreen(page);
+
+    // Otro archivo que tampoco sirve (se llama .pdf, pero no es un PDF): lo dice y sigue ofreciendo elegir otro.
+    let chooser = page.waitForEvent("filechooser");
+    await pending.getByRole("button", { name: "Elegir otro archivo" }).click();
+    await (await chooser).setFiles({ name: "falso.pdf", mimeType: "application/pdf", buffer: Buffer.from("Grupo A") });
+    await expect(pending).toContainText("El contenido del archivo no es un JPG, PNG, WebP o PDF");
+    await expect(pending).toContainText("falso.pdf");
+    await expect(pending.getByRole("button", { name: "Elegir otro archivo" })).toBeEnabled();
+    expect((await savedWith(ownerDb, reference))[0]?.receipts_count).toBe(0);
+
+    // Uno bueno: se sube a ese mismo cobro y el aviso se va.
+    chooser = page.waitForEvent("filechooser");
+    await pending.getByRole("button", { name: "Elegir otro archivo" }).click();
+    await (await chooser).setFiles({ name: "recibo-bueno.png", mimeType: "image/png", buffer: png(400, 200) });
+    await expect(toasts.filter({ hasText: "Comprobante agregado." })).toBeVisible();
+    await expect(pending).toHaveCount(0);
+    const after = await savedWith(ownerDb, reference);
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ id: saved?.id, receipts_count: 1 });
   });
 
   test("si falta configuración, la vista previa dice qué falta y a dónde ir a arreglarlo", async ({ page }) => {
