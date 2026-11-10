@@ -1,7 +1,7 @@
 "use client";
 
 import { FileUp } from "lucide-react";
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
 import { Alert, Button, ButtonLink, Card, CardBody, CardHeader, CardTitle, Checkbox, cn, notify } from "@/components/ui";
 import { buttonClass } from "@/components/ui/Button";
 import {
@@ -42,6 +42,9 @@ type Counts = { created: number; duplicates: number; trashed: number };
 type Outcome = { counts: Counts; heldBack: number; error: string | null };
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+
+/** `useSyncExternalStore` sin nada que escuchar: solo distingue el HTML del servidor de la página ya hidratada. */
+const noSubscription = () => () => {};
 
 function createdText(created: number): string {
   if (created === 0) return "No se creó ningún cobro nuevo";
@@ -115,7 +118,6 @@ export function ImportScreen({
     extraIds: choices.defaultExtras[defaultExtrasKey(firstCompany, firstGateway)] ?? [],
   });
   const [file, setFile] = useState<CsvFile | null>(null);
-  const [fileKey, setFileKey] = useState(0);
   const fileHintId = useId();
   const [reading, setReading] = useState(false);
   const [readError, setReadError] = useState<string | null>(null);
@@ -131,6 +133,9 @@ export function ImportScreen({
   const [attempt, setAttempt] = useState(0);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  // En el HTML del servidor el selector va apagado: un archivo elegido antes de que la página se hidrate no
+  // llegaría a ningún manejador y se perdería sin aviso.
+  const hydrated = useSyncExternalStore(noSubscription, () => true, () => false);
 
   const gateway = choices.gateways.find((candidate) => candidate.id === settings.gatewayId)!;
   const company = choices.companies.find((candidate) => candidate.id === settings.companyId)!;
@@ -181,7 +186,6 @@ export function ImportScreen({
     setProposal(null);
     setMapping(null);
     setOutcome(null);
-    setFileKey((key) => key + 1);
   }
 
   const columns = useMemo(() => (file === null ? [] : columnChoices(file.headers)), [file]);
@@ -309,19 +313,24 @@ export function ImportScreen({
               className={cn(
                 buttonClass("secondary"),
                 "cursor-pointer has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus",
-                (importing || reading) && "pointer-events-none opacity-55",
+                (importing || reading || !hydrated) && "pointer-events-none opacity-55",
               )}
             >
               <FileUp aria-hidden className="size-5" />
               Elegir archivo CSV
               <input
-                key={fileKey}
                 type="file"
                 accept=".csv,text/csv"
                 className="sr-only"
                 aria-describedby={fileHintId}
-                onChange={(event) => void onFile(event.currentTarget.files?.[0])}
-                disabled={importing || reading}
+                onChange={(event) => {
+                  const picked = event.currentTarget.files?.[0];
+                  // Vaciar el control deja volver a elegir el mismo archivo (corregido y guardado con el mismo
+                  // nombre): si no, el navegador no avisa del cambio y se quedarían las filas viejas.
+                  event.currentTarget.value = "";
+                  void onFile(picked);
+                }}
+                disabled={importing || reading || !hydrated}
               />
             </label>
             <p id={fileHintId} className="text-sm text-ink-soft">

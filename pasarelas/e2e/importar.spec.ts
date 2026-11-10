@@ -1,3 +1,4 @@
+import { readFile, writeFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import { e1Item, saveTransactions, signInAal1 } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
@@ -8,8 +9,8 @@ import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
  * entendí» (repetidos, atrasados, esquema), importar con la comisión del archivo y como ya depositados, comprobar en
  * la base lo creado y repetir el archivo: lo repetido y lo de la papelera se dicen antes de importar. Después, un
  * archivo que no se reconoce: se mapea a mano, avisa que el formato es otro que el recordado y, si la red se corta al
- * importar, lo dice. Luego, el informe con source_id frente a un cobro registrado a mano: «posible repetido». Por
- * último, un archivo sin cobros (no se queda «buscando») y una vista previa que falla y se reintenta.
+ * importar, lo dice. Luego, el informe con source_id frente a un cobro registrado a mano: «posible repetido», y el
+ * mismo archivo corregido y elegido otra vez (se vuelve a leer). Por último, un archivo sin cobros (no se queda «buscando») y una vista previa que falla y se reintenta.
  * Un usuario nuevo por archivo (y por proyecto: celular y escritorio).
  */
 
@@ -63,6 +64,8 @@ test("importar el informe de saldo de Stripe: revisar, importar y repetir sin du
   await expect(page.getByLabel("Pasarela")).toHaveValue(user.basics.gatewayId);
   await page.getByLabel("Canal").selectOption({ label: "Inscripciones en línea" });
 
+  // Sin hidratar, el selector va apagado: un archivo elegido antes no llegaría a la pantalla.
+  await expect(page.getByLabel("Archivo CSV")).toBeEnabled();
   await page.getByLabel("Archivo CSV").setInputFiles(FIXTURE);
   await expect(page.getByText("Formato: Stripe (movimientos de saldo).")).toBeVisible();
 
@@ -234,6 +237,7 @@ test("el informe con source_id frente a un cobro registrado a mano: «posible re
   await page.goto("/pasarelas/importar");
   await expect(page.getByRole("heading", { level: 1, name: "Importar CSV" })).toBeVisible();
   await expectCleanScreen(page);
+  await expect(page.getByLabel("Archivo CSV")).toBeEnabled();
   await page.getByLabel("Archivo CSV").setInputFiles(SOURCE_FIXTURE);
   await expect(page.getByText("Formato: Stripe (movimientos de saldo).")).toBeVisible();
 
@@ -270,11 +274,36 @@ test("el informe con source_id frente a un cobro registrado a mano: «posible re
   expect(manual!.inserted).toBe(true);
 });
 
+test("volver a elegir el mismo archivo, corregido y guardado con el mismo nombre, lo vuelve a leer", async ({
+  page,
+}, testInfo) => {
+  // Un CSV propio de esta prueba: primero sin cobros; después, con el mismo nombre, el informe completo.
+  const path = testInfo.outputPath("pagos-demo.csv");
+  await writeFile(path, await readFile(EMPTY_FIXTURE));
+  await page.goto("/pasarelas/importar");
+  await expect(page.getByRole("heading", { level: 1, name: "Importar CSV" })).toBeVisible();
+  const input = page.getByLabel("Archivo CSV");
+  await expect(input).toBeEnabled();
+  await input.setInputFiles(path);
+  await expect(page.getByText("pagos-demo.csv · 2 filas")).toBeVisible();
+  const review = page.getByRole("region", { name: "Así lo entendí" });
+  await expect(review.getByText("Omitidos", { exact: true }).locator("..")).toContainText("2");
+
+  // Se corrige en disco y se vuelve a elegir la misma ruta, sin vaciar el control en medio.
+  await writeFile(path, await readFile(FIXTURE));
+  await input.setInputFiles(path);
+  await expect(page.getByText("pagos-demo.csv · 12 filas")).toBeVisible();
+  await expect(review.getByText("Omitidos", { exact: true }).locator("..")).toContainText("8");
+  await expect(review.getByText("Con error", { exact: true }).locator("..")).toContainText("2");
+  await expectCleanScreen(page);
+});
+
 test("si la revisión falla se puede reintentar; un archivo sin cobros no se queda buscando", async ({ page }) => {
   await page.goto("/pasarelas/importar");
   await expect(page.getByRole("heading", { level: 1, name: "Importar CSV" })).toBeVisible();
 
   // Sin cobros que convertir (un reembolso y un retiro): cero nuevos y cero repetidos, nada «buscando».
+  await expect(page.getByLabel("Archivo CSV")).toBeEnabled();
   await page.getByLabel("Archivo CSV").setInputFiles(EMPTY_FIXTURE);
   const empty = page.getByRole("region", { name: "Así lo entendí" });
   await expect(empty.getByText("Omitidos", { exact: true }).locator("..")).toContainText("2");
