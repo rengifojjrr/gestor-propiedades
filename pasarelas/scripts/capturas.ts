@@ -133,7 +133,14 @@ async function main(): Promise<void> {
   assertLocalStack();
   const baseURL = process.argv[2] ?? "http://127.0.0.1:3000";
   // Lo primero: un fallo antes de crear el usuario no deja nada que borrar.
-  const browser = await chromium.launch();
+  // Los controles nativos (fecha y hora, archivo) no siguen el `locale` del contexto sino el idioma del navegador:
+  // sin esto salen «11/09/2026, 06:18 PM» y «Choose File». El Chromium completo (no el de solo pruebas) lo toma de
+  // `LANGUAGE` en Linux y de `--lang` en Windows.
+  const browser = await chromium.launch({
+    channel: "chromium",
+    args: ["--lang=es-ES"],
+    env: { ...process.env, LANG: "es_ES.UTF-8", LANGUAGE: "es" },
+  });
   let ownerId: string | null = null;
   try {
     const owner = await createUser();
