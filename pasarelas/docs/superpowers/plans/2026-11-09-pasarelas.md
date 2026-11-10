@@ -503,12 +503,16 @@ export async function expectNoSeriousAxe(page: Page): Promise<void>;
 
 ### Task 9: Capa de datos común y cobros en el servidor
 
-**Archivos:** crear en `src/server/pasarelas/`: `result.ts`, `action.ts`, `zod.ts`, `dto.ts`, `tx-save.ts`,
-`queries/{config.ts,transactions.ts}`, `ops/{transactions.ts,receipts.ts}`, `actions/{transactions.ts,receipts.ts}`;
-`src/components/pasarelas/receipts/{ReceiptPicker.tsx,upload.ts,downscale.ts}`;
-`tests/integration/{config.test.ts,cobros.test.ts,totales.test.ts}`.
+Esta tarea es la parte de la capa de datos que **no depende de la sesión de Next**: todo recibe el cliente de
+Supabase como parámetro y se prueba contra el stack local. Las Server Actions, la configuración por petición y la
+subida de comprobantes desde el navegador son la tarea 25.
 
-**Consume:** tareas 2, 5, 6, 7 y 8. **Produce:**
+**Archivos:** crear en `src/server/pasarelas/`: `result.ts`, `errors.ts`, `zod.ts`, `dto.ts`, `tx-save.ts`,
+`queries/{config.ts,transactions.ts}`, `ops/{transactions.ts,receipts.ts}`;
+`tests/integration/{config.test.ts,cobros.test.ts,totales.test.ts}`; pruebas puras junto al código para `zod.ts`,
+`errors.ts`, `dto.ts` y `parseTxFilters`. Enmienda al motor: `src/lib/pasarelas/write.ts` (ver «Reglas»).
+
+**Consume:** tareas 2, 5 y 6. **Produce:**
 
 ```ts
 // result.ts
@@ -524,23 +528,14 @@ export const zHttpUrl: z.ZodType<string | null>;       // vacío → null; solo 
 export function zText(max: number): z.ZodType<string>;            // recorta; rechaza looksLikeCardNumber
 export function zOptionalText(max: number): z.ZodType<string | null>;
 export function zAlias(max: number): z.ZodType<string>;           // además rechaza 7 o más dígitos seguidos
-// components/pasarelas/receipts (cliente)
-export async function downscaleImage(file: File, maxSide?: number): Promise<File>;   // 1600; los PDF no se tocan
-export function checkReceiptFile(file: File): string | null;      // mensaje si no es jpg, png, webp o pdf, o pasa de 10 MB
-export async function uploadToFolder(file: File, folderId: string):
-  Promise<{ path: string; mime: string; sizeBytes: number; originalName: string }>;  // a {userId}/{folderId}/{uuid}.{ext}
-export async function uploadReceipt(file: File, transactionId: string): Promise<ActionResult<{ id: string }>>;
-export function ReceiptPicker(props: { onPick: (file: File | null) => void; error?: string | null }): JSX.Element;   // cámara o galería
-// action.ts (server-only)
-export async function runAction<S extends z.ZodType, T>(schema: S, input: unknown,
-  fn: (ctx: { supabase: SupabaseClient<Database>; session: Session }, data: z.output<S>) => Promise<T>,
-  opts?: { revalidate?: string[] }): Promise<ActionResult<T>>;
-export function dbErrorMessage(e: unknown): string;       // códigos y mensajes pay_* → español (lista en la tarea 2)
+export const zReference: z.ZodType<string | null>;     // recorta; vacío → null; máx. 120; SIN la guarda de tarjeta
+// errors.ts — puro: de un error (PostgREST, Storage, PayStateError, PayRuleError, ZodError) a un mensaje en español
+export function errorMessage(e: unknown): string;
+export class UserError extends Error {}                  // error esperado: su mensaje se le enseña tal cual a la persona
 // dto.ts — fila de la base → tipos del motor; los numeric pasan a Money con toMoney(dec(String(n)))
 export function toLeanTx(row): LeanTx;  export function toTxSnapshot(row): TxSnapshot;  /* y uno por tabla */
 // queries/config.ts
-export async function loadPayConfig(supabase: SupabaseClient<Database>): Promise<PayConfig>;
-export const getPayConfig: () => Promise<PayConfig>;      // por petición; incluye inactivos
+export async function loadPayConfig(supabase: SupabaseClient<Database>): Promise<PayConfig>;   // incluye inactivos
 export async function ensureHolidays(supabase): Promise<void>;   // siembra 2026 y 2027 si no hay ninguno
 // tx-save.ts
 export async function saveTx(supabase, writes: TxWrite[], opts?: { skipDuplicates?: boolean }):
@@ -578,17 +573,6 @@ export async function applyRecalcTx(supabase, ids: string[], mode: 'hoy' | 'fech
 export async function registerReceipt(supabase, userId: string, a: { transactionId: string; path: string; mime: string; sizeBytes: number; originalName: string | null }): Promise<string>;
 export async function removeReceipt(supabase, id: string): Promise<void>;        // archivo y fila
 export async function receiptSignedUrl(supabase, id: string): Promise<string>;   // 60 s
-// actions/transactions.ts ('use server') — cada una recibe `input: unknown`, valida con Zod y usa runAction
-//   createTransaction → ActionResult<{ id: string }>      editTransaction({ id, ...cambios })
-//   refundTransaction({ id, amount, on, note? })          setRefundTotal({ id, total })
-//   disputeTransaction({ id, action, on })                failTransaction({ id })   reopenTransaction({ id })
-//   markInTransit({ ids })  markDeposited({ ids, on })    → ActionResult<{ count: number }>
-//   revertDeposit({ id })   setEstimatedDate({ id, date | null })
-//   previewRecalc({ ids, mode })  applyRecalc({ ids, mode })
-//   trashTransactions({ ids })  restoreTransactions({ ids })  purgeTransactions({ ids })  → ActionResult<{ count: number }>
-// actions/receipts.ts ('use server')
-//   registerReceiptAction({ transactionId, path, mime, sizeBytes, originalName }) → ActionResult<{ id: string }>
-//   removeReceiptAction({ id })      receiptUrlAction({ id }) → ActionResult<{ url: string }>
 ```
 
 Reglas: un único constructor `applyTxFilters(query, filters, today)` lo usan `listTx` **y** `leanTx`. La búsqueda `q`
@@ -598,6 +582,27 @@ condiciones sobre `status`, `dispute_state` y `refunded_amount` en el orden de `
 **idempotente** por `id`: si ya existe ese `id`, devuelve `{ created: false }` sin tocar nada. `purgeTx` borra primero
 los archivos de `{userId}/{txId}/` y luego la fila; si falla Storage, no borra la fila. `registerReceipt` comprueba
 que el archivo existe en Storage y que la ruta empieza por `{userId}/{transactionId}/`.
+
+Más reglas, que salen de las revisiones de las tareas 3, 5 y 23:
+- **Leer dinero siempre con `::text`**: `dto.ts` exporta las listas de columnas de cada lectura (p. ej.
+  `TX_COLUMNS`, `LEAN_TX_COLUMNS`) con los `numeric` de dinero y porcentaje convertidos a texto; los mapeadores
+  devuelven montos canónicos (`toMoney`) y porcentajes normalizados (`normPct`), y nunca hacen aritmética con `number`.
+- **Una operación que no cambia nada no escribe**: si el plan del motor deja `fields` vacío (depositar con la misma
+  fecha, corregir un reembolso al mismo total), la `op` no llama a la base y no deja evento.
+- **Recalcular**: se escribe si `fields` no queda vacío, aunque `changes` esté vacío (puede cambiar solo la fecha
+  estimada); `previewRecalcTx` añade entonces una fila «Fecha estimada» con el antes y el después.
+- `errorMessage` traduce: 23505 (`pay_companies_name_uq`, `pay_gateways_name_uq`, `pay_beneficiaries_name_uq`,
+  `pay_schemes_name_uq`, la referencia repetida `pay_transactions_reference_uq`), 23503 (algo que todavía se usa),
+  23514 con los mensajes `pay_*` de la tarea 2 y `pay_transactions_alloc_base_check`, 40001 `pay_tx_conflict`
+  («Este cobro cambió mientras lo editabas: vuelve a abrirlo»), P0002, 42501 (sesión sin segundo factor: «Verifica
+  tu segundo factor para seguir»), los códigos de `PayStateError` y `PayRuleError` con sus textos del motor, y
+  cualquier otro error como «No se pudo guardar. Inténtalo de nuevo.» sin filtrar detalles internos.
+- `zText` rechaza lo que `looksLikeCardNumber` marca, con un mensaje que dice por qué y cómo seguir («Parece un
+  número de tarjeta. No lo guardes aquí: si son fechas o montos, sepáralos con texto»). **La referencia no lleva
+  esa guarda** (`zReference`): los identificadores largos de una pasarela son normales.
+- **Enmienda al motor** (`write.ts`, con sus pruebas y sin perder el 100 % de cobertura): en `planEdit`, cambiar de
+  empresa también recalcula la fecha estimada automática, y cambiar de empresa o de pasarela sin `bankAccountId`
+  explícito vuelve a poner la cuenta destino por defecto (`resolvePayout`).
 
 - [ ] **Pruebas primero** (`npm run test:int`, con `createUser` + `seedBasics`):
   - `cobros.test.ts`: `createTx` de E1 deja en la base `fees_total 9.70`, `net_amount 90.30`, repartos
@@ -704,6 +709,64 @@ Los hallazgos menores que dejó la revisión de la tarea 7 y que conviene cerrar
 - [ ] **`AppShell`:** sin desestructurar `NAV.main` como si fuera una tupla.
 - [ ] Verificar: `npm run typecheck`, `npm run lint`, `npm test` y `e2e/kit.spec.ts` (los dos tamaños, claro y
       oscuro, axe sin violaciones serias ni críticas).
+
+### Task 25: Acciones del servidor y comprobantes desde el navegador
+
+Lo que une la capa de datos (tarea 9) con la sesión (tarea 8) y con el navegador. Va después de las dos.
+
+**Archivos:** crear `src/server/pasarelas/action.ts`, `src/server/pasarelas/actions/{transactions.ts,receipts.ts}`,
+`src/components/pasarelas/receipts/{ReceiptPicker.tsx,upload.ts,downscale.ts,check.ts}` y `check.test.ts`;
+modificar `src/server/pasarelas/queries/config.ts` (añadir `getPayConfig`); `e2e/acciones.spec.ts` y una página de
+prueba `src/app/(dashboard)/kit/acciones/page.tsx` (solo con `PASARELAS_KIT=1`).
+
+**Consume:** tareas 7, 8 y 9. **Produce:**
+
+```ts
+// action.ts (server-only)
+export async function runAction<S extends z.ZodType, T>(schema: S, input: unknown,
+  fn: (ctx: { supabase: SupabaseClient<Database>; session: Session }, data: z.output<S>) => Promise<T>,
+  opts?: { revalidate?: string[] }): Promise<ActionResult<T>>;
+// queries/config.ts
+export const getPayConfig: () => Promise<PayConfig>;      // una vez por petición (cache de React), con la sesión
+// actions/transactions.ts ('use server') — cada una recibe `input: unknown`, valida con Zod y usa runAction
+//   createTransaction → ActionResult<{ id: string }>      editTransaction({ id, ...cambios })
+//   refundTransaction({ id, amount, on, note? })          setRefundTotal({ id, total })
+//   disputeTransaction({ id, action, on })                failTransaction({ id })   reopenTransaction({ id })
+//   markInTransit({ ids })  markDeposited({ ids, on })    → ActionResult<{ count: number }>
+//   revertDeposit({ id })   setEstimatedDate({ id, date | null })
+//   previewRecalc({ ids, mode })  applyRecalc({ ids, mode })
+//   trashTransactions({ ids })  restoreTransactions({ ids })  purgeTransactions({ ids })  → ActionResult<{ count: number }>
+// actions/receipts.ts ('use server')
+//   registerReceiptAction({ transactionId, path, mime, sizeBytes, originalName }) → ActionResult<{ id: string }>
+//   removeReceiptAction({ id })      receiptUrlAction({ id }) → ActionResult<{ url: string }>
+// components/pasarelas/receipts (cliente)
+export async function downscaleImage(file: File, maxSide?: number): Promise<File>;   // 1600; los PDF no se tocan
+export function checkReceiptFile(file: { name: string; type: string; size: number }): string | null;   // mensaje si no vale
+export async function sniffReceipt(file: Blob): Promise<'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf' | null>;
+export async function uploadToFolder(file: File, folderId: string):
+  Promise<{ path: string; mime: string; sizeBytes: number; originalName: string }>;  // a {userId}/{folderId}/{uuid}.{ext}
+export async function uploadReceipt(file: File, transactionId: string): Promise<ActionResult<{ id: string }>>;
+export function ReceiptPicker(props: { onPick: (file: File | null) => void; error?: string | null }): JSX.Element;   // cámara o galería
+```
+
+Reglas: `runAction` llama a `requireSession()`, valida con Zod (errores por campo con `z.flattenError`), ejecuta,
+revalida las rutas pedidas (por defecto `/pasarelas` con su árbol) y convierte cualquier error con `errorMessage`;
+los `redirect` de Next no se tragan. Toda acción recibe `input: unknown`: nunca confía en tipos del cliente. El `id`
+del cobro lo manda el cliente (idempotencia) y se valida como uuid. `checkReceiptFile` valida extensión, tipo
+declarado y 10 MB; `sniffReceipt` mira los primeros bytes (el tipo declarado no basta: Storage no comprueba el
+contenido) y `uploadToFolder` rechaza un archivo cuyo contenido no coincide con lo declarado. Las imágenes se
+recodifican siempre en el navegador (máx. 1600 px; WebP y, si el navegador no lo codifica, JPEG), lo que además les
+quita los metadatos; el nombre en Storage es `{uuid}.{ext}` y el original se guarda aparte.
+
+- [ ] **Pruebas primero:** `check.test.ts` (tipos y tamaños permitidos y rechazados; cabeceras reales de JPEG, PNG,
+      WebP y PDF; un `.txt` renombrado a `.pdf` → rechazado). `e2e/acciones.spec.ts` (390×844) sobre la página de
+      prueba: un botón crea el cobro E1 con `createTransaction` y la página muestra `9,70`, `90,30` y `45,15`;
+      pulsarlo dos veces seguidas con el mismo `id` deja un solo cobro; se adjunta un PNG generado en memoria y la
+      página lo muestra por su URL firmada; un archivo de 11 MB y un `.txt` se rechazan antes de subir; otro usuario
+      no puede abrir esa URL firmada pasado el minuto ni registrar un comprobante en un cobro ajeno; una acción
+      llamada sin sesión no devuelve datos.
+- [ ] Implementar. `npm run typecheck`, `npm run lint`, `npm test`, `npm run test:int` y el e2e en verde; en la
+      tabla de `npm run build` la página de prueba sale `ƒ (Dynamic)`.
 
 ---
 
