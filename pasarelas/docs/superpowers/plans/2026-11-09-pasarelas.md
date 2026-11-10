@@ -1054,36 +1054,90 @@ export async function exportAll(supabase: SupabaseClient<Database>, nowIso: stri
 - [ ] `e2e/ajustes.spec.ts`: la descarga trae las 17 tablas y los cobros creados en la prueba, con el neto del
       cobro E1 como el texto `"90.30"`; sin sesión, la ruta de exportar no entrega datos.
 
-### Task 19: Importar CSV (fase B)
+### Task 27: Importador — la parte pura (fase B)
 
-**Archivos:** `src/lib/pasarelas/import/{detect.ts,presets.ts,mapping.ts,index.ts}` y tests;
-`src/app/(dashboard)/pasarelas/importar/page.tsx`; `src/components/pasarelas/import/*`;
-`src/server/pasarelas/{ops,actions}/import.ts`; `tests/fixtures/*.csv` (datos inventados);
-`tests/integration/importar.test.ts`; `e2e/importar.spec.ts`.
+Lo que no depende de pantallas ni de la base: reconocer un archivo, proponer su mapeo y convertir sus filas. Va en
+el motor (funciones puras, cobertura 100 %). El CSV se lee **en el navegador** (tarea 19) y al servidor solo viajan
+las filas ya convertidas: los correos y nombres de compradores no salen del equipo de quien importa.
 
-**Produce:**
+**Archivos:** crear `src/lib/pasarelas/import/{detect.ts,presets.ts,mapping.ts,index.ts}` con sus pruebas junto al
+código y `tests/fixtures/{stripe-pagos.csv,stripe-saldo.csv,paypal-actividad.csv,otro.csv}` (datos inventados);
+modificar `src/lib/pasarelas/index.ts` (reexportar) e `index.test.ts`.
+
+**Consume:** `parseMoney`, `isMoney`, `looksLikeCardNumber` y `dates.ts` del motor. **Produce:**
 
 ```ts
 export type ImportFormat = 'stripe_pagos' | 'stripe_saldo' | 'paypal_actividad' | 'otro';
-export type ColumnMapping = { reference: string; date: string; time?: string | null; timezone?: string | null;
+export type ColumnMapping = {
+  reference: string; date: string; time?: string | null; timezone?: string | null;
   gross: string; currency?: string | null; fee?: string | null; status?: string | null; type?: string | null;
-  note?: string | null; fixedZone: string; decimal: '.' | ','; dateFormat: string };
+  note?: string | null;                 // por defecto ninguna: una columna de descripción puede traer datos de terceros
+  fixedZone: string;                    // zona IANA (o 'UTC') cuando el archivo no trae columna de zona
+  decimal: '.' | ',';
+  dateFormat: 'YYYY-MM-DD' | 'MM/DD/YYYY' | 'DD/MM/YYYY';   // la hora, si viene, es HH:mm o HH:mm:ss (pegada o en su columna)
+  defaultCurrency: Currency;            // cuando no hay columna de moneda o viene vacía
+};
 export function detectFormat(headers: readonly string[]): ImportFormat;
-export function presetFor(format: ImportFormat): ColumnMapping | null;
-export type ImportRow = { line: number; reference: string; occurredAt: string; grossOriginal: Money;
-  currency: Currency; reportedFee: Money | null; note: string | null };
-export function mapRows(rows: readonly Record<string, string>[], m: ColumnMapping):
-  { ok: ImportRow[]; skipped: { line: number; reason: string }[]; errors: { line: number; reason: string }[] };
+export function presetFor(format: ImportFormat): ColumnMapping | null;        // 'otro' → null
+export function validateMapping(headers: readonly string[], m: ColumnMapping): string[];   // problemas, en español
+export type ImportRow = { line: number; reference: string; occurredAt: string; occurredOn: ISODate;
+  grossOriginal: Money; currency: Currency; reportedFee: Money | null; note: string | null };
+export type ImportSkip = { line: number; reason: string };
+export function mapRows(rows: readonly Record<string, string>[], m: ColumnMapping, format: ImportFormat):
+  { ok: ImportRow[]; skipped: ImportSkip[]; errors: ImportSkip[] };
 ```
 
-- [ ] Detecta el formato por encabezados; deja ajustar el mapeo; lo guarda en `pay_gateways.import_mapping`.
-- [ ] Nunca mapea correos ni nombres de compradores. Reembolsos, retiros y comisiones sueltas se cuentan como
-      «omitidos» con su motivo.
-- [ ] «Así lo entendí»: N nuevos, N repetidos (por referencia) que no se tocan, N con error (línea y motivo). Opción
-      «usar la comisión del archivo» (`feeOverride`).
-- [ ] Crea con `planCreate(…, 'importado')` y `saveTx(…, { skipDuplicates: true })`.
-- [ ] Pruebas: los tres formatos con sus fixtures; fechas en UTC y con zona; montos `1,234.56` y `1.234,56`;
-      comisión con signo negativo; **importar dos veces el mismo archivo no duplica nada** (integración y e2e).
+Reglas:
+- **Los encabezados reales no se inventan**: se toman de la documentación oficial vigente de cada pasarela (la
+  exportación de pagos de Stripe, la de movimientos de saldo de Stripe y la descarga de actividad de PayPal) y el
+  informe cita la fuente de cada uno. `detectFormat` compara sin distinguir mayúsculas, espacios alrededor ni la
+  marca BOM, y exige las columnas que hacen falta para ese formato; si no reconoce el archivo, `otro`.
+- `line` es la línea del archivo (la primera fila de datos es la 2).
+- **Solo cobros**: se convierten las filas que son un cobro logrado. Lo demás se cuenta en `skipped` con su motivo
+  en español: reembolsos, retiros y depósitos al banco, comisiones sueltas, ajustes, retenciones y conversiones de
+  moneda, cobros fallidos o pendientes, y una referencia que ya salió antes en el mismo archivo. Una fila que no se
+  puede leer (fecha, monto, moneda o zona inválidos, falta la referencia) va a `errors` con línea y motivo.
+- Un cobro que el archivo marca con un reembolso se importa por su monto original y su nota dice cuánto trae
+  reembolsado, para aplicarlo después en el detalle del cobro (el importador no registra reembolsos).
+- **Montos** con el separador decimal del mapeo (`1,234.56` con punto; `1.234,56` con coma), sin pasar por
+  `number`; el resultado es `Money` canónico. La comisión informada se guarda **en positivo** aunque el archivo la
+  traiga negativa; vacía → `null`.
+- **Fechas**: con columna de zona, se respeta la de cada fila (abreviaturas habituales de EE. UU. y nombres IANA;
+  una zona que no se reconoce es un error de esa fila, no una suposición); sin ella, `fixedZone`. `occurredAt` sale
+  como instante ISO en UTC y `occurredOn` es su fecha en `America/New_York`. Las horas que no existen o se repiten
+  por el cambio de horario se resuelven sin depender de la zona de la máquina.
+- **Nunca** se leen columnas de correo, nombre o dirección del comprador: los valores por defecto no las mapean, y
+  `validateMapping` rechaza mapear `note` o `reference` a una columna cuyo nombre sea de correo, nombre o dirección.
+  Una nota que parece número de tarjeta (`looksLikeCardNumber`) se descarta.
+- [ ] **Pruebas primero**: los tres formatos con sus archivos de ejemplo (leídos con papaparse **en la prueba**),
+      con filas de cada tipo que se omite; fechas en UTC, con columna de zona y con zona fija, incluidos un cobro a
+      las 23:30 de Los Ángeles (cae al día siguiente en Nueva York) y los dos cambios de horario de 2026; montos
+      `1,234.56` y `1.234,56`; comisión con signo negativo; referencia repetida en el archivo; columnas de
+      comprador presentes en el archivo y ausentes del resultado; `otro` con un mapeo a mano. Cobertura 100 %.
+- [ ] Implementar. `npm run typecheck`, `npm run lint` y `npm run coverage` en verde.
+
+### Task 19: Importar CSV — pantalla y guardado (fase B)
+
+**Archivos:** `src/app/(dashboard)/pasarelas/importar/{page.tsx,loading.tsx}`; `src/components/pasarelas/import/*`;
+`src/server/pasarelas/{ops,actions}/import.ts`; `tests/integration/importar.test.ts`; `e2e/importar.spec.ts`.
+
+**Consume:** tarea 27 (`detectFormat`, `presetFor`, `validateMapping`, `mapRows`), `planCreate`, `saveTx`,
+`runAction`, `getPayConfig`. **Produce (acciones):** `importTransactions` (`{ companyId, gatewayId, channelId,
+extraIds, useReportedFee, rows: ImportRow[] }` en lotes de 500 → `{ created, duplicates }`) y `saveImportMapping`
+(`{ gatewayId, mapping }` → `pay_gateways.import_mapping`).
+
+- [ ] El archivo se lee **en el navegador** con papaparse (no se sube): se detecta el formato por encabezados, se
+      propone el mapeo y se puede ajustar; el mapeo se recuerda por pasarela. Se eligen empresa, pasarela, canal y
+      opciones para todos los cobros del archivo. Un archivo de más de 5 000 filas se rechaza con mensaje.
+- [ ] «Así lo entendí»: N nuevos, N omitidos (con su motivo) y N con error (línea y motivo), y una muestra de las
+      primeras filas ya convertidas, antes de guardar. Opción «usar la comisión del archivo» (`feeOverride`).
+- [ ] Guarda con `planCreate(…, 'importado')` y `saveTx(…, { skipDuplicates: true })`; al terminar dice cuántos se
+      crearon y cuántos ya existían (por referencia en esa pasarela) y no se tocaron. El servidor vuelve a validar
+      cada fila con Zod: nunca confía en lo que mandó el navegador.
+- [ ] Pruebas: integración de `ops/import.ts` (crea, respeta `feeOverride`, **importar dos veces el mismo archivo
+      no duplica nada**, una fila inválida no deja el lote a medias); `e2e/importar.spec.ts` con el archivo de
+      ejemplo de Stripe: sube, revisa «Así lo entendí», guarda, los cobros aparecen con sus comisiones, y al
+      repetir el archivo dice que ya existían.
 
 ---
 
