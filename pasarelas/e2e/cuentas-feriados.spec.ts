@@ -20,7 +20,16 @@ test.beforeEach(async ({ page }) => {
   await login(page, user);
 });
 
+/**
+ * axe sin violaciones serias y nada que se desborde. Antes se espera a que terminen las transiciones (la entrada de
+ * un aviso pasajero): a medio aparecer, su texto todavía es translúcido y axe lo mide sin el contraste final.
+ */
 async function expectCleanScreen(page: Page): Promise<void> {
+  await page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .every((animation) => animation.playState !== "running" || animation.effect?.getTiming().iterations === Infinity),
+  );
   await expectNoSeriousAxe(page);
   await expectNoHorizontalOverflow(page);
 }
