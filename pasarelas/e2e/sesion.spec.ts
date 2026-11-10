@@ -534,6 +534,44 @@ test.describe("cortes de red", () => {
     });
   }
 
+  test("Seguridad, activar el primero: si «Ver cómo quedó» lo enseña activo, el alta terminó y quitarlo no la hace volver", async ({
+    page,
+  }) => {
+    const user = await newUser();
+    await login(page, user);
+    await openSettings(page);
+    await page.getByRole("button", { name: "Activar segundo factor" }).click();
+    const secret = (await page.getByTestId("clave-totp").innerText()).replace(/\s/g, "");
+
+    // Confirmar llega (el dispositivo queda activo), pero la respuesta se pierde.
+    const reconnect = await cutActions(page, "/ajustes", { arrives: true });
+    await page.getByLabel("Código de 6 dígitos").fill(totp(secret));
+    await page.getByRole("button", { name: "Verificar y activar" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: UNSURE_TEXT })).toBeVisible();
+    await expectNoSeriousAxe(page);
+
+    await reconnect();
+    await page.getByRole("button", { name: "Ver cómo quedó" }).click();
+    await expect(page.getByRole("listitem").filter({ hasText: "Autenticador" })).toBeVisible();
+    await expect(page.getByLabel("Código de 6 dígitos")).toHaveCount(0);
+
+    // Por las dudas (¿guardó bien la clave la app tras el corte?), lo quita sin recargar. Es el único: la cuenta vuelve
+    // a abrirse solo con la contraseña y la pantalla sigue en Ajustes. No vuelven el QR, la clave, el código ni la duda
+    // de un dispositivo que ya no existe: se puede empezar de nuevo.
+    await page.getByRole("button", { name: "Quitar Autenticador" }).click();
+    await page
+      .getByRole("alertdialog", { name: "¿Quitar «Autenticador»?" })
+      .getByRole("button", { name: "Quitar", exact: true })
+      .click();
+    await expect(page.getByText("Dispositivo quitado")).toBeVisible();
+    await expect(page.getByText(BANNER)).toBeVisible();
+    await expect(page.getByRole("listitem").filter({ hasText: "Autenticador" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Activar segundo factor" })).toBeVisible();
+    await expect(page.getByLabel("Código de 6 dígitos")).toHaveCount(0);
+    await expect(page.getByTestId("clave-totp")).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: UNSURE_TEXT })).toHaveCount(0);
+  });
+
   test("Seguridad, quitar: si se pierde la respuesta, se dice en la tarjeta y «Ver cómo quedó» enseña que ya no está", async ({
     page,
   }) => {

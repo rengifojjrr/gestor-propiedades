@@ -83,9 +83,14 @@ function SecondFactor({ factors }: { factors: VerifiedFactor[] }) {
   const [removing, startRemoving] = useTransition();
 
   // Si «Ver cómo quedó» enseña el dispositivo del alta ya activo (el código sí había llegado), el alta terminó: no
-  // se sigue pidiendo el código y vuelve el botón para agregar otro.
-  const enrolling =
-    enrollment !== null && factors.every((factor) => factor.id !== enrollment.factorId) ? enrollment : null;
+  // se sigue pidiendo el código y vuelve el botón para agregar otro. Se olvida del todo, no solo se oculta: si luego
+  // se quita ese dispositivo, no vuelven su QR, su clave ni la duda. Se ajusta al pintar (sin efecto); en la vuelta
+  // siguiente `enrollment` ya es `null` y la condición no se repite.
+  if (enrollment !== null && factors.some((factor) => factor.id === enrollment.factorId)) {
+    setEnrollment(null);
+    setCodeError(null);
+    setConfirmFailure(null);
+  }
 
   const start = async () => {
     // Repetirlo tras un corte es seguro: `startEnrollment` quita antes el intento que quedó sin verificar.
@@ -115,6 +120,8 @@ function SecondFactor({ factors }: { factors: VerifiedFactor[] }) {
     // Con la duda de un corte en pantalla, la lista se vuelve a pintar: el dispositivo pudo quedar activo.
     if (confirmFailure) router.refresh();
     setEnrollment(null);
+    setCodeError(null);
+    setConfirmFailure(null);
   };
 
   const remove = (factor: VerifiedFactor) =>
@@ -156,7 +163,7 @@ function SecondFactor({ factors }: { factors: VerifiedFactor[] }) {
         <p>Todavía no tienes ningún dispositivo: tu cuenta se abre solo con la contraseña.</p>
       )}
 
-      {enrolling ? (
+      {enrollment ? (
         <div className="flex flex-col gap-4 rounded-control border border-rule-strong p-3">
           <p>
             Abre tu app de autenticación (por ejemplo, Google Authenticator o Authy), agrega una cuenta y escanea este
@@ -166,7 +173,7 @@ function SecondFactor({ factors }: { factors: VerifiedFactor[] }) {
               `<img>` normal (next/image no aplica a un `data:`) y sobre blanco, también en modo oscuro. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={enrolling.qrCode}
+            src={enrollment.qrCode}
             alt="Código QR para tu app de autenticación"
             width={231}
             height={231}
@@ -175,11 +182,11 @@ function SecondFactor({ factors }: { factors: VerifiedFactor[] }) {
           <div className="flex flex-col gap-1">
             <p className="text-sm text-ink-soft">¿No puedes escanearlo? Escribe esta clave en la app:</p>
             <code data-testid="clave-totp" className="cifra font-sans text-base font-semibold break-words">
-              {inGroups(enrolling.secret)}
+              {inGroups(enrollment.secret)}
             </code>
           </div>
           <form action={confirm} className="flex flex-col gap-3">
-            <input type="hidden" name="factorId" value={enrolling.factorId} />
+            <input type="hidden" name="factorId" value={enrollment.factorId} />
             <Field label="Código de 6 dígitos" hint="El que muestra la app después de escanear." error={codeError}>
               <Input
                 name="code"
