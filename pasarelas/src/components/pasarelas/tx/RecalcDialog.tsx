@@ -195,7 +195,8 @@ function Value({ row, value, currency }: { row: DiffRow; value: string; currency
   return isMoney(value) ? <Money value={value} currency={currency} /> : <>—</>;
 }
 
-function ChangesTable({ label, changes, currency }: { label: string; changes: DiffRow[]; currency: Currency }) {
+/** El antes y el después de un cambio, fila por fila. También lo usan el reembolso y la disputa del detalle. */
+export function ChangesTable({ label, changes, currency }: { label: string; changes: DiffRow[]; currency: Currency }) {
   return (
     <Table label={label}>
       <THead>
