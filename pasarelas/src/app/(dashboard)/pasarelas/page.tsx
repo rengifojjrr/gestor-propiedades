@@ -2,6 +2,7 @@ import { ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
 import { AccountsChart } from "@/components/pasarelas/summary/AccountsChart";
 import { CompanyRanking } from "@/components/pasarelas/summary/CompanyRanking";
+import { filterSummary } from "@/components/pasarelas/summary/filter-summary";
 import { GatewayCost } from "@/components/pasarelas/summary/GatewayCost";
 import { GatewayShare } from "@/components/pasarelas/summary/GatewayShare";
 import { MonthChart } from "@/components/pasarelas/summary/MonthChart";
@@ -82,6 +83,8 @@ export default async function ResumenPage({ searchParams }: PageProps<"/pasarela
   const accountName = accountNames(cfg);
   const beneficiaryName = namesOf(cfg.beneficiaries, "Beneficiario borrado");
   const { filters, query } = summaryScope(sp, today);
+  const period = Array.isArray(sp.periodo) ? sp.periodo[0] : sp.periodo;
+  const otherFilters = [filters.companyId, filters.channelId, filters.gatewayId].filter((id) => id !== undefined);
   // Hay cobros en el período, pero no en la moneda pedida (que se muestra por sus depósitos o repartos).
   const elsewhere = currency !== null && summary === null && view.periodCurrencies.length > 0;
 
@@ -94,6 +97,7 @@ export default async function ResumenPage({ searchParams }: PageProps<"/pasarela
             {...filterOptions(cfg, filters.companyId, filters.channelId)}
             currencies={view.currencies}
             defaultCurrency={view.defaultCurrency}
+            summary={filterSummary({ period, currency, others: otherFilters.length })}
           />
           <p className="text-ink-soft">
             Del <DateText value={view.period.from} /> al <DateText value={view.period.to} />
