@@ -357,11 +357,14 @@ export function planCreate(cfg: PayConfig, input: NewTxInput, kind: "creado" | "
 
 /**
  * Un alta que llega con el id de un cobro ya guardado es el mismo envío repetido (una respuesta que se perdió) solo
- * si trae lo mismo que define el cobro: monto, moneda, instante, empresa, pasarela, canal, opciones, esquema y
- * referencia. Si algo difiere, la persona cambió datos creyendo que no se había guardado: `ya_registrado`, para
- * que no se dé por guardado lo que no se guardó. La nota, el estado inicial y la fecha estimada no cuentan.
+ * si trae lo mismo que se guardó: monto, moneda, instante, empresa, pasarela, canal, opciones, esquema y
+ * referencia, y también lo de «Más opciones» (estado inicial y fecha del depósito, cuenta destino, fecha estimada a
+ * mano y nota). Si algo difiere, la persona cambió datos creyendo que no se había guardado: `ya_registrado`, para
+ * que no se dé por guardado lo que no se guardó. Sin cuenta destino elegida vale la que haya puesto la app.
  */
 export function requireSameRegistration(tx: TxSnapshot, input: NewTxInput): void {
+  const status = input.status ?? "registrado";
+  const manual = input.estimatedDepositOn ?? null;
   const same =
     cmp(tx.grossOriginal, input.grossOriginal) === 0 &&
     tx.currency === input.currency &&
@@ -371,7 +374,12 @@ export function requireSameRegistration(tx: TxSnapshot, input: NewTxInput): void
     tx.channelId === input.channelId &&
     sameIds(selectionOf(tx).extraIds, input.extraIds) &&
     tx.schemeId === input.schemeId &&
-    tx.reference === input.reference;
+    tx.reference === input.reference &&
+    tx.status === status &&
+    (status !== "depositado" || tx.depositedOn === input.depositedOn) &&
+    (input.bankAccountId == null || tx.bankAccountId === input.bankAccountId) &&
+    (manual === null ? !tx.estimatedIsManual : tx.estimatedIsManual && tx.estimatedDepositOn === manual) &&
+    tx.note === input.note;
   if (!same) throw new PayStateError("ya_registrado");
 }
 
@@ -438,11 +446,18 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
     { label: "cuenta destino", did: pick(input.bankAccountId, tx.bankAccountId) !== tx.bankAccountId },
   ].flatMap((item) => (item.did ? [item.label] : []));
   if (labels.length === 0) throw new PayStateError("sin_cambios");
+  // Ya depositado, el cobro no puede pasar a un día posterior al de su depósito.
+  if (tx.depositedOn !== null) requireDepositAfter(sel.occurredOn, tx.depositedOn);
   const lost = prev.state.dispute === "perdida";
   if (!lost && cmp(grossOriginal, tx.refunded) < 0) throw new PayStateError("reembolso_excede");
 
-  // Un canal es de una sola empresa: si cambia la empresa, la plataforma se vuelve a resolver (y a comprobar).
-  const again = { ...changed, channel: changed.channel || changed.company, amount: grossOriginal !== tx.grossOriginal };
+  // Un canal es de una sola empresa: si cambia la empresa, la plataforma se vuelve a resolver (y a comprobar). Una
+  // comisión informada era la de ese monto en esa moneda: con otro monto, o en otra moneda, ya no vale.
+  const again = {
+    ...changed,
+    channel: changed.channel || changed.company,
+    amount: grossOriginal !== tx.grossOriginal || currency !== tx.currency,
+  };
   const anyRule = again.gateway || again.channel || again.extras || again.scheme || again.date;
   const state = { ...prev.state, grossOriginal, refunded: lost ? grossOriginal : prev.state.refunded };
   // Lo congelado solo se vuelve a calcular si cambió algo que entra en el cálculo.
@@ -604,6 +619,20 @@ export function planEstimated(cfg: PayConfig, tx: TxSnapshot, date: ISODate | nu
   }
   const next = { estimatedDepositOn: payout(cfg, tx, tx.breakdown.rules.extras).on, estimatedIsManual: false };
   return update(tx, next, "fecha_estimada", "Fecha estimada automática");
+}
+
+/** Lo que dice el historial cuando es la app la que vuelve a calcular la fecha estimada (`planEstimateRefresh`). */
+export const ESTIMATE_REFRESH_SUMMARY =
+  "Fecha estimada recalculada por la app (cambiaron los feriados o los días al depósito)";
+
+/**
+ * La fecha estimada automática de un cobro, vuelta a calcular por la app porque cambiaron los feriados o los días
+ * al depósito: la misma que `planEstimated(cfg, tx, null)`, pero el historial dice que no la cambió la persona.
+ * Quien llama elige los cobros: los que están por caer y con la fecha automática.
+ */
+export function planEstimateRefresh(cfg: PayConfig, tx: TxSnapshot): TxWrite {
+  const write = planEstimated(cfg, tx, null);
+  return { ...write, event: { ...write.event, summary: ESTIMATE_REFRESH_SUMMARY } };
 }
 
 // ─── Recalcular ─────────────────────────────────────────────────────────────────────────────────────────────

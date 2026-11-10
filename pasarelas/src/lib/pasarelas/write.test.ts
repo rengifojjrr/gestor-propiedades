@@ -6,12 +6,14 @@ import { PayRuleError } from "./rules";
 import type { PayRuleCode } from "./rules";
 import type { AllocWrite, GatewayCfg, PayConfig, TxFields, TxSnapshot, TxWrite } from "./types";
 import {
+  ESTIMATE_REFRESH_SUMMARY,
   PAY_STATE_TEXT,
   PayStateError,
   planCreate,
   planDeposit,
   planDispute,
   planEdit,
+  planEstimateRefresh,
   planEstimated,
   planFail,
   planRecalc,
@@ -333,8 +335,41 @@ describe("requireSameRegistration", () => {
   test("el mismo envío otra vez (el mismo instante escrito de otra forma, las opciones en otro orden) pasa", () => {
     const tx = savedE1({ extraIds: [DEMO.extraId] });
     expect(() => requireSameRegistration(tx, inputE1())).not.toThrow();
-    const sameInstant = inputE1({ occurredAt: "2026-11-13T10:30:00-05:00", note: "Otra nota", status: "en_transito" });
+    const sameInstant = inputE1({ occurredAt: "2026-11-13T10:30:00-05:00" });
     expect(() => requireSameRegistration(tx, sameInstant)).not.toThrow();
+  });
+
+  test("lo de «Más opciones» repetido igual también pasa: estado y fecha del depósito, cuenta, fecha a mano y nota", () => {
+    const more: Partial<NewTxInput> = {
+      status: "depositado",
+      depositedOn: "2026-11-16",
+      bankAccountId: "ba-otra",
+      estimatedDepositOn: "2026-11-20",
+      note: "Cuota de noviembre",
+    };
+    expect(() => requireSameRegistration(savedE1(more), inputE1(more))).not.toThrow();
+    // Sin cuenta elegida vale la que puso la app (la de la cuenta de la pasarela); sin estado, «registrado».
+    const plain = savedE1();
+    expect(() => requireSameRegistration(plain, inputE1({ bankAccountId: null, status: "registrado" }))).not.toThrow();
+  });
+
+  test.each<[string, Partial<NewTxInput>, Partial<NewTxInput>]>([
+    ["estado inicial", {}, { status: "en_transito" }],
+    ["estado inicial, depositado", {}, { status: "depositado", depositedOn: "2026-11-16" }],
+    [
+      "fecha del depósito",
+      { status: "depositado", depositedOn: "2026-11-16" },
+      { status: "depositado", depositedOn: "2026-11-17" },
+    ],
+    ["cuenta destino", {}, { bankAccountId: "ba-otra" }],
+    ["fecha estimada a mano", {}, { estimatedDepositOn: "2026-11-20" }],
+    ["otra fecha estimada a mano", { estimatedDepositOn: "2026-11-20" }, { estimatedDepositOn: "2026-11-23" }],
+    ["fecha estimada automática", { estimatedDepositOn: "2026-11-20" }, { estimatedDepositOn: null }],
+    ["nota", {}, { note: "Otra nota" }],
+    ["nota quitada", { note: "Cuota" }, { note: null }],
+  ])("con otro dato de «Más opciones» (%s) tampoco es el mismo envío: lo dice", (_label, saved, again) => {
+    const tx = savedE1(saved);
+    expectStateError(() => requireSameRegistration(tx, inputE1({ ...saved, ...again })), "ya_registrado");
   });
 
   test.each<[string, Partial<NewTxInput>]>([
@@ -784,6 +819,15 @@ describe("planEdit", () => {
     save(write, tx);
   });
 
+  test("ya depositado, la fecha del cobro no puede pasar a después del depósito; hasta ese mismo día, sí", () => {
+    let tx = savedE1();
+    tx = save(planDeposit(tx, "2026-11-16"), tx);
+    expectStateError(() => planEdit(cfgDemo(), tx, { occurredAt: "2026-11-19T15:30:00Z" }), "deposito_antes_del_cobro");
+    const sameDay = planEdit(cfgDemo(), tx, { occurredAt: "2026-11-16T15:30:00Z" });
+    expect(sameDay.fields.occurredOn).toBe("2026-11-16");
+    save(sameDay, tx);
+  });
+
   test("una fecha estimada puesta a mano no se pisa al cambiar la fecha, la pasarela o las opciones", () => {
     const cfg = withPayPal(cfgDemo());
     const tx = savedE1({ estimatedDepositOn: "2026-11-20" });
@@ -962,6 +1006,17 @@ describe("planEdit", () => {
     expect(write.fields.currency).toBe("EUR");
     expect(write.fields.breakdown).toEqual({ ...tx.breakdown, currency: "EUR" });
     expect(write.event.summary).toBe("Editado: moneda");
+    save(write, tx);
+  });
+
+  test("solo otra moneda en un cobro con la comisión informada: esa comisión era de otra moneda y se descarta", () => {
+    const tx = savedE1({ feeOverride: "3.41" });
+    const write = planEdit(cfgDemo(), tx, { currency: "EUR" });
+    const gateway = write.fields.breakdown?.rules.gateway;
+    expect(gateway !== undefined && "feeOverride" in gateway).toBe(false);
+    // Vale la tarifa congelada en el cobro: 2,9 % + 0,30 de 100,00.
+    expect(write.fields.breakdown?.lines[0]).toMatchObject({ kind: "pasarela", amount: "3.20" });
+    expect(write.fields.currency).toBe("EUR");
     save(write, tx);
   });
 
@@ -1649,6 +1704,23 @@ describe("planEstimated", () => {
 
   test("una fecha que no existe no se guarda", () => {
     expect(() => planEstimated(cfgDemo(), savedE1(), "2026-02-30")).toThrow(RangeError);
+  });
+});
+
+describe("planEstimateRefresh", () => {
+  test("la automática con la configuración de ahora, y el historial dice que la cambió la app", () => {
+    const tx = savedE1({ extraIds: [] });
+    const cfg = cfgDemo();
+    only(cfg.companyGateways).payoutDaysOverride = 1;
+    const write = planEstimateRefresh(cfg, tx);
+    expect(write.fields).toEqual({ estimatedDepositOn: "2026-11-16" });
+    expect(write.event).toMatchObject({ kind: "fecha_estimada", summary: ESTIMATE_REFRESH_SUMMARY });
+    expect(ESTIMATE_REFRESH_SUMMARY).toMatch(/por la app/);
+    save(write, tx);
+  });
+
+  test("ya al día, no hay nada que escribir", () => {
+    expect(planEstimateRefresh(cfgDemo(), savedE1()).fields).toEqual({});
   });
 });
 

@@ -177,7 +177,8 @@ export function resolveRules(cfg: PayConfig, sel: Selection, versionsOn: ISODate
  *    arrastra.
  *  - `date`: solo la tarifa de la pasarela y la versión del esquema que rigen en la fecha nueva.
  *  - `extras`: las opciones. `channel`: la plataforma. `scheme`: el esquema.
- *  - `amount`: la comisión informada era la de otro monto: se descarta y vale la tarifa congelada.
+ *  - `amount`: cambió el monto o la moneda. La comisión informada era la de otro monto (o de otra moneda): se
+ *    descarta y vale la tarifa congelada.
  */
 export function reResolve(
   prev: Rules,
