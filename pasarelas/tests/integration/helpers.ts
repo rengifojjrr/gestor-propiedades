@@ -17,6 +17,8 @@ export type Basics = {
   companyId: string;
   channelId: string;
   gatewayId: string;
+  /** La cuenta de la pasarela en la empresa (`pay_company_gateways`): Stripe en «Escuela Demo». */
+  companyGatewayId: string;
   feeVersionId: string;
   /** La opción «Pago rápido» de la pasarela. */
   extraId: string;
@@ -125,7 +127,9 @@ export async function enrollTotp(client: Db): Promise<{ secret: string; factorId
 /**
  * La configuración mínima del spec (caso E1), creada con la sesión de `client`:
  * empresa «Escuela Demo» con un canal al 5 %; Stripe 2,9 % + 0,30 con la opción «Pago rápido» (1,5 % sobre el
- * bruto, 0 días); una cuenta destino; Grupos A, B y C; y un esquema 50/30/20 sobre el neto.
+ * bruto, 0 días); una cuenta destino; Grupos A, B y C; y un esquema 50/30/20 sobre el neto, que queda como el
+ * esquema por defecto de la empresa. La empresa tiene además su cuenta de Stripe (`pay_company_gateways`) con esa
+ * cuenta destino, sin días propios y sin opciones propias.
  */
 export async function seedBasics(client: Db): Promise<Basics> {
   const company = unwrap(
@@ -198,10 +202,29 @@ export async function seedBasics(client: Db): Promise<Basics> {
     "esquema",
   ) as { scheme_id: string; version_id: string; version: number };
 
+  unwrap(
+    await client
+      .from("pay_companies")
+      .update({ default_scheme_id: scheme.scheme_id })
+      .eq("id", company.id)
+      .select("id")
+      .single(),
+    "esquema por defecto de la empresa",
+  );
+  const companyGateway = unwrap(
+    await client
+      .from("pay_company_gateways")
+      .insert({ company_id: company.id, gateway_id: gatewayId, bank_account_id: bankAccount.id })
+      .select("id")
+      .single(),
+    "cuenta de la pasarela en la empresa",
+  );
+
   return {
     companyId: company.id,
     channelId: channel.id,
     gatewayId,
+    companyGatewayId: companyGateway.id,
     feeVersionId: feeVersion.id,
     extraId: extra.id,
     bankAccountId: bankAccount.id,

@@ -83,6 +83,9 @@ create table public.pay_beneficiaries (
   updated_at timestamptz not null default now(),
   unique (id, user_id)
 );
+-- Nombre único por usuario, sin distinguir mayúsculas ni espacios de los extremos (igual que empresas y pasarelas):
+-- dos beneficiarios con el mismo nombre no se distinguirían en un reparto.
+create unique index pay_beneficiaries_name_uq on public.pay_beneficiaries (user_id, lower(btrim(name)));
 
 -- Esquema de reparto. Sus líneas viven en versiones: cambiarlo no toca lo ya repartido.
 create table public.pay_schemes (
@@ -95,6 +98,8 @@ create table public.pay_schemes (
   updated_at timestamptz not null default now(),
   unique (id, user_id)
 );
+-- Nombre único por usuario, con la misma regla que el de los beneficiarios.
+create unique index pay_schemes_name_uq on public.pay_schemes (user_id, lower(btrim(name)));
 
 create table public.pay_scheme_versions (
   id uuid primary key default gen_random_uuid(),
@@ -106,6 +111,8 @@ create table public.pay_scheme_versions (
   effective_from date not null default date '2000-01-01',
   created_at timestamptz not null default now(),
   unique (id, user_id),
+  -- Para que el cobro pueda atar su versión a su esquema con una clave foránea compuesta.
+  unique (id, scheme_id, user_id),
   unique (scheme_id, version),
   unique (scheme_id, effective_from),
   foreign key (scheme_id, user_id) references public.pay_schemes (id, user_id) on delete cascade,
@@ -258,13 +265,19 @@ create table public.pay_transactions (
   gross_amount numeric(14,2) not null check (gross_amount >= 0),
   fees_total numeric(14,2) not null check (fees_total >= 0),
   net_amount numeric(14,2) not null,
-  alloc_base text check (alloc_base in ('neto', 'bruto')),
+  -- Con nombre propio: el que Postgres le pondría solo (pay_transactions_alloc_base_check) es el de la
+  -- restricción de más abajo, la que ata la base del reparto al cobro.
+  alloc_base text constraint pay_transactions_alloc_base_kind_check check (alloc_base in ('neto', 'bruto')),
   alloc_base_amount numeric(14,2) not null default 0,
   breakdown jsonb not null check (jsonb_typeof(breakdown) = 'object'),
   fee_version_id uuid not null,
   scheme_id uuid,
   scheme_version_id uuid,
-  reference text check (reference is null or char_length(btrim(reference)) between 1 and 120),
+  -- Siempre recortada: con espacios en los extremos, «abc» y « abc » serían dos referencias y el único de abajo
+  -- no vería el duplicado. pay_save_transactions la recorta antes de guardar.
+  reference text check (
+    reference is null or (reference = btrim(reference) and char_length(reference) between 1 and 120)
+  ),
   note text check (note is null or char_length(note) <= 280),
   status text not null default 'registrado' check (status in ('registrado', 'en_transito', 'depositado', 'fallido')),
   dispute_state text check (dispute_state in ('abierta', 'ganada', 'perdida')),
@@ -293,12 +306,25 @@ create table public.pay_transactions (
     (scheme_version_id is not null and scheme_id is not null and alloc_base is not null)
     or (scheme_version_id is null and alloc_base_amount = 0)
   ),
+  -- La base del reparto queda atada al cobro: es su neto o su bruto vigente, según diga alloc_base. Sin esquema
+  -- (sin versión) no hay reparto: ni esquema, ni base, y el monto en cero. Así nadie guarda un reparto cuadrado
+  -- contra una base inventada. (CASE y no OR: con alloc_base nulo un OR daría nulo y la restricción pasaría.)
+  constraint pay_transactions_alloc_base_check check (
+    case
+      when scheme_version_id is null then scheme_id is null and alloc_base is null and alloc_base_amount = 0
+      when alloc_base = 'neto' then alloc_base_amount = net_amount
+      when alloc_base = 'bruto' then alloc_base_amount = gross_amount
+      else false
+    end
+  ),
   foreign key (company_id, user_id) references public.pay_companies (id, user_id),
   foreign key (channel_id, company_id, user_id) references public.pay_channels (id, company_id, user_id),
   foreign key (gateway_id, user_id) references public.pay_gateways (id, user_id),
   foreign key (fee_version_id, gateway_id, user_id) references public.pay_gateway_fee_versions (id, gateway_id, user_id),
   foreign key (scheme_id, user_id) references public.pay_schemes (id, user_id),
-  foreign key (scheme_version_id, user_id) references public.pay_scheme_versions (id, user_id),
+  -- La versión tiene que ser de ESE esquema (y de ese usuario): no vale el esquema de uno con la versión de otro.
+  -- Con versión siempre hay esquema (pay_transactions_scheme_check), así que la clave siempre se comprueba.
+  foreign key (scheme_version_id, scheme_id, user_id) references public.pay_scheme_versions (id, scheme_id, user_id),
   foreign key (bank_account_id, user_id) references public.pay_bank_accounts (id, user_id)
     on delete set null (bank_account_id)
 );
@@ -360,6 +386,8 @@ create table public.pay_transaction_events (
   at timestamptz not null default now(),
   kind text not null check (kind in (
     'creado', 'importado', 'editado', 'reembolso', 'disputa_abierta', 'disputa_ganada', 'disputa_perdida',
+    -- El evento de una disputa que se anula. Lo escribe la app; aquí solo se admite el valor.
+    'disputa_anulada',
     'recalculado', 'en_transito', 'depositado', 'deposito_revertido', 'fallido', 'reabierto', 'fecha_estimada',
     'a_papelera', 'restaurado', 'comprobante_agregado', 'comprobante_quitado'
   )),
@@ -423,6 +451,35 @@ begin
   end loop;
 end;
 $$;
+
+-- receipts_count no se escribe a mano: solo lo mueve el disparador de los comprobantes (más abajo). Una sentencia
+-- directa sobre el cobro —de la app, de la API o de pay_save_transactions— corre este disparador con
+-- pg_trigger_depth() = 1: ahí una inserción empieza en 0 y un update conserva el valor que había, diga lo que
+-- diga la sentencia. La actualización que hace pay_receipts_count_sync nace dentro de otro disparador (nivel 2 o
+-- más) y pasa sin tocar.
+-- El nombre importa: los disparadores BEFORE de una tabla corren por orden alfabético y este tiene que ir ANTES
+-- que pay_transactions_touch, para que su condición compare el contador ya restaurado (un update que cambia una
+-- nota y de paso intenta tocar el contador sigue contando como edición y mueve updated_at).
+create or replace function private.pay_transactions_receipts_count_guard()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if pg_trigger_depth() = 1 then
+    if tg_op = 'INSERT' then
+      new.receipts_count := 0;
+    else
+      new.receipts_count := old.receipts_count;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger pay_transactions_receipts_count_guard
+  before insert or update on public.pay_transactions
+  for each row execute function private.pay_transactions_receipts_count_guard();
 
 -- En el cobro, sumar o quitar un comprobante no cuenta como edición (no mueve updated_at).
 create trigger pay_transactions_touch
@@ -662,7 +719,9 @@ with asignado as (
   select a.user_id, a.beneficiary_id, t.currency, sum(a.amount) as assigned
   from public.pay_allocations a
   join public.pay_transactions t on t.id = a.transaction_id
-  where t.deleted_at is null
+  -- Ni la papelera ni los fallidos: un cobro fallido no le asigna nada a nadie, aunque traiga repartos (que
+  -- solo pueden sumar cero), igual que no cuenta en los demás totales.
+  where t.deleted_at is null and t.status <> 'fallido'
   group by a.user_id, a.beneficiary_id, t.currency
 ),
 liquidado as (
@@ -746,7 +805,7 @@ grant select on public.pay_beneficiary_balances, public.pay_company_totals, publ
 --              event?: { kind, summary, data } }]
 --   · En «update», tx solo trae las columnas que cambian (más id). allocations = null o ausente → no se tocan.
 --   · p_skip_duplicates: en «insert», si ya existe la referencia en esa pasarela, el cobro se salta (importación).
--- Devuelve [{ id, inserted, skipped }] en el mismo orden.
+-- Devuelve [{ id, inserted, skipped }] en el mismo orden. En un cobro saltado, id es el del cobro que ya existe.
 create or replace function public.pay_save_transactions(p_items jsonb, p_skip_duplicates boolean default false)
 returns jsonb
 language plpgsql
@@ -762,6 +821,7 @@ declare
   v_old public.pay_transactions;
   v_new public.pay_transactions;
   v_reference text;
+  v_existing uuid;
   v_inserted boolean;
   v_skipped boolean;
   v_count integer;
@@ -789,15 +849,21 @@ begin
 
     if v_mode = 'insert' then
       v_new := jsonb_populate_record(null::public.pay_transactions, v_tx);
-      v_id := coalesce(v_new.id, gen_random_uuid());
       -- La referencia se guarda sin espacios alrededor, y así mismo se compara para saber si ya existe.
       v_reference := nullif(btrim(v_new.reference), '');
-      if p_skip_duplicates and v_reference is not null and exists (
-        select 1 from public.pay_transactions t
-        where t.gateway_id = v_new.gateway_id and t.reference = v_reference
-      ) then
+      v_existing := null;
+      if p_skip_duplicates and v_reference is not null then
+        -- A lo sumo hay uno: la referencia es única por usuario y pasarela, y la RLS solo deja ver los propios.
+        select t.id into v_existing
+        from public.pay_transactions t
+        where t.gateway_id = v_new.gateway_id and t.reference = v_reference;
+      end if;
+      if v_existing is not null then
+        -- Duplicado saltado: se devuelve el id del cobro que ya existe, para que quien importa sepa cuál es.
+        v_id := v_existing;
         v_skipped := true;
       else
+        v_id := coalesce(v_new.id, gen_random_uuid());
         insert into public.pay_transactions (
           id, occurred_at, occurred_on, company_id, channel_id, gateway_id, currency,
           gross_original, refunded_amount, gross_amount, fees_total, net_amount, alloc_base, alloc_base_amount,
@@ -1018,6 +1084,7 @@ grant execute on function public.pay_create_gateway(jsonb) to authenticated, ser
 -- lanza la base, y las de comprobación solo las llaman esos disparadores, que corren como el dueño de las tablas
 -- (SECURITY DEFINER, ver la sección 3).
 revoke all on function private.pay_touch_updated_at() from public, anon, authenticated;
+revoke all on function private.pay_transactions_receipts_count_guard() from public, anon, authenticated;
 revoke all on function private.pay_receipts_count_sync() from public, anon, authenticated;
 revoke all on function private.pay_transactions_alloc_check() from public, anon, authenticated;
 revoke all on function private.pay_allocations_sum_check() from public, anon, authenticated;

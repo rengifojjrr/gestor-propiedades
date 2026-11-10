@@ -93,8 +93,11 @@ describe("pay_save_transactions", () => {
     const buena = referencia();
     const mala = referencia();
 
+    // El segundo no cuadra: 100,00 − 9,70 no es 90,31 (su base acompaña al neto, para que solo falle ese cuadre).
+    const descuadrado = e1Item(b, { reference: mala, net_amount: "90.31", alloc_base_amount: "90.31" });
+
     const res = await client.rpc("pay_save_transactions", {
-      p_items: [e1Item(b, { reference: buena }), e1Item(b, { reference: mala, net_amount: "90.31" })],
+      p_items: [e1Item(b, { reference: buena }), descuadrado],
     });
 
     expectRejected(res, "23514", "pay_transactions_net_check");
@@ -204,10 +207,10 @@ describe("pay_save_transactions", () => {
     expectRejected(res, "P0002", "pay_tx_not_found");
   });
 
-  it("con p_skip_duplicates salta la referencia repetida y guarda las demás", async () => {
+  it("con p_skip_duplicates salta la referencia repetida (y devuelve el id del que ya existe) y guarda las demás", async () => {
     const repetida = referencia();
     const nueva = referencia();
-    await saveTransactions(client, [e1Item(b, { reference: repetida })]);
+    const [yaExiste] = await saveTransactions(client, [e1Item(b, { reference: repetida })]);
 
     const resultado = await saveTransactions(
       client,
@@ -216,21 +219,22 @@ describe("pay_save_transactions", () => {
     );
 
     expect(resultado).toEqual([
-      { id: expect.any(String), inserted: false, skipped: true },
+      { id: yaExiste?.id, inserted: false, skipped: true },
       { id: expect.any(String), inserted: true, skipped: false },
     ]);
+    expect(resultado[1]?.id).not.toBe(yaExiste?.id);
     expect(await cobrosConReferencia(repetida)).toBe(1);
     expect(await cobrosConReferencia(nueva)).toBe(1);
   });
 
   it("la referencia se guarda sin espacios, y p_skip_duplicates la reconoce aunque llegue con ellos", async () => {
     const ref = referencia();
-    await saveTransactions(client, [e1Item(b, { reference: `  ${ref} ` })]);
+    const [yaExiste] = await saveTransactions(client, [e1Item(b, { reference: `  ${ref} ` })]);
     expect(await cobrosConReferencia(ref)).toBe(1);
 
     const resultado = await saveTransactions(client, [e1Item(b, { reference: ` ${ref}  ` })], true);
 
-    expect(resultado).toEqual([{ id: expect.any(String), inserted: false, skipped: true }]);
+    expect(resultado).toEqual([{ id: yaExiste?.id, inserted: false, skipped: true }]);
     expect(await cobrosConReferencia(ref)).toBe(1);
   });
 
@@ -622,6 +626,30 @@ describe("las vistas de totales cuadran con lo guardado", () => {
     for (const vista of ["pay_company_totals", "pay_gateway_totals", "pay_bank_account_totals"] as const) {
       expect(unwrap(await db.from(vista).select("user_id"), vista)).toEqual([]);
     }
+    expect(await saldos()).toEqual({
+      [basics.beneficiaryIds.a]: { assigned: "0.00", settled: "45.15", balance: "-45.15" },
+      [basics.beneficiaryIds.b]: { assigned: "0.00", settled: "27.09", balance: "-27.09" },
+      [basics.beneficiaryIds.c]: { assigned: "0.00", settled: "18.06", balance: "-18.06" },
+    });
+  });
+
+  it("un cobro fallido no le asigna nada a nadie, aunque traiga repartos que suman cero", async () => {
+    // El único otro cobro de este usuario ya está en la papelera: lo asignado venía en 0,00.
+    const fallido = e1Item(basics, {
+      status: "fallido",
+      gross_amount: "0.00",
+      fees_total: "0.00",
+      net_amount: "0.00",
+      alloc_base_amount: "0.00",
+    });
+    fallido.allocations = [
+      { beneficiary_id: basics.beneficiaryIds.a, amount: "5.00", base: "neto", pct: "50", is_remainder: false },
+      { beneficiary_id: basics.beneficiaryIds.b, amount: "-5.00", base: "neto", pct: "50", is_remainder: false },
+    ];
+
+    const [guardado] = await saveTransactions(db, [fallido]);
+
+    expect(guardado).toEqual({ id: expect.any(String), inserted: true, skipped: false });
     expect(await saldos()).toEqual({
       [basics.beneficiaryIds.a]: { assigned: "0.00", settled: "45.15", balance: "-45.15" },
       [basics.beneficiaryIds.b]: { assigned: "0.00", settled: "27.09", balance: "-27.09" },

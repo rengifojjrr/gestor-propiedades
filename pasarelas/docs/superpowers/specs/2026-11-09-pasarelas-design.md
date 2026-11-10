@@ -97,8 +97,8 @@ Cada tabla tiene `unique (id, user_id)` y las claves foráneas son compuestas `(
 | `pay_gateway_extras` | gateway_id, name, pct, fixed, base (`bruto`\|`despues_de_comision`), default_on, payout_days_override, active, sort | |
 | `pay_bank_accounts` | alias, institution, last4, currency, notes, active | `last4` exactamente 4 dígitos; alias e institución sin 7 o más dígitos seguidos |
 | `pay_company_gateways` | company_id, gateway_id, dashboard_url, checkout_url, bank_account_id, payout_days_override, default_extra_ids (uuid[]), active | una por (empresa, pasarela); links solo `http(s)://` |
-| `pay_beneficiaries` | name, kind (`persona`\|`empresa`\|`cartera`), account_alias, notes, active | `account_alias` sin 7 o más dígitos seguidos |
-| `pay_schemes` | name, notes, active | |
+| `pay_beneficiaries` | name, kind (`persona`\|`empresa`\|`cartera`), account_alias, notes, active | nombre único por usuario (sin distinguir mayúsculas); `account_alias` sin 7 o más dígitos seguidos |
+| `pay_schemes` | name, notes, active | nombre único por usuario (sin distinguir mayúsculas) |
 | `pay_scheme_versions` | scheme_id, version, base (`neto`\|`bruto`), remainder_beneficiary_id («Resto»), effective_from | **solo se agregan**; única por (esquema, versión) y por (esquema, vigente desde) |
 | `pay_scheme_lines` | scheme_version_id, beneficiary_id, pct (>0), sort | un beneficiario una sola vez por versión |
 | `pay_transactions` | ver §4.1 | |

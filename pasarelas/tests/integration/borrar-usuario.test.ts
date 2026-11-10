@@ -55,27 +55,15 @@ async function filasPorTabla(userId: string): Promise<Record<string, number>> {
   return cuenta;
 }
 
-/** Completa lo que `seedBasics` y el cobro E1 no crean, para que el usuario tenga filas en las 17 tablas. */
+/**
+ * Completa lo que `seedBasics` y el cobro E1 no crean, para que el usuario tenga filas en las 17 tablas.
+ * (El esquema por defecto de la empresa y su cuenta de la pasarela ya los deja `seedBasics`.)
+ */
 async function usarTodasLasTablas(user: TestUser, b: Basics): Promise<{ txId: string; path: string }> {
   const [cobro] = await saveTransactions(user.client, [e1Item(b)]);
   if (!cobro) throw new Error("pay_save_transactions no devolvió el cobro");
   const path = `${user.id}/${cobro.id}/recibo.png`;
 
-  unwrap(
-    await user.client
-      .from("pay_companies")
-      .update({ default_scheme_id: b.schemeId })
-      .eq("id", b.companyId)
-      .select("id"),
-    "esquema por defecto de la empresa",
-  );
-  unwrap(
-    await user.client
-      .from("pay_company_gateways")
-      .insert({ company_id: b.companyId, gateway_id: b.gatewayId, bank_account_id: b.bankAccountId })
-      .select("id"),
-    "cuenta de la pasarela en la empresa",
-  );
   const subida = await user.client.storage.from(BUCKET).upload(path, PNG, { contentType: "image/png" });
   if (subida.error) throw new Error(`subir el comprobante: ${subida.error.message}`);
   unwrap(

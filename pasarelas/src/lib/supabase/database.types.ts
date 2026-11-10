@@ -374,11 +374,11 @@ isOneToOne: false
       referencedRelation: "pay_schemes"
       referencedColumns: ["id","user_id"]
     },{
-      foreignKeyName: "pay_transactions_scheme_version_id_user_id_fkey"
-      columns: ["scheme_version_id","user_id"]
+      foreignKeyName: "pay_transactions_scheme_version_id_scheme_id_user_id_fkey"
+      columns: ["scheme_version_id","scheme_id","user_id"]
 isOneToOne: false
       referencedRelation: "pay_scheme_versions"
-      referencedColumns: ["id","user_id"]
+      referencedColumns: ["id","scheme_id","user_id"]
     }
                   ]
                 }
