@@ -2,6 +2,7 @@ import "server-only";
 import {
   PayStateError,
   formatDate,
+  isPending,
   formatMoney,
   planCreate,
   planDeposit,
@@ -17,6 +18,7 @@ import {
   planRevertDeposit,
   planTransit,
   planTrash,
+  requireSameRegistration,
 } from "@/lib/pasarelas";
 import type { DiffRow, EditTxInput, ISODate, Money, NewTxInput, TxSnapshot, TxWrite } from "@/lib/pasarelas";
 import type { Db } from "../dto";
@@ -34,8 +36,11 @@ import { LIST_LIMIT, RECEIPTS_BUCKET } from "./receipts";
  *
  * Una operación que no cambia nada (el plan no trae ninguna columna) no llama a la base y no deja evento.
  *
- * Las de un solo cobro propagan el `PayStateError` del motor. Las de varios se saltan los cobros que no admiten
- * el cambio (o que ya no existen) y devuelven cuántos se escribieron, todos en un solo lote: o todos o ninguno.
+ * Las de un solo cobro propagan el `PayStateError` del motor y reciben, si la hay, la versión del cobro que vio la
+ * persona (`expected`, su `updatedAt`): la base compara contra esa y no contra la que se acaba de leer, así que una
+ * pantalla vieja (o un reintento tras un corte, cuando el primer envío sí llegó) da conflicto en vez de pisar o
+ * de sumar dos veces. Las de varios se saltan los cobros que no admiten el cambio (o que ya no existen) y
+ * devuelven cuántos se escribieron, todos en un solo lote: o todos o ninguno.
  */
 
 type RecalcMode = "hoy" | "fecha_del_cobro";
@@ -46,11 +51,15 @@ const PURGE_FILES_FAILED =
 
 const hasChanges = (write: TxWrite): boolean => Object.keys(write.fields).length > 0;
 
-/** El cobro tal como está guardado. Si no existe (o es de otro usuario), un error para la persona. */
-async function load(supabase: Db, id: string): Promise<TxSnapshot> {
+/**
+ * El cobro tal como está guardado. Si no existe (o es de otro usuario), un error para la persona. Con `expected`
+ * (la versión que vio la persona), el plan lleva esa versión: es `pay_save_transactions` quien la compara, como
+ * instante y no como texto. Si el cambio no toca nada, no se escribe y no hay conflicto.
+ */
+async function load(supabase: Db, id: string, expected?: string): Promise<TxSnapshot> {
   const [tx] = await getSnapshots(supabase, [id]);
   if (tx === undefined) throw new UserError(NOT_FOUND_TEXT);
-  return tx;
+  return expected === undefined ? tx : { ...tx, updatedAt: expected };
 }
 
 /** Guarda el cambio planeado sobre un cobro, salvo que no cambie nada. */
@@ -75,23 +84,37 @@ function planOrSkip<Plan>(plan: () => Plan): Plan | null {
   }
 }
 
-/** Aplica el mismo cambio a varios cobros y devuelve cuántos se escribieron. */
-async function applyToAll(supabase: Db, ids: readonly string[], plan: (tx: TxSnapshot) => TxWrite): Promise<number> {
+/**
+ * Aplica el mismo cambio a varios cobros: cuántos se escribieron y, de los que el motor rechazó, cuántos con cada
+ * código. Los que no existen o no cambian no están en ninguno de los dos.
+ */
+async function applyToAllWithSkips(
+  supabase: Db,
+  ids: readonly string[],
+  plan: (tx: TxSnapshot) => TxWrite,
+): Promise<{ count: number; refused: Partial<Record<PayStateError["code"], number>> }> {
   const snapshots = await getSnapshots(supabase, batchOf(ids));
+  const refused: Partial<Record<PayStateError["code"], number>> = {};
   const writes = snapshots.flatMap((tx) => {
-    const write = planOrSkip(() => plan(tx));
-    return write !== null && hasChanges(write) ? [write] : [];
+    try {
+      const write = plan(tx);
+      return hasChanges(write) ? [write] : [];
+    } catch (error) {
+      if (!(error instanceof PayStateError)) throw error;
+      refused[error.code] = (refused[error.code] ?? 0) + 1;
+      return [];
+    }
   });
   await saveTx(supabase, writes);
-  return writes.length;
+  return { count: writes.length, refused };
+}
+
+/** Aplica el mismo cambio a varios cobros y devuelve cuántos se escribieron. */
+async function applyToAll(supabase: Db, ids: readonly string[], plan: (tx: TxSnapshot) => TxWrite): Promise<number> {
+  return (await applyToAllWithSkips(supabase, ids, plan)).count;
 }
 
 // ─── Registrar y editar ─────────────────────────────────────────────────────────────────────────────────────
-
-async function exists(supabase: Db, id: string): Promise<boolean> {
-  const { data } = await supabase.from("pay_transactions").select("id").eq("id", id).throwOnError();
-  return data.length > 0;
-}
 
 /** ¿Falló el alta porque ya hay un cobro con ese id? */
 function isDuplicateId(error: unknown): boolean {
@@ -101,26 +124,39 @@ function isDuplicateId(error: unknown): boolean {
 }
 
 /**
+ * Si ya hay un cobro con ese id: `false` si no; si lo hay y trae lo mismo, `true` (el mismo envío); si lo hay con
+ * otros datos, `PayStateError("ya_registrado")`.
+ */
+async function alreadyRegistered(supabase: Db, input: NewTxInput): Promise<boolean> {
+  const [saved] = await getSnapshots(supabase, [input.id]);
+  if (saved === undefined) return false;
+  requireSameRegistration(saved, input);
+  return true;
+}
+
+/**
  * Registra un cobro, calculado en el servidor con la configuración de ahora. Es idempotente por `id` (lo pone el
  * formulario): si ya existe un cobro con ese id —el mismo envío que llega dos veces— devuelve `created: false`
- * sin tocar nada.
+ * sin tocar nada. Si el que existe tiene otros datos (se corrigió el monto tras un corte en el que el primer
+ * envío sí llegó), no escribe nada y lanza `PayStateError("ya_registrado")`: lo corregido no se guardó.
  */
 export async function createTx(supabase: Db, input: NewTxInput): Promise<{ id: string; created: boolean }> {
-  if (await exists(supabase, input.id)) return { id: input.id, created: false };
+  if (await alreadyRegistered(supabase, input)) return { id: input.id, created: false };
   const cfg = await loadPayConfig(supabase);
   try {
     await saveTx(supabase, [planCreate(cfg, input)]);
   } catch (error) {
     // Dos envíos a la vez: los dos pasan la comprobación de arriba y la base deja entrar a uno solo.
-    if (isDuplicateId(error) && (await exists(supabase, input.id))) return { id: input.id, created: false };
+    // El que entró se compara igual que arriba; si el id es de otro usuario (no se ve), sigue el error de la base.
+    if (isDuplicateId(error) && (await alreadyRegistered(supabase, input))) return { id: input.id, created: false };
     throw error;
   }
   return { id: input.id, created: true };
 }
 
 /** Edita un cobro: solo se vuelve a calcular lo que cambia. Sin cambios, `PayStateError("sin_cambios")`. */
-export async function editTx(supabase: Db, id: string, input: EditTxInput): Promise<void> {
-  const [tx, cfg] = await Promise.all([load(supabase, id), loadPayConfig(supabase)]);
+export async function editTx(supabase: Db, id: string, input: EditTxInput, expected?: string): Promise<void> {
+  const [tx, cfg] = await Promise.all([load(supabase, id, expected), loadPayConfig(supabase)]);
   await commit(supabase, planEdit(cfg, tx, input));
 }
 
@@ -131,29 +167,31 @@ export async function refundTx(
   supabase: Db,
   id: string,
   a: { amount: Money; on: ISODate; note?: string | null },
+  expected?: string,
 ): Promise<void> {
-  await commit(supabase, planRefund(await load(supabase, id), a));
+  await commit(supabase, planRefund(await load(supabase, id, expected), a));
 }
 
 /** Corrige el total reembolsado (en vez de sumarle). */
-export async function setRefundTotalTx(supabase: Db, id: string, total: Money): Promise<void> {
-  await commit(supabase, planRefundTotal(await load(supabase, id), total));
+export async function setRefundTotalTx(supabase: Db, id: string, total: Money, expected?: string): Promise<void> {
+  await commit(supabase, planRefundTotal(await load(supabase, id, expected), total));
 }
 
 export async function disputeTx(
   supabase: Db,
   id: string,
   a: { action: "abrir" | "ganar" | "perder" | "anular"; on: ISODate },
+  expected?: string,
 ): Promise<void> {
-  await commit(supabase, planDispute(await load(supabase, id), a));
+  await commit(supabase, planDispute(await load(supabase, id, expected), a));
 }
 
-export async function failTx(supabase: Db, id: string): Promise<void> {
-  await commit(supabase, planFail(await load(supabase, id)));
+export async function failTx(supabase: Db, id: string, expected?: string): Promise<void> {
+  await commit(supabase, planFail(await load(supabase, id, expected)));
 }
 
-export async function reopenTx(supabase: Db, id: string): Promise<void> {
-  await commit(supabase, planReopen(await load(supabase, id)));
+export async function reopenTx(supabase: Db, id: string, expected?: string): Promise<void> {
+  await commit(supabase, planReopen(await load(supabase, id, expected)));
 }
 
 // ─── El camino del dinero ───────────────────────────────────────────────────────────────────────────────────
@@ -163,19 +201,98 @@ export async function transitTx(supabase: Db, ids: string[]): Promise<number> {
   return applyToAll(supabase, ids, planTransit);
 }
 
-/** Marca como depositados el día `on` los cobros de la lista (o corrige la fecha de los que ya lo estaban). */
-export async function depositTx(supabase: Db, ids: string[], on: ISODate): Promise<number> {
-  return applyToAll(supabase, ids, (tx) => planDeposit(tx, on));
+/** Lo que dice un depósito en lote: cuántos se marcaron y, de los que no, por qué. */
+export type DepositOutcome = {
+  count: number;
+  skipped: {
+    /** Ya estaban depositados: conservan su fecha real (solo con `onlyPending`). */
+    deposited: number;
+    /** Con la disputa abierta o reembolsados del todo: no están por caer (solo con `onlyPending`). */
+    notPending: number;
+    /** Fallidos, en la papelera, con el depósito antes del cobro, que ya no existen o que no cambiaban. */
+    other: number;
+  };
+};
+
+/**
+ * Marca como depositados el día `on` los cobros de la lista y dice cuántos se saltaron y por qué. Con
+ * `onlyPending` (el lote de Cobros y del Resumen) solo lo que está por caer: lo ya depositado conserva su fecha
+ * real. Sin la marca (el detalle de un cobro), uno ya depositado toma la fecha nueva.
+ */
+export async function depositTxWithSkips(
+  supabase: Db,
+  ids: string[],
+  on: ISODate,
+  opts: { onlyPending: boolean },
+): Promise<DepositOutcome> {
+  const { count, refused } = await applyToAllWithSkips(supabase, ids, (tx) => planDeposit(tx, on, opts));
+  const deposited = refused.depositado ?? 0;
+  const notPending = refused.no_por_caer ?? 0;
+  return { count, skipped: { deposited, notPending, other: new Set(ids).size - count - deposited - notPending } };
 }
 
-export async function revertDepositTx(supabase: Db, id: string): Promise<void> {
-  await commit(supabase, planRevertDeposit(await load(supabase, id)));
+/** Como `depositTxWithSkips`, solo con cuántos se marcaron. Sin `onlyPending`, corrige la fecha de los ya depositados. */
+export async function depositTx(
+  supabase: Db,
+  ids: string[],
+  on: ISODate,
+  opts: { onlyPending: boolean } = { onlyPending: false },
+): Promise<number> {
+  return (await depositTxWithSkips(supabase, ids, on, opts)).count;
+}
+
+export async function revertDepositTx(supabase: Db, id: string, expected?: string): Promise<void> {
+  await commit(supabase, planRevertDeposit(await load(supabase, id, expected)));
 }
 
 /** Fija la fecha estimada a mano, o con `null` vuelve a la automática. */
-export async function setEstimatedTx(supabase: Db, id: string, date: ISODate | null): Promise<void> {
-  const [tx, cfg] = await Promise.all([load(supabase, id), loadPayConfig(supabase)]);
+export async function setEstimatedTx(
+  supabase: Db,
+  id: string,
+  date: ISODate | null,
+  expected?: string,
+): Promise<void> {
+  const [tx, cfg] = await Promise.all([load(supabase, id, expected), loadPayConfig(supabase)]);
   await commit(supabase, planEstimated(cfg, tx, date));
+}
+
+/** Lo más que trae una página de la API. */
+const API_PAGE = 1000;
+
+/**
+ * Vuelve a calcular, con la configuración de ahora (los feriados, los días de cada pasarela), la fecha estimada
+ * AUTOMÁTICA de lo que está por caer: no toca las puestas a mano, ni comisiones ni montos. Con `gatewayId`, solo
+ * los cobros de esa pasarela. Devuelve cuántas fechas cambiaron; las que ya estaban al día no se escriben.
+ */
+export async function refreshEstimatesTx(supabase: Db, opts: { gatewayId?: string } = {}): Promise<number> {
+  const ids: string[] = [];
+  for (;;) {
+    let query = supabase
+      .from("pay_transactions")
+      .select("id")
+      .is("deleted_at", null)
+      .in("status", ["registrado", "en_transito"])
+      .eq("estimated_is_manual", false);
+    if (opts.gatewayId !== undefined) query = query.eq("gateway_id", opts.gatewayId);
+    const { data } = await query
+      .order("id")
+      .range(ids.length, ids.length + API_PAGE - 1)
+      .throwOnError();
+    ids.push(...data.map((row) => row.id));
+    if (data.length < API_PAGE) break;
+  }
+  if (ids.length === 0) return 0;
+  const cfg = await loadPayConfig(supabase);
+  let changed = 0;
+  for (const chunk of chunked(ids, SAVE_BATCH_SIZE)) {
+    const writes = (await getSnapshots(supabase, chunk))
+      .filter((tx) => isPending(tx) && !tx.estimatedIsManual)
+      .map((tx) => planEstimated(cfg, tx, null))
+      .filter(hasChanges);
+    await saveTx(supabase, writes);
+    changed += writes.length;
+  }
+  return changed;
 }
 
 // ─── Papelera ───────────────────────────────────────────────────────────────────────────────────────────────

@@ -1,17 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
-import { PayRuleError, PayStateError, planCreate, planDeposit, type NewTxInput } from "@/lib/pasarelas";
+import { PAY_STATE_TEXT, PayRuleError, PayStateError, planCreate, planDeposit, type NewTxInput } from "@/lib/pasarelas";
 import { UserError, errorMessage } from "@/server/pasarelas/errors";
+import { addHoliday } from "@/server/pasarelas/ops/holidays";
 import { receiptSignedUrl, registerReceipt, removeReceipt } from "@/server/pasarelas/ops/receipts";
 import {
   applyRecalcTx,
   createTx,
   depositTx,
+  depositTxWithSkips,
   disputeTx,
   editTx,
   failTx,
   previewRecalcTx,
   purgeTx,
+  refreshEstimatesTx,
   refundTx,
   reopenTx,
   restoreTx,
@@ -183,28 +186,51 @@ describe("createTx", () => {
     });
   });
 
-  it("es idempotente por id: llamarla dos veces deja una sola fila y la segunda dice created: false", async () => {
+  it("es idempotente por id: el mismo envío dos veces deja una sola fila y la segunda dice created: false", async () => {
     const input = e1(b);
     expect(await createTx(user.client, input)).toEqual({ id: input.id, created: true });
     const before = await rowOf(input.id);
 
-    // El reenvío del mismo formulario, aunque llegue con otros datos, no toca nada.
+    // El reenvío del mismo formulario no toca nada; la nota no es de lo que define el cobro.
     expect(await createTx(user.client, input)).toEqual({ id: input.id, created: false });
-    expect(await createTx(user.client, { ...input, grossOriginal: "200.00", note: "Reenviado" })).toEqual({
-      id: input.id,
-      created: false,
-    });
-    // Ni vuelve a calcularlo: un reenvío que hoy ya no se podría registrar sigue siendo «ya estaba creado».
-    expect(await createTx(user.client, { ...input, extraIds: [randomUUID()] })).toEqual({
-      id: input.id,
-      created: false,
-    });
+    expect(await createTx(user.client, { ...input, note: "Reenviado" })).toEqual({ id: input.id, created: false });
 
     const rows = unwrap(await admin.from("pay_transactions").select("id").eq("id", input.id), "filas");
     expect(rows).toHaveLength(1);
     expect(await rowOf(input.id)).toEqual(before);
     expect(await eventKinds(input.id)).toEqual(["creado"]);
     expect(await sharesOf(input.id, b)).toEqual(["45.15", "27.09", "18.06"]);
+  });
+
+  it("con el mismo id y otros datos (el monto corregido tras un corte) no escribe nada y lo dice", async () => {
+    const input = e1(b);
+    expect(await createTx(user.client, input)).toEqual({ id: input.id, created: true });
+    const before = await rowOf(input.id);
+
+    await expectStateError(createTx(user.client, { ...input, grossOriginal: "150.00" }), "ya_registrado");
+    await expectStateError(createTx(user.client, { ...input, reference: "ch_demo_corregida" }), "ya_registrado");
+    // Ni vuelve a calcularlo: lo que hoy ya no se podría registrar también es «otros datos».
+    await expectStateError(createTx(user.client, { ...input, extraIds: [randomUUID()] }), "ya_registrado");
+
+    expect(await rowOf(input.id)).toEqual(before);
+    expect(await eventKinds(input.id)).toEqual(["creado"]);
+  });
+
+  it("dos envíos a la vez con el mismo id y otros datos: uno lo crea y el otro dice que ya estaba con otros datos", async () => {
+    const input = e1(b);
+
+    const results = await Promise.allSettled([
+      createTx(user.client, input),
+      createTx(user.client, { ...input, grossOriginal: "150.00" }),
+    ]);
+
+    const created = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
+    const refused = results.flatMap((result) => (result.status === "rejected" ? [result.reason as unknown] : []));
+    expect(created).toEqual([{ id: input.id, created: true }]);
+    expect(refused).toHaveLength(1);
+    expect(refused[0]).toBeInstanceOf(PayStateError);
+    expect((refused[0] as PayStateError).code).toBe("ya_registrado");
+    expect(await eventKinds(input.id)).toEqual(["creado"]);
   });
 
   it("dos envíos a la vez con el mismo id: uno lo crea, el otro dice created: false, y queda una sola fila", async () => {
@@ -555,6 +581,43 @@ describe("transitTx, depositTx y revertDepositTx", () => {
     expect(await rowOf(trashed)).toMatchObject({ status: "registrado", deposited_on: null });
   });
 
+  it("en el lote (solo lo por caer), uno ya depositado y uno en disputa se saltan: devuelve 1 y la fecha del depositado no cambia", async () => {
+    const deposited = await register(user, b);
+    expect(await depositTx(user.client, [deposited], VIERNES)).toBe(1);
+    const disputed = await register(user, b);
+    await disputeTx(user.client, disputed, { action: "abrir", on: "2026-11-16" });
+    const pending = await register(user, b);
+
+    expect(await depositTx(user.client, [deposited, disputed, pending], MARTES, { onlyPending: true })).toBe(1);
+
+    expect(await rowOf(deposited)).toMatchObject({ status: "depositado", deposited_on: VIERNES });
+    expect(await eventKinds(deposited)).toEqual(["creado", "depositado"]);
+    expect(await rowOf(disputed)).toMatchObject({ status: "registrado", dispute_state: "abierta", deposited_on: null });
+    expect(await rowOf(pending)).toMatchObject({ status: "depositado", deposited_on: MARTES });
+  });
+
+  it("depositTxWithSkips dice cuántos se saltaron y por qué", async () => {
+    const deposited = await register(user, b);
+    await depositTx(user.client, [deposited], VIERNES);
+    const refunded = await register(user, b);
+    await refundTx(user.client, refunded, { amount: "100.00", on: "2026-11-16" });
+    const failed = await register(user, b);
+    await failTx(user.client, failed);
+    const pending = await register(user, b);
+    const chosen = [deposited, refunded, failed, randomUUID(), pending, pending];
+
+    expect(await depositTxWithSkips(user.client, chosen, MARTES, { onlyPending: true })).toEqual({
+      count: 1,
+      skipped: { deposited: 1, notPending: 1, other: 2 },
+    });
+    // Sin la marca (el detalle de un cobro) el ya depositado cambia de fecha.
+    expect(await depositTxWithSkips(user.client, [deposited], "2026-11-19", { onlyPending: false })).toEqual({
+      count: 1,
+      skipped: { deposited: 0, notPending: 0, other: 0 },
+    });
+    expect(await rowOf(deposited)).toMatchObject({ deposited_on: "2026-11-19" });
+  });
+
   it("transitTx pasa a «en tránsito» solo los registrados", async () => {
     const fresh = await register(user, b);
     const deposited = await register(user, b);
@@ -631,6 +694,113 @@ describe("conflicto optimista", () => {
     expect(errorMessage(error)).toBe("Este cobro cambió mientras lo editabas: vuelve a abrirlo");
     expect(await rowOf(id)).toEqual(current);
     expect(await eventKinds(id)).toEqual(["creado", "en_transito"]);
+  });
+});
+
+describe("lo que vio la persona (expectedUpdatedAt)", () => {
+  let user: TestUser;
+  let b: Basics;
+  const CONFLICT = "Este cobro cambió mientras lo editabas: vuelve a abrirlo";
+
+  beforeAll(async () => {
+    user = await createUser();
+    b = await seedBasics(user.client);
+  });
+
+  /** La versión del cobro que tiene la pantalla. */
+  const seenOf = async (id: string): Promise<string> => (await rowOf(id)).updated_at;
+
+  it("un reembolso reintentado tras un corte (con la versión que vio el diálogo) da conflicto y no se suma dos veces", async () => {
+    const id = await register(user, b);
+    const seen = await seenOf(id);
+    const refund = { amount: "30.00", on: "2026-11-16" };
+
+    // El primer envío llegó y se guardó, aunque la respuesta se perdiera.
+    await refundTx(user.client, id, refund, seen);
+    const afterFirst = await rowOf(id);
+    const error = await caught(refundTx(user.client, id, refund, seen));
+
+    expect(errorMessage(error)).toBe(CONFLICT);
+    expect(await rowOf(id)).toEqual(afterFirst);
+    expect(afterFirst).toMatchObject({ refunded_amount: "30.00", gross_amount: "70.00" });
+    expect(await eventKinds(id)).toEqual(["creado", "reembolso"]);
+  });
+
+  it("una pestaña vieja no pisa la edición de otra: el monto que corrigió la otra se queda", async () => {
+    const id = await register(user, b);
+    const tabA = await seenOf(id);
+    await editTx(user.client, id, { grossOriginal: "120.00" }, await seenOf(id));
+
+    const error = await caught(editTx(user.client, id, { grossOriginal: "110.00" }, tabA));
+
+    expect(errorMessage(error)).toBe(CONFLICT);
+    expect(await rowOf(id)).toMatchObject({ gross_original: "120.00" });
+  });
+
+  it("cada acción de un solo cobro compara con lo que vio la persona; con la versión al día, guarda", async () => {
+    const id = await register(user, b);
+    const stale = await seenOf(id);
+    await transitTx(user.client, [id]);
+    const on = "2026-11-16";
+
+    for (const attempt of [
+      () => setRefundTotalTx(user.client, id, "10.00", stale),
+      () => disputeTx(user.client, id, { action: "abrir", on }, stale),
+      () => failTx(user.client, id, stale),
+      () => setEstimatedTx(user.client, id, "2026-11-25", stale),
+    ]) {
+      expect(errorMessage(await caught(attempt()))).toBe(CONFLICT);
+    }
+    expect(await eventKinds(id)).toEqual(["creado", "en_transito"]);
+
+    await setEstimatedTx(user.client, id, "2026-11-25", await seenOf(id));
+    await failTx(user.client, id, await seenOf(id));
+    const failedAt = await seenOf(id);
+    await reopenTx(user.client, id, failedAt);
+    expect(errorMessage(await caught(reopenTx(user.client, id, failedAt)))).toBe(PAY_STATE_TEXT.no_fallido);
+    await depositTx(user.client, [id], MARTES);
+    const depositedAt = await seenOf(id);
+    await revertDepositTx(user.client, id, depositedAt);
+    await depositTx(user.client, [id], MARTES);
+    expect(errorMessage(await caught(revertDepositTx(user.client, id, depositedAt)))).toBe(CONFLICT);
+    expect(await rowOf(id)).toMatchObject({ status: "depositado", estimated_deposit_on: "2026-11-25" });
+  });
+});
+
+// ─── Fechas estimadas con la configuración de ahora ─────────────────────────────────────────────────────────
+
+describe("refreshEstimatesTx", () => {
+  it("tras agregar un feriado mueve la fecha automática de lo que está por caer, sin tocar comisiones ni lo puesto a mano", async () => {
+    const user = await createUser();
+    const b = await seedBasics(user.client);
+    // Stripe sin «Pago rápido»: 2 días hábiles desde el viernes 13 → martes 17.
+    const automatic = await register(user, b, { extraIds: [] });
+    const manual = await register(user, b, { extraIds: [] });
+    await setEstimatedTx(user.client, manual, "2026-11-25");
+    const deposited = await register(user, b, { extraIds: [] });
+    await depositTx(user.client, [deposited], MARTES);
+    const disputed = await register(user, b, { extraIds: [] });
+    await disputeTx(user.client, disputed, { action: "abrir", on: "2026-11-16" });
+    const before = await rowOf(automatic);
+    expect(before).toMatchObject({ estimated_deposit_on: MARTES });
+
+    await addHoliday(user.client, { day: "2026-11-16", name: "Feriado de prueba" });
+    // Solo los de otra pasarela: ninguno.
+    expect(await refreshEstimatesTx(user.client, { gatewayId: randomUUID() })).toBe(0);
+    expect(await refreshEstimatesTx(user.client)).toBe(1);
+
+    expect(await rowOf(automatic)).toMatchObject({
+      estimated_deposit_on: "2026-11-18",
+      estimated_is_manual: false,
+      fees_total: before.fees_total,
+      net_amount: before.net_amount,
+    });
+    expect(await eventKinds(automatic)).toEqual(["creado", "fecha_estimada"]);
+    expect(await rowOf(manual)).toMatchObject({ estimated_deposit_on: "2026-11-25", estimated_is_manual: true });
+    expect(await rowOf(deposited)).toMatchObject({ estimated_deposit_on: MARTES });
+    expect(await rowOf(disputed)).toMatchObject({ estimated_deposit_on: MARTES });
+    // Ya al día: nada que escribir.
+    expect(await refreshEstimatesTx(user.client, { gatewayId: b.gatewayId })).toBe(0);
   });
 });
 
