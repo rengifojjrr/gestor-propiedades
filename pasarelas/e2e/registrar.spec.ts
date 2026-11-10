@@ -11,6 +11,11 @@ import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
  * sobre el neto; Stripe 2,9 % + 0,30 con la opción «Pago rápido» (1,5 % del bruto, 0 días), apagada por defecto.
  *
  * El detalle del cobro todavía no existe: lo guardado se comprueba en la base, con la sesión del propio usuario.
+ *
+ * PENDIENTE (tarea 16, «Cobro — detalle», o la 21): el encargo pide que, al guardar, «el detalle muestre lo mismo y
+ * el comprobante». Cuando exista /pasarelas/cobros/[id], la prueba del «Listo cuando» n.º 1 sigue tras «Ver cobro» y
+ * comprueba en la pantalla 3,20 / 1,50 / 5,00, comisiones 9,70, neto 90,30, 45,15 / 27,09 / 18,06, la fecha
+ * estimada y el comprobante. La excepción de los 404 de las pantallas que faltan es `isPendingRoute`.
  */
 
 const MB = 1024 * 1024;
@@ -70,12 +75,28 @@ async function savedWith(client: Db, reference: string) {
   return data;
 }
 
+/**
+ * PENDIENTE (tareas 11 a 19): las demás pantallas del módulo todavía no existen. En modo producción Next precarga
+ * los enlaces del menú (`/pasarelas/cobros?_rsc=…`) y «Ver cobro» abre `/pasarelas/cobros/<id>`: todos dan 404, que
+ * no son errores de esta pantalla. Solo se deja pasar el 404 de una ruta de `/pasarelas/…` que no sea esta; cuando
+ * existan todas (tarea 21), esta excepción se quita.
+ */
+function isPendingRoute(url: string): boolean {
+  const { pathname } = new URL(url);
+  return pathname.startsWith("/pasarelas/") && !pathname.startsWith("/pasarelas/registrar");
+}
+
 test.describe.serial("registrar cobro", () => {
   let owner: TestUser;
   let ownerDb: Db;
 
   /** Los errores sin atrapar de la página y lo que React avisa por consola: cada prueba termina sin ninguno. */
   let pageErrors: string[] = [];
+  /**
+   * Las direcciones cuya carga falla a propósito en la prueba en curso (p. ej. Storage cortado con `page.route`):
+   * el navegador avisa por consola «Failed to load resource», y ese aviso es lo que la prueba provoca.
+   */
+  let expectedLoadFailures: string[] = [];
 
   test.beforeAll(async () => {
     owner = await newUser();
@@ -84,12 +105,17 @@ test.describe.serial("registrar cobro", () => {
 
   test.beforeEach(({ page }) => {
     pageErrors = [];
+    expectedLoadFailures = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
     page.on("console", (message) => {
-      // La pantalla del detalle todavía no existe: su 404 no es un error de esta.
-      if (message.type() === "error" && !message.text().startsWith("Failed to load resource")) {
-        pageErrors.push(message.text());
-      }
+      if (message.type() !== "error") return;
+      const text = message.text();
+      const url = message.location().url;
+      const failedLoad = text.startsWith("Failed to load resource");
+      const expected =
+        failedLoad &&
+        (expectedLoadFailures.some((part) => url.includes(part)) || (text.includes("404") && isPendingRoute(url)));
+      if (!expected) pageErrors.push(`${text} (${url})`);
     });
   });
 
@@ -170,6 +196,7 @@ test.describe.serial("registrar cobro", () => {
 
     await toast.getByRole("button", { name: "Ver cobro" }).click();
     await expect(page).toHaveURL(new RegExp(`/pasarelas/cobros/${saved?.id}$`));
+    // PENDIENTE (tarea 16): aquí, el desglose, el reparto, la fecha estimada y el comprobante en el detalle.
   });
 
   test("Foco 1: un doble toque en «Guardar» deja un solo cobro", async ({ page }) => {
@@ -243,39 +270,77 @@ test.describe.serial("registrar cobro", () => {
   test("si la subida del comprobante falla, el cobro queda guardado y «Reintentar comprobante» lo sube a ese cobro", async ({
     page,
   }) => {
+    const tag = randomUUID().slice(0, 8);
+    const pendingAlerts = page.getByRole("main").getByRole("alert").filter({ hasText: "el comprobante no se subió" });
+    const pendingFor = (reference: string) => pendingAlerts.filter({ hasText: reference });
+    const savedToasts = page.getByRole("region", { name: /Avisos/ }).getByRole("listitem").filter({ hasText: "Cobro guardado" });
+
+    /** Llena un cobro de E1 con su comprobante, lo guarda y espera el formulario listo para el siguiente. */
+    async function saveWithReceipt(amount: string, reference: string) {
+      await page.getByLabel("Monto").fill(amount);
+      await page.getByLabel("Referencia").fill(reference);
+      await page.getByLabel("Elegir archivo").setInputFiles({
+        name: `recibo-${reference}.png`,
+        mimeType: "image/png",
+        buffer: png(400, 200),
+      });
+      await page.getByRole("button", { name: "Guardar" }).click();
+      await expect(page.getByLabel("Monto")).toHaveValue("");
+    }
+
     await login(page, owner);
     await openForm(page);
     await chooseE1(page);
-    await page.getByLabel("Monto").fill("80");
-    const reference = `REINTENTO-${randomUUID().slice(0, 8)}`;
-    await page.getByLabel("Referencia").fill(reference);
-    await page.getByLabel("Elegir archivo").setInputFiles({
-      name: "recibo-demo.png",
-      mimeType: "image/png",
-      buffer: png(400, 200),
-    });
 
-    // Storage no responde: la subida falla.
+    // Storage no responde: las subidas de A y de B fallan. Cada cobro tiene su propio aviso, con su monto y su
+    // referencia, y el último queda a la vista junto a «Guardar» (en el celular, al pie de la pantalla).
+    expectedLoadFailures.push("/storage/v1/object/");
     await page.route("**/storage/v1/object/**", (route) => route.abort());
-    await page.getByRole("button", { name: "Guardar" }).click();
-    const failed = page.getByRole("main").getByRole("alert").filter({ hasText: "el comprobante no se subió" });
-    await expect(failed).toBeVisible();
-    const toast = page.getByRole("region", { name: /Avisos/ }).getByRole("listitem").filter({ hasText: "Cobro guardado" });
-    await expect(toast).toBeVisible();
-    const [saved, ...more] = await savedWith(ownerDb, reference);
-    expect(more).toEqual([]);
-    expect(saved?.receipts_count).toBe(0);
-    await expect(toast).toHaveCSS("opacity", "1");
+    const refA = `REINTENTO-A-${tag}`;
+    await saveWithReceipt("80", refA);
+    await expect(pendingFor(refA)).toBeVisible();
+    await expect(pendingFor(refA)).toContainText("$80,00");
+    await expect(pendingFor(refA)).toBeInViewport();
+    const [savedA, ...moreA] = await savedWith(ownerDb, refA);
+    expect(moreA).toEqual([]);
+    expect(savedA?.receipts_count).toBe(0);
+    await expect(savedToasts.first()).toHaveCSS("opacity", "1");
     await expectCleanScreen(page);
 
-    // Storage vuelve: se reintenta solo la subida, al mismo cobro.
+    const refB = `REINTENTO-B-${tag}`;
+    await saveWithReceipt("60", refB);
+    await expect(pendingAlerts).toHaveCount(2);
+    await expect(pendingFor(refA)).toBeVisible();
+    await expect(pendingFor(refB)).toContainText("$60,00");
+    await expect(pendingFor(refB)).toBeInViewport();
+
+    // Storage vuelve. El siguiente cobro sube su comprobante y no se lleva los avisos de A ni de B.
     await page.unrouteAll();
-    await failed.getByRole("button", { name: "Reintentar comprobante" }).click();
+    const refC = `REINTENTO-C-${tag}`;
+    await saveWithReceipt("40", refC);
+    await expect(pendingAlerts).toHaveCount(2);
+    await expect(pendingFor(refA)).toBeVisible();
+    await expect(pendingFor(refB)).toBeVisible();
+    await expect(pendingFor(refC)).toHaveCount(0);
+    const [savedC] = await savedWith(ownerDb, refC);
+    expect(savedC?.receipts_count).toBe(1);
+    await expect(savedToasts.first()).toHaveCSS("opacity", "1");
+    await expectCleanScreen(page);
+
+    // Se reintenta solo la subida de A, al mismo cobro; el aviso de B sigue ahí.
+    await pendingFor(refA).getByRole("button", { name: "Reintentar comprobante" }).click();
     await expect(page.getByRole("region", { name: /Avisos/ }).getByText("Comprobante agregado.")).toBeVisible();
-    await expect(failed).toHaveCount(0);
-    const after = await savedWith(ownerDb, reference);
-    expect(after).toHaveLength(1);
-    expect(after[0]).toMatchObject({ id: saved?.id, receipts_count: 1 });
+    await expect(pendingFor(refA)).toHaveCount(0);
+    await expect(pendingAlerts).toHaveCount(1);
+    await expect(pendingFor(refB)).toBeVisible();
+    const afterA = await savedWith(ownerDb, refA);
+    expect(afterA).toHaveLength(1);
+    expect(afterA[0]).toMatchObject({ id: savedA?.id, receipts_count: 1 });
+    expect((await savedWith(ownerDb, refB))[0]?.receipts_count).toBe(0);
+
+    await pendingFor(refB).getByRole("button", { name: "Reintentar comprobante" }).click();
+    await expect(pendingAlerts).toHaveCount(0);
+    expect((await savedWith(ownerDb, refB))[0]?.receipts_count).toBe(1);
   });
 
   test("si falta configuración, la vista previa dice qué falta y a dónde ir a arreglarlo", async ({ page }) => {
