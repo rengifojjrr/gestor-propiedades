@@ -2,8 +2,9 @@
 
 Pasarelas es un libro de cuentas privado: anota cada cobro, calcula lo que se llevan la pasarela y la plataforma,
 reparte lo que queda entre los beneficiarios y estima qué día cae el dinero en el banco. Este documento explica qué
-hace, cómo calcula cada cifra, qué hace cumplir la base de datos, qué decisiones quedan por confirmar y cómo se
-conectaría con las pasarelas (fase C, solo diseño). Todas las empresas, personas y montos son inventados.
+hace, cómo se usa, cómo calcula cada cifra, qué hace cumplir la base de datos, qué decisiones quedan por confirmar,
+qué falta y cómo se conectaría con las pasarelas (fase C, solo diseño). Todas las empresas, personas y montos son
+inventados.
 
 Cómo se escribe el dinero aquí: en el texto, con coma decimal (90,30). Entre comillas o en bloques de código, tal
 como está guardado, con punto (`"90.30"`).
@@ -11,17 +12,20 @@ como está guardado, con punto (`"90.30"`).
 ## Índice
 
 1. [Qué es y qué no es](#qué-es-y-qué-no-es)
-2. [Las piezas](#las-piezas)
-3. [Las reglas del dinero](#las-reglas-del-dinero)
-4. [Cómo se calcula un cobro](#cómo-se-calcula-un-cobro) (ejemplos E1 a E6)
-5. [Cuándo cae el dinero](#cuándo-cae-el-dinero) (ejemplos F1 a F3)
-6. [Lo que se congela y lo que lo cambia](#lo-que-se-congela-y-lo-que-lo-cambia)
-7. [Estados de un cobro](#estados-de-un-cobro)
-8. [Repartos y liquidaciones](#repartos-y-liquidaciones)
-9. [La base de datos](#la-base-de-datos)
-10. [Seguridad](#seguridad)
-11. [Decisiones tomadas y por confirmar](#decisiones-tomadas-y-por-confirmar)
-12. [Fase C: conectar con las pasarelas](#fase-c-conectar-con-las-pasarelas) (diseño, sin construir)
+2. [Cómo se usa](#cómo-se-usa)
+3. [Las piezas](#las-piezas)
+4. [Las reglas del dinero](#las-reglas-del-dinero)
+5. [Cómo se calcula un cobro](#cómo-se-calcula-un-cobro) (ejemplos E1 a E6)
+6. [Cuándo cae el dinero](#cuándo-cae-el-dinero) (ejemplos F1 a F3)
+7. [Lo que se congela y lo que lo cambia](#lo-que-se-congela-y-lo-que-lo-cambia)
+8. [Estados de un cobro](#estados-de-un-cobro)
+9. [Repartos y liquidaciones](#repartos-y-liquidaciones)
+10. [La base de datos](#la-base-de-datos)
+11. [Seguridad](#seguridad)
+12. [Decisiones tomadas y por confirmar](#decisiones-tomadas-y-por-confirmar)
+    - [Lo que el dueño tiene que decidir](#lo-que-el-dueño-tiene-que-decidir)
+13. [Lo que queda](#lo-que-queda)
+14. [Fase C: conectar con las pasarelas](#fase-c-conectar-con-las-pasarelas) (diseño, sin construir)
     - [1. Qué cambia y qué no](#1-qué-cambia-y-qué-no)
     - [2. Leer con claves restringidas de solo lectura](#2-leer-con-claves-restringidas-de-solo-lectura)
     - [3. Webhooks](#3-webhooks)
@@ -33,7 +37,7 @@ como está guardado, con punto (`"90.30"`).
     - [9. Lo que el dueño tiene que decidir](#9-lo-que-el-dueño-tiene-que-decidir)
     - [Fuentes](#fuentes)
 
-Las partes 1, 4, 5 y 11 se leen sin saber programar. Las partes 9 y 10 son para quien mantenga el código.
+Las partes 1, 2, 5, 6, 12 y 13 se leen sin saber programar. Las partes 10 y 11 son para quien mantenga el código.
 
 ## Qué es y qué no es
 
@@ -53,26 +57,111 @@ rápido y la plataforma se van 9,70. Quedan 90,30, que se reparten 45,15 · 27,0
 
 **Lo que no hace:**
 
-- No procesa pagos. No se conecta a ninguna pasarela: los cobros se registran a mano. El diseño prevé además
-  importarlos de un archivo CSV (fase B), que no está construido.
+- No procesa pagos. No se conecta a ninguna pasarela: los cobros se registran a mano o se importan del archivo CSV
+  que descarga la pasarela.
 - No mueve dinero. Una «liquidación» es una anotación de que ya se pagó, no una transferencia.
 - No guarda números de tarjeta, CVV, números de cuenta completos, claves ni contraseñas. De una cuenta destino
   solo guarda un alias y los últimos 4 dígitos.
 - No guarda datos de compradores (ni nombres ni correos).
 
-**Estado al escribir este documento (2026-11-10).**
+**Estado (2026-11-10).** Está todo construido: el motor, la base, la entrada con segundo factor, todas las
+pantallas, el importador de CSV, «Exportar todo» y una semilla de ejemplo. Hay pruebas del motor (cubren el 100 %
+de su código), de la base y del servidor contra un Supabase **local**, y de punta a punta con un navegador, en celular
+y en escritorio. No se creó ni se tocó ningún proyecto remoto de Supabase ni de Vercel: elegir la base remota y
+publicar queda para el dueño. Lo que falta está en [Lo que queda](#lo-que-queda).
 
-| Parte | Estado |
-|---|---|
-| Motor de cálculo | Construido, con pruebas junto al código |
-| Base de datos | Construida en una sola migración, con pruebas contra un Supabase **local** |
-| Capa de servidor | Construidas las lecturas, las operaciones sobre cobros y comprobantes, la validación y la traducción de errores, con pruebas contra el Supabase local |
-| Entrada, segundo factor, Ajustes → Seguridad y cabeceras de seguridad | Construidos, con pruebas de punta a punta |
-| Kit de interfaz y marco de navegación | Construidos. El Resumen es por ahora una pantalla vacía |
-| Acciones del servidor del libro, subida de comprobantes desde el navegador, pantallas del libro (registrar, cobros, resumen, empresas, repartos…), «Exportar todo», importador de CSV y semilla de ejemplo | Sin construir. Lo que este documento dice de ellos es el diseño, y lo marca |
+## Cómo se usa
 
-No se creó ni se tocó ningún proyecto remoto de Supabase ni de Vercel: elegir la base remota y publicar queda para
-el dueño.
+Pasos cortos para lo de todos los días. En el celular, la barra de abajo lleva a Resumen, Cobros y Repartos, con
+el botón **«Registrar cobro»** en medio; lo demás está detrás de **«Más»**. En escritorio, todo está en la barra
+lateral.
+
+**Entrar.** En `/login`, correo y contraseña, y **«Entrar»**. No hay registro: la cuenta del dueño se crea en el
+panel de Supabase. En local, `npm run seed` crea `demo@example.com` con datos de ejemplo e imprime su contraseña.
+
+**Activar el segundo factor (el primer día).** Ajustes → Seguridad → **«Activar segundo factor»**. Se escanea el
+código QR con una app de autenticación (o se escribe la clave), se escribe el código de 6 dígitos y **«Verificar y
+activar»**. Desde ahí, cada entrada pide el código. Conviene **«Agregar otro dispositivo»**: no hay códigos de
+respaldo. Mientras no esté activo, todas las pantallas lo avisan.
+
+**Mirar el Resumen.** Es la primera pantalla: bruto, comisiones, neto, «Por caer» y «Depositado» del período, los
+avisos (atrasados, disputas abiertas, cobros sin comprobante, empresas sin esquema de reparto activo por defecto,
+feriados que faltan) y los próximos depósitos, en una moneda a la vez (ver la fila
+[(x)](#decisiones-tomadas-y-por-confirmar)). En el celular, los filtros van plegados tras «Filtros» para que las
+cifras se vean primero.
+
+**Crear una pasarela con su pago rápido.** Pasarelas → **«Agregar pasarela»**:
+
+1. Datos: nombre, días al depósito, tipo de días (hábiles o corridos), si devuelve la comisión al reembolsar y el
+   costo por disputa.
+2. Tarifa: comisión (por ejemplo 2,9) y cuota fija (0,30). Rige desde el inicio.
+3. Opciones → **«Agregar opción»**: «Pago rápido», porcentaje 1,5, «Sobre el bruto», días al depósito con esta
+   opción 0 y, si se usa casi siempre, «Encendida por defecto».
+4. **«Crear pasarela»**. Si la tarifa cambia después, en su ficha se agrega otra en «Tarifas», con su «Vigente
+   desde»: lo ya registrado no cambia.
+
+**Preparar una empresa.** Cuentas destino → **«Agregar cuenta»** (alias y últimos 4 dígitos). Empresas → **«Nueva
+empresa»** → **«Crear empresa»**. En su ficha: «Canales de venta» → **«Agregar canal»** (lo que cobra la
+plataforma), y «Pasarelas de la empresa» → **«Agregar pasarela»** (a qué cuenta va el dinero, días propios y
+opciones encendidas por defecto).
+
+**Armar un esquema 50/30/20.** Repartos → **«Agregar beneficiario»** tres veces (Grupo A, B y C). Luego **«Nuevo
+esquema»**: nombre, «Se reparte» «Sobre el neto», tres líneas con **«Agregar línea»** (50, 30 y 20), «Resto»
+«Nadie», «Vigente desde» «Desde el inicio» y **«Guardar esquema»**. Para que se use solo, en la empresa: **«Editar
+ficha»** → «Esquema de reparto por defecto».
+
+**Registrar un cobro.** **«Registrar cobro»**: empresa, canal, pasarela y sus opciones, monto, moneda, fecha y hora
+(de Nueva York) y referencia. El comprobante, con **«Tomar foto»** o **«Elegir archivo»** (foto o PDF, hasta
+10 MB). Al lado (en el celular, debajo) se ve la cuenta: comisiones, neto, reparto y fecha estimada. En «Más
+opciones» van el esquema, la cuenta destino, la fecha estimada a mano, el estado inicial y la nota. **«Guardar»**.
+**«Repetir el último»** vuelve a poner la empresa, el canal, la pasarela, las opciones, la moneda y el esquema del
+cobro anterior.
+
+**Marcar depositados varios cobros.** Cobros → «Más filtros» → Estado «Por caer» → marcar las casillas →
+**«Marcar depositado»** → la fecha en que llegó el dinero. O desde el Resumen, en «Próximos depósitos», el botón
+**«Marcar depositado»** de cada grupo. Solo se marca lo que está por caer (fila
+[(w)](#decisiones-tomadas-y-por-confirmar)); la fecha de un depósito ya hecho se cambia en el detalle del cobro,
+con **«Cambiar la fecha del depósito»**.
+
+**Registrar un reembolso o una disputa.** En Cobros, abrir el cobro. En el celular, el detalle enseña primero los
+datos; la acción más esperada queda a la vista y las demás, en **«Más acciones»**:
+
+- **«Registrar reembolso»**: monto y fecha. Antes de confirmar se ve el antes y el después. Si ya hubo un
+  reembolso parcial, dentro se elige entre «Agregar un reembolso» y «Corregir el total reembolsado» (fija el total
+  en vez de sumar). Con el cobro ya reembolsado del todo, ese botón no sale: sale **«Corregir reembolso»** (salvo
+  con la disputa perdida, que deja el reembolso total fijo).
+- **«Abrir disputa»**: la fecha. Al terminar, **«Resolver disputa»**: ganada, perdida o anulada.
+
+**Registrar una liquidación.** Repartos → el beneficiario → «Registrar liquidación»: tipo («Pago al beneficiario»
+o «Devolución a la empresa»), monto, moneda, fecha, medio, nota y comprobante → **«Registrar liquidación»**. El
+saldo se actualiza.
+
+**Importar un CSV.** Importar → empresa, pasarela, canal y opciones (por ejemplo, «Pago rápido»; valen para todo
+el archivo) → el archivo. Reconoce por sí mismo los formatos de Stripe (informe de saldo y exportación de pagos) y la
+descarga de actividad de PayPal; con otro, se eligen las columnas a mano y la pasarela lo recuerda. Lo importado se
+reparte con el esquema por defecto de la empresa, si está activo; si no, queda sin reparto. Antes de escribir nada,
+**«Así lo entendí»** dice con qué esquema se reparte y cuántos son nuevos, repetidos (también los de la papelera),
+omitidos y con error, y lista los «posibles repetidos»: cobros registrados a mano con la misma empresa, pasarela,
+moneda y monto, a un día como mucho. Esos solo se importan si se marca «Son otros cobros: importar también…». Con
+«Estos cobros ya se depositaron», los cobros cuya fecha estimada ya llegó entran depositados en esa fecha estimada;
+los que todavía no la alcanzan entran por caer. Al final, **«Importar N cobros»**. Lo que ya existe no se repite
+aunque se importe dos veces. Los reembolsos del archivo no se importan: se registran en el detalle de cada cobro.
+
+**Exportar todo.** Ajustes → «Exportar todo» → **«Descargar copia (JSON)»**: todas las filas de lo registrado, sin
+ningún archivo (ni los comprobantes ni los logos de las empresas). Para una lista filtrada, Cobros → **«Exportar
+CSV»**.
+
+**Si se corta la red al guardar**, la pantalla no da nada por hecho: dice que no se sabe si se guardó y, en los
+diálogos y botones, ofrece **«Ver cómo quedó»**, que vuelve a leer lo guardado. Lo escrito no se pierde. En
+Registrar cobro y en una liquidación, reenviar el mismo formulario no duplica nada. Si antes de reenviarlo se cambió
+un dato, avisa de que ya se había guardado con los datos del primer intento, pero no con cualquier dato:
+
+- En Registrar cobro avisa si cambió el monto, la moneda, la fecha, la empresa, el canal, la pasarela, las opciones,
+  el esquema, la referencia, el estado inicial, la fecha del depósito, la fecha estimada a mano o la nota, o si se
+  eligió otra cuenta destino. Quitar la cuenta elegida (dejar la que pone la app) no se detecta: se toma como el
+  mismo envío y ese cambio se pierde.
+- En una liquidación avisa si cambió el beneficiario, la fecha, la moneda o el monto, o si se puso o se quitó el
+  comprobante. Un cambio en el medio de pago o en la nota no se detecta y se pierde.
 
 ## Las piezas
 
@@ -99,10 +188,10 @@ con su propio `package.json`. No comparte código con el otro proyecto que está
    tercero, que el reparto sume exactamente su base, se comprueba al confirmar la transacción. El resultado es el
    mismo: si algo no cuadra, no se guarda nada. El detalle está en
    [Lo que la base hace cumplir](#lo-que-la-base-hace-cumplir).
-6. La pantalla se refresca.
+6. La pantalla dice «Cobro guardado.» y deja el formulario listo para el siguiente.
 
-Hoy existen los pasos 3 a 5 (`createTx` y las demás operaciones de `src/server/pasarelas/ops/`). Los pasos 1, 2 y 6
-llegan con las pantallas del libro.
+En el código: el formulario es `RegisterForm`, la acción `createTransaction` (en `actions/transactions.ts`) y la
+operación `createTx` (en `ops/transactions.ts`). Las demás pantallas siguen el mismo camino.
 
 Una lectura va al revés: la pantalla pide, el servidor consulta con la sesión del usuario (la base solo le deja ver
 lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga falta.
@@ -112,16 +201,19 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 | Carpeta | Qué hay |
 |---|---|
 | `src/lib/pasarelas/` | **El motor** y sus pruebas al lado. `types.ts` es el contrato; `index.ts`, la puerta única |
-| `src/server/pasarelas/` | **La capa de servidor**: lecturas (`queries/`), operaciones (`ops/`) y lo que comparten. Las acciones del servidor (`actions/`) están sin construir |
+| `src/server/pasarelas/` | **La capa de servidor**: lecturas (`queries/`), operaciones (`ops/`), las acciones del servidor que llaman las pantallas (`actions/`) y lo que comparten |
 | `src/lib/supabase/` | Los clientes de Supabase (navegador, servidor y proxy) y los tipos generados de la base |
 | `src/lib/auth/`, `src/proxy.ts` | La sesión verificada de cada petición y el refresco de la sesión |
-| `src/app/` | La entrada (`/login`), Ajustes, la galería del kit y un Resumen provisional. Las pantallas del libro, bajo `/pasarelas`, están sin construir |
+| `src/app/` | La entrada (`/login`), Ajustes (con «Exportar todo»), la galería del kit y las pantallas del libro, bajo `/pasarelas` |
 | `src/components/ui/`, `src/components/shell/` | Kit propio de interfaz y marco de navegación |
+| `src/components/pasarelas/` | Las piezas de cada pantalla del libro |
 | `supabase/migrations/` | El esquema de la base: `20261110120000_las_pasarelas_de_pago.sql` |
 | `supabase/config.toml` | El Supabase local: registro público apagado, segundo factor TOTP encendido |
-| `tests/integration/` | Pruebas contra el Supabase local: RLS, cuadres, funciones, Storage, borrado de usuario, configuración, cobros y totales |
-| `e2e/` | Pruebas de punta a punta (celular 390×844 y escritorio 1280×800): hoy, la sesión y la galería del kit |
+| `scripts/` | El arranque del Supabase local (`stack.sh`), la semilla de ejemplo (`npm run seed`) y las capturas |
+| `tests/integration/` | Pruebas contra el Supabase local: RLS, cuadres, funciones, Storage, sesiones, borrado de usuario y cada parte del libro |
+| `e2e/` | Pruebas de punta a punta (celular 390×844 y escritorio 1280×800, con axe): cada pantalla y el recorrido del encargo |
 | `docs/superpowers/` | El diseño (`specs/`) y el plan (`plans/`) |
+| `docs/capturas/` | Una captura de cada pantalla en el celular, con datos de la semilla (el Resumen, también en oscuro), más la entrada y el código del segundo factor, vacíos. Se rehacen con `scripts/capturas.ts` cada vez que cambia una pantalla |
 
 ### Los archivos del motor
 
@@ -140,6 +232,7 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 | `schemes.ts` | Validar un esquema de reparto antes de guardarlo |
 | `guards.ts` | Guardas para textos libres: tarjetas, números largos y enlaces |
 | `csv.ts` | Armar un CSV para descargar, protegido contra fórmulas |
+| `import/` | Leer el CSV de una pasarela: reconocer el formato, convertir cada fila y separar repetidos y posibles repetidos |
 
 ### Los archivos de la capa de servidor
 
@@ -149,10 +242,14 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 | `zod.ts` | La validación que comparten las acciones: montos, porcentajes, fechas, monedas, enlaces y textos libres |
 | `errors.ts` | De un error (de la base, de Storage o del motor) a un mensaje en español para la persona |
 | `tx-save.ts` | Manda las escrituras del motor a `pay_save_transactions`, en lotes de 500 |
-| `queries/config.ts` | Lee toda la configuración del usuario (`loadPayConfig`) y siembra los feriados (`ensureHolidays`) |
+| `action.ts` | `runAction`: la envoltura de cada acción del servidor (sesión, validación, error en español, revalidar) |
+| `queries/config.ts`, `queries/session-config.ts` | Lee toda la configuración del usuario (`loadPayConfig`, `getPayConfig`) y siembra los feriados (`ensureHolidays`) |
 | `queries/transactions.ts` | Los filtros, la lista por páginas, las filas para totales y el detalle de un cobro |
-| `ops/transactions.ts` | Registrar, editar, reembolsar, disputar, depositar, recalcular, papelera y borrado definitivo |
+| `queries/…` | Una lectura por pantalla: resumen, empresas, pasarelas, cuentas, feriados, repartos, liquidaciones, importar y exportar |
+| `ops/transactions.ts` | Registrar, editar, reembolsar, disputar, depositar, recalcular, fechas estimadas, papelera y borrado definitivo |
 | `ops/receipts.ts` | Registrar y quitar un comprobante, y firmar su URL |
+| `ops/…` | Las escrituras de cada parte: empresas, pasarelas, cuentas, feriados, repartos, liquidaciones e importar |
+| `actions/…` | Las acciones del servidor que llaman las pantallas, cada una con su esquema de validación. Delgadas: sesión, validación y la `op` que toca |
 
 ## Las reglas del dinero
 
@@ -417,9 +514,15 @@ rango, o con un año que no sea entero, la función falla con un error (`RangeEr
 
 **De dónde salen los feriados de un usuario.** La migración solo crea la tabla, vacía. La siembra la hace
 `ensureHolidays`, de la capa de servidor: si el usuario no tiene **ningún** feriado, carga los de 2026 y 2027. Si
-ya tiene alguno, no hace nada: no repone los que el usuario quitó ni agrega años nuevos. Todavía no la llama
-ninguna pantalla. El diseño prevé una pantalla de feriados con un botón para cargar otro año, y que el Resumen
-avise cuando falte el año en curso o el siguiente.
+ya tiene alguno, no hace nada: no repone los que el usuario quitó ni agrega años nuevos. La llaman la pantalla de
+Feriados y la lectura de la configuración de cada petición (`getPayConfig`). Otro año se carga en Feriados, con
+«Cargar feriados bancarios de EE. UU. de…», y el Resumen avisa («Faltan los feriados de…») cuando falta el año en
+curso o el siguiente.
+
+**Si cambian los feriados o los días.** Al agregar o quitar un feriado, o al cambiar los días al depósito de una
+pasarela o de su cuenta en una empresa, se vuelven a calcular las fechas estimadas **automáticas** de lo que está
+[por caer](#por-caer-y-depositado). Las puestas a mano no se tocan, ni las comisiones, ni los montos. El aviso dice
+cuántas fechas cambiaron, y el historial de cada cobro dice que las cambió la app.
 
 **Mientras un año no esté cargado, el cálculo solo salta sábados y domingos.** Con la tabla vacía, F2 daría viernes
 27/11 en vez de lunes 30/11, y F3 daría lunes 28/12 en vez de martes 29/12.
@@ -619,8 +722,8 @@ edición escribe la empresa, la cuenta destino nueva y la fecha estimada viernes
 
 **Recalcular** vuelve a resolver **todas** las reglas con la configuración de ahora. Tiene dos modos:
 
-- **Con la tarifa de hoy** (`hoy`): usa las versiones de tarifa y de esquema que rigen hoy. Es el modo por defecto
-  del diseño; el motor y la capa de servidor exigen que se les diga cuál.
+- **Con la tarifa de hoy** (`hoy`): usa las versiones de tarifa y de esquema que rigen hoy. Es el que viene
+  marcado en la pantalla; el motor y la capa de servidor exigen que se les diga cuál.
 - **Con la tarifa de la fecha del cobro** (`fecha_del_cobro`): usa las versiones que corresponden a la fecha del
   cobro según la configuración actual. Sirve cuando se corrigió una tarifa mal cargada.
 
@@ -638,16 +741,18 @@ comisiones, neto, reembolsado, estado, disputa, pasarela, versión de esquema, f
 
 ### La comisión informada
 
-Si la pasarela informa la comisión real de un cobro (el diseño lo prevé para el importador de CSV, fase B), se
-puede usar en lugar de la calculada. Queda en las reglas del cobro como `feeOverride`, y la línea «pasarela» se
-marca como «informado».
+Si el CSV de la pasarela trae la comisión real de cada cobro, al importar se puede marcar «Usar la comisión del
+archivo» para usarla en lugar de la calculada. Queda en las reglas del cobro como `feeOverride`, y la línea
+«pasarela» se marca como «informado».
 
 - Con un reembolso parcial se reparte en proporción. Con 4,70 informados sobre 100,00 y un reembolso de 40,00: la
-  pasarela es 4,70 × 60 ÷ 100 = 2,82 y el costo del reembolso es 4,70 − 2,82 = 1,88.
-- Se conserva al corregir el monto o la fecha.
-- Se descarta al cambiar de pasarela y al recalcular: ahí vuelve a mandar la tarifa.
-
-El motor ya admite la comisión informada. El lector de CSV no está construido.
+  pasarela es 4,70 × 60 ÷ 100 = 2,82 y el costo del reembolso es 4,70 − 2,82 = 1,88. El desglose dice entonces de
+  cuánto era la informada.
+- Se conserva al corregir la fecha.
+- Se descarta al corregir el monto o la moneda (era la de otro monto), al cambiar de pasarela y al recalcular: ahí
+  vuelve a mandar la tarifa.
+- En la exportación de pagos de Stripe, si la comisión viene en otra moneda que el cobro, no se trae, y la nota
+  del cobro lo dice.
 
 ## Estados de un cobro
 
@@ -701,8 +806,12 @@ estimada: todo lo atrasado, más lo que cae en una ventana de 14 días **contand
 ese dato. La dejan fuera quienes le pasan las filas:
 
 - las cuatro [vistas de totales](#vistas-de-totales) de la base;
-- las lecturas de la capa de servidor: todas pasan por `applyTxFilters`, que por defecto solo trae cobros fuera de
-  la papelera (y, cuando se pide la papelera, solo los de ella).
+- la lista de cobros y las filas para totales (`listTx` y `leanTx`), que pasan por `applyTxFilters`: por defecto
+  solo trae cobros fuera de la papelera (y, cuando se pide la papelera, solo los de ella);
+- tres lecturas más, cada una con su propio filtro de `deleted_at`: el último cobro (`lastTx`, para «Repetir el
+  último»), los repartos de un beneficiario y la búsqueda de posibles repetidos al importar.
+
+El detalle de un cobro y las lecturas por id sí traen los de la papelera: así se abren y se restauran.
 
 Quien escriba una lectura nueva tiene que filtrar igual. Si al motor le llega una fila de la papelera, la cuenta.
 
@@ -710,9 +819,9 @@ Quien escriba una lectura nueva tiene que filtrar igual. Si al motor le llega un
 
 | Cambio | Permitido desde | Rechazado |
 |---|---|---|
-| Registrar | estado inicial `registrado`, `en_transito` o `depositado` (este exige la fecha del depósito) | si la fecha del cobro no es la de su instante en Nueva York |
+| Registrar | estado inicial `registrado`, `en_transito` o `depositado` (este exige la fecha del depósito) | si la fecha del cobro no es la de su instante en Nueva York; un depósito anterior al cobro |
 | Pasar a en tránsito | `registrado` | desde cualquier otro |
-| Depositar | `registrado` o `en_transito`; si ya está depositado, cambia la fecha | fallido |
+| Depositar | `registrado` o `en_transito`. Solo en el detalle de un cobro ya depositado, cambia la fecha | fallido; un depósito anterior al cobro (o futuro: lo frena la validación del servidor). En lote, lo que no está [por caer](#por-caer-y-depositado) |
 | Revertir el depósito | `depositado` (vuelve a `en_transito`) | si no está depositado |
 | Marcar como fallido | `registrado` o `en_transito`, sin reembolso y sin disputa | depositado, ya fallido, con reembolso, o con cualquier disputa (aunque esté ganada) |
 | Reabrir | `fallido` (vuelve a `registrado` con sus números de antes) | si no está fallido |
@@ -720,14 +829,15 @@ Quien escriba una lectura nueva tiene que filtrar igual. Si al motor le llega un
 | Corregir el total reembolsado | cualquiera menos fallido, de cero a lo cobrado | con la disputa perdida solo vale el total |
 | Abrir una disputa | sin disputa, o con una ganada | con una abierta o perdida; fallido |
 | Ganar, perder o anular la disputa | disputa abierta | si no hay una abierta |
-| Editar | cualquiera, también fallido (sigue fallido y en cero) | si no cambia nada; si el monto baja de lo ya reembolsado |
+| Editar | cualquiera, también fallido (sigue fallido y en cero) | si no cambia nada; si el monto baja de lo ya reembolsado; si la fecha del cobro queda después de su depósito |
 | Recalcular | cualquiera menos fallido | fallido; si la pasarela ya no existe |
 | Mandar a la papelera | fuera de la papelera | si ya está |
 | Restaurar | en la papelera | si no está |
 
 Un cobro en la papelera solo admite restaurarse. Cada rechazo tiene su mensaje en español (por ejemplo: «El cobro ya
 está depositado: revierte el depósito primero.»). Las operaciones sobre varios cobros a la vez (depositar, pasar a
-en tránsito, papelera, recalcular) se saltan los que no admiten el cambio y dicen cuántos escribieron.
+en tránsito, papelera, recalcular) se saltan los que no admiten el cambio y dicen cuántos escribieron; al depositar,
+también cuántos se saltaron y por qué.
 
 Dos reglas de la disputa perdida: implica el reembolso total, y así se queda. Si después se corrige el monto del
 cobro, el reembolso lo sigue.
@@ -784,7 +894,9 @@ Lo liquidado pasa a 45,15 − 46,75 = −1,60, igual que lo asignado, y el saldo
 ## La base de datos
 
 Todo está en una migración aditiva: solo crea objetos con prefijo `pay_`, el esquema `private`, el bucket
-`comprobantes` y sus políticas. No modifica nada que ya exista.
+`comprobantes` y sus políticas. Si el proyecto ya tiene un esquema `private` o un bucket `comprobantes`, los
+reutiliza y les cambia permisos y políticas (el paso 1 de [«Pasar a producción»](../README.md#pasar-a-producción)
+dice qué mirar antes).
 
 Columnas comunes de las 17 tablas:
 
@@ -800,7 +912,7 @@ Columnas comunes de las 17 tablas:
 
 | Tabla | Qué guarda |
 |---|---|
-| `pay_companies` | Las empresas: nombre, web, moneda, esquema de reparto por defecto |
+| `pay_companies` | Las empresas: nombre, web, moneda, esquema de reparto por defecto, notas y la ruta de su logo (el archivo está en Storage) |
 | `pay_channels` | Los canales o páginas de venta de una empresa, con lo que cobra su plataforma (porcentaje y cuota fija) |
 | `pay_gateways` | Las pasarelas: días al depósito (0–60), hábiles o corridos, si devuelve la comisión al reembolsar, costo de disputa |
 | `pay_gateway_fee_versions` | Las tarifas de cada pasarela (porcentaje y cuota fija) con su «vigente desde» |
@@ -878,8 +990,7 @@ importar.
 - **Eventos del historial:** ni se editan ni se borran. Se van con su cobro.
 
 **Lo que tiene cobros no se borra.** Una pasarela, un canal, una empresa, un beneficiario, un esquema, una tarifa o
-una versión de esquema con cobros no se pueden borrar: la clave foránea lo impide. Hay pruebas para la pasarela, el
-canal, el beneficiario y la versión de esquema; lo demás sale de las claves de la migración.
+una versión de esquema con cobros no se pueden borrar: la clave foránea lo impide. Hay pruebas para los siete.
 
 **Dos borrados que sí pasan, con efecto:**
 
@@ -913,7 +1024,8 @@ destino, y el alias de cuenta de un beneficiario, no admiten 7 o más dígitos s
 disputa que se anula.
 
 **La migración se revisa a sí misma.** Al final falla si alguna tabla `pay_*` quedó sin RLS, sin la política del
-segundo factor o sin su `unique (id, user_id)`.
+segundo factor o sin su `unique (id, user_id)`, o si el bucket `comprobantes` quedó sin sus dos políticas
+restrictivas.
 
 Un detalle para quien mantenga: `pay_company_gateways.default_extra_ids` es un arreglo de ids sin clave foránea. El
 motor ignora los ids que ya no existen o están inactivos.
@@ -942,6 +1054,12 @@ Más sobre `pay_save_transactions`:
   mientras tanto, la función se niega (`pay_tx_conflict`) y no pisa el cambio del otro. **Solo actúa si ese dato
   llega.** Si falta o es nulo, la función actualiza sin comparar y puede pisar el cambio de otro. Las escrituras
   que planea el motor lo llevan siempre; quien llame a la función por otro camino tiene que mandarlo.
+- **Qué versión se compara.** Las acciones de **un solo cobro** (editar, reembolso, disputa, fallido, reabrir,
+  depositar o revertir desde el detalle, fecha estimada, recalcular desde el detalle) mandan la versión que vio la
+  persona (`expectedUpdatedAt`, el `updatedAt` de la pantalla). Así, una pestaña vieja o un reembolso repetido tras
+  un corte dan «Este cobro cambió mientras lo editabas: vuelve a abrirlo» en vez de pisar o sumar dos veces. Si el
+  cambio no toca nada, no se escribe y no hay conflicto. Las acciones **en lote** comparan contra lo que el servidor
+  acaba de leer: solo frenan un choque de milisegundos.
 - El reparto se reemplaza solo si llega uno nuevo. Si no llega, no se toca.
 - Con `p_skip_duplicates`, un cobro nuevo cuya referencia ya existe en esa pasarela se salta, y se devuelve el id
   del que ya estaba. Es para importar.
@@ -994,9 +1112,12 @@ Otros rechazos llegan con el nombre de la restricción o del índice:
 | 23503 | Apunta a algo que no existe, o se quiso borrar algo en uso | claves foráneas | «Algo de lo elegido ya no existe. Vuelve a cargar la página.», o «No se puede borrar: todavía se usa en cobros o en otros registros.» |
 | 42501 | Sin permiso: sin sesión, o con segundo factor y sin haber escrito el código | | «Verifica tu segundo factor para seguir» |
 
-Un código o un nombre que `errors.ts` no reconoce da el mensaje general («No se pudo guardar. Inténtalo de
-nuevo.»). Los rechazos de Storage se traducen por su código HTTP: sin segundo factor, archivo que ya no existe,
-nombre repetido, más de 10 MB y tipo no admitido tienen cada uno su mensaje.
+Un SQLSTATE que `errors.ts` no reconoce da el mensaje general («No se pudo guardar. Inténtalo de nuevo.»). Un
+nombre que no reconoce, dentro de un código conocido, da el mensaje propio de ese código: el de las tablas para
+23505, 23503 y 23514, y «Ese registro ya no existe.» para P0002.
+
+Los rechazos de Storage se traducen por su código HTTP: sin segundo factor, archivo que ya no existe, nombre
+repetido, más de 10 MB y tipo no admitido tienen cada uno su mensaje.
 
 El motor tiene además sus propios errores, que ya traen el mensaje en español: `PayStateError` (el cambio no
 corresponde al estado del cobro), `PayRuleError` (lo elegido no existe en la configuración) y los problemas de un
@@ -1028,6 +1149,11 @@ política restrictiva se suma a las demás: hay que cumplir las dos.
 En palabras: si el usuario activó el segundo factor, la contraseña sola ya no abre nada. Ni las tablas, ni las
 vistas, ni las funciones, ni los archivos. Da igual lo que haga la interfaz: la exigencia está en la base.
 
+**La sesión tiene que seguir abierta.** `pay_mfa_ok()` exige además que la sesión del token siga en
+`auth.sessions`. Cambiar la contraseña cierra las sesiones de los demás dispositivos; «Cerrar sesión en todos los
+dispositivos», todas; «Cerrar sesión», la de ese dispositivo. Desde ese momento la base no les da ni un dato, aunque
+su token siga firmado hasta que caduca (una hora). Lo que puede tardar es que una pantalla ya abierta lo note.
+
 **Importante:** mientras el usuario no active un factor, entra solo con la contraseña. Conviene activarlo el primer
 día; la aplicación lo avisa en todas las pantallas hasta que se activa. Un factor a medio activar (sin verificar)
 no cuenta.
@@ -1052,26 +1178,34 @@ Las demás funciones internas viven en el mismo esquema, y nadie tiene permiso p
 
 ### Comprobantes en Storage
 
-- Bucket **privado** `comprobantes`. No hay URL pública.
-- Hasta 10 MB por archivo. Solo JPG, PNG, WebP y PDF.
-- Cada usuario solo entra a su carpeta, `{user_id}/…`, y con la misma regla del segundo factor. La ruta de un
-  comprobante de cobro es `{user_id}/{id del cobro}/…`.
+- Bucket **privado** `comprobantes`. No hay URL pública. Guarda los comprobantes de los cobros y de las
+  liquidaciones, y también los logos de las empresas.
+- Hasta 10 MB por archivo. Solo JPG, PNG, WebP y PDF (un logo, solo JPG, PNG o WebP).
+- Cada usuario solo entra a su carpeta, `{user_id}/…`, y con la misma regla del segundo factor. Dentro, una carpeta
+  por registro: `{user_id}/{id del cobro}/…`, `{user_id}/{id de la liquidación}/…` y, para el logo,
+  `{user_id}/{id de la empresa}/…`.
+- Esa regla va también en dos políticas **restrictivas** acotadas al bucket (`pay_comprobantes_mfa` para quien
+  entró y `pay_comprobantes_anon` para quien no). Las permisivas se suman entre sí: si el proyecto de Supabase ya
+  tuviera otra política de Storage sin filtro de bucket, esa sola dejaría ver los comprobantes sin el segundo
+  factor. Las restrictivas lo impiden. Los demás buckets del proyecto no se tocan.
 - Para ver un comprobante se genera una **URL firmada que dura 60 segundos**, en el momento de abrirlo
   (`receiptSignedUrl`). No se guarda.
 - Storage valida el tipo contra lo que el archivo **declara**, no contra su contenido. Por eso `registerReceipt`
   comprueba además, en el servidor, la carpeta, el tipo, el tamaño y que el archivo de verdad esté en Storage.
 - **Cómo se borra.** Los archivos se borran por la API de Storage (listar y quitar), y **antes** de borrar la fila.
   No se pueden borrar con SQL. Hay que comprobar cuántos se borraron: pedir que se quite una ruta sin permiso no da
-  error, simplemente no borra nada. Así lo hacen `removeReceipt` y el borrado definitivo de un cobro (`purgeTx`).
+  error, simplemente no borra nada. Así lo hacen `removeReceipt`, el borrado definitivo de un cobro (`purgeTx`), el
+  de una liquidación y el de una empresa, y el cambio de logo.
 
-El diseño añade que el navegador sube el archivo directo a Storage y achica antes las imágenes (máximo 1600 px), lo
-que además les quita los metadatos, como la ubicación. Eso llega con las pantallas.
+El navegador sube el archivo directo a Storage y antes achica las imágenes (máximo 1600 px), lo que además les quita
+los metadatos, como la ubicación. Del archivo se guardan la ruta, el tipo y el tamaño; su nombre original no.
 
 ### Sin secretos en la aplicación
 
 De Supabase, la aplicación solo lee dos variables: la URL del proyecto y la clave **publicable**. Las leen los tres
-clientes de `src/lib/supabase/` y `next.config.ts`, que saca de la URL el origen permitido en la política de
-contenido. Todo se hace con la sesión del usuario.
+clientes de `src/lib/supabase/`, la acción de cambiar la contraseña (`src/app/(dashboard)/ajustes/actions.ts`, que
+arma un cliente aparte, sin cookies, para comprobar la contraseña actual) y `next.config.ts`, que saca de la URL el
+origen permitido en la política de contenido. Todo se hace con la sesión del usuario.
 
 Hay una tercera variable, `PASARELAS_KIT`, que enciende la galería `/kit` fuera de desarrollo. No es un secreto y no
 va en producción.
@@ -1096,8 +1230,8 @@ la comprobación de Luhn (el dígito de control de las tarjetas). Reconoce tres 
 
 **Dónde se aplica.** Los validadores de texto libre de la capa de servidor (`zText`, `zOptionalText` y `zAlias`, en
 `zod.ts`) la llevan; `zAlias` rechaza además 7 o más dígitos seguidos, igual que la base. El de la **referencia**
-de un cobro (`zReference`) no la lleva, a propósito: los identificadores largos de una pasarela son normales. Las
-acciones del libro que usarán esos validadores están sin construir.
+de un cobro (`zReference`) no la lleva, a propósito: los identificadores largos de una pasarela son normales. Los
+usan las acciones del servidor (`actions/`).
 
 **Falsos positivos.** Lo que solo Luhn distingue de una tarjeta se marca una vez de cada diez, por azar. Es
 cualquier tramo de 13 a 19 dígitos unidos por espacios o guiones:
@@ -1125,7 +1259,8 @@ ahí solo están las reglas de los alias (7 o más dígitos seguidos) y de los �
 Borrar un usuario borra en cascada **todas sus filas** de las 17 tablas. Lo de los demás usuarios queda igual. Hay
 una prueba que lo comprueba.
 
-**No borra sus archivos de Storage.** Los comprobantes quedan en el bucket y hay que quitarlos por la API de Storage.
+**No borra sus archivos de Storage.** Los comprobantes y los logos quedan en el bucket y hay que quitarlos por la
+API de Storage.
 
 ### Entrada y sesión
 
@@ -1134,20 +1269,23 @@ una prueba que lo comprueba.
 - **Segundo factor TOTP** (aplicación de códigos). Se activa en Ajustes → Seguridad, con un QR o una clave. Se
   pueden agregar y quitar dispositivos. Si la cuenta tiene factor, la entrada sigue en `/login/verificar` y hasta
   escribir el código no se ve ninguna pantalla.
-- **Cada pantalla y cada acción del servidor empieza por `requireSession()`** (`src/lib/auth/session.ts`): sin
-  sesión manda a la entrada; con factor y sin el código, a la pantalla del código. Lee la sesión con `getClaims()`,
-  que verifica la firma del token, no solo lee la cookie. Si Auth no responde cuando hay que saber si el usuario
+- **Cada pantalla con datos, cada descarga y cada acción del servidor (salvo las de la entrada) pasa por
+  `requireSession()`** (`src/lib/auth/session.ts`), directo o a través de `runAction`: sin sesión manda a la
+  entrada; con factor y sin el código, a la pantalla del código. Lee la sesión con `getClaims()`, que verifica la
+  firma del token, no solo lee la cookie. Si Auth no responde cuando hay que saber si el usuario
   tiene factor, pide el código igual: ante la duda, cerrado.
 - **El proxy (`src/proxy.ts`) solo decide «hay sesión o no»**: refresca la cookie, manda a `/login` a quien no
-  tiene sesión y al Resumen a quien ya la tiene y abre `/login`. No mira el segundo factor ni protege una pantalla
-  por sí solo, y el marco de navegación tampoco. Quien de verdad defiende los datos es la base: su política
-  restrictiva exige `aal2` a quien tiene factor, aunque una pantalla se olvide de llamar a `requireSession()`
-  (ver [El segundo factor se exige en la base](#el-segundo-factor-se-exige-en-la-base)).
+  tiene sesión (con la ruta de vuelta en `siguiente`) y, a quien ya la tiene y abre `/login`, a esa ruta o al
+  Resumen. No mira el segundo factor ni protege una pantalla por sí solo, y el marco de navegación tampoco. Quien
+  de verdad defiende los datos es la base: su política restrictiva exige `aal2` a quien tiene factor, aunque una
+  pantalla se olvide de llamar a `requireSession()` (ver
+  [El segundo factor se exige en la base](#el-segundo-factor-se-exige-en-la-base)).
 - **Una acción del servidor es un punto de entrada público**: valida lo que recibe y no se fía de que la pantalla
   ya validó. La ruta a la que se vuelve después de entrar viene de la URL y solo se aceptan rutas de este sitio.
-- **Contraseña.** Se cambia en Ajustes y exige la actual. Mínimo 10 caracteres. Se puede cerrar la sesión en este
-  dispositivo o en todos. Una sesión cerrada desde otro dispositivo sigue valiendo para `getClaims()` hasta que
-  caduca su token (una hora).
+- **Contraseña.** Se cambia en Ajustes y exige la actual: la app la comprueba por su cuenta (entra con ella aparte)
+  antes de cambiar nada. Mínimo 10 caracteres. Se puede cerrar la sesión en este dispositivo o en todos. Una sesión
+  cerrada desde otro dispositivo sigue valiendo para `getClaims()` hasta que caduca su token (una hora), pero la
+  base ya no le da datos (ver [El segundo factor se exige en la base](#el-segundo-factor-se-exige-en-la-base)).
 
 ### Cabeceras de seguridad
 
@@ -1164,26 +1302,22 @@ una prueba que lo comprueba.
   petición, que es lo que ya pasa aquí (todo es privado y dinámico): se puede hacer más adelante, generando el
   *nonce* en el proxy. Los estilos en línea también están permitidos, por la misma razón.
 - **Las demás:** no adivinar el tipo de un archivo, no dejarse enmarcar, no mandar la dirección completa a otros
-  sitios, apagar cámara, micrófono y ubicación, y exigir siempre HTTPS (con `preload`).
+  sitios, apagar cámara, micrófono y ubicación, y exigir siempre HTTPS (dos años, sin `includeSubDomains` ni
+  `preload`, para no atar otros sitios del mismo dominio).
 
 Aparte de las cabeceras, cada página le dice a los buscadores que no la indexen (metadatos de `layout.tsx`).
 
 La entrada da por hechos varios ajustes de Auth (registro apagado, exigir la contraseña actual, longitud mínima,
 TOTP activo). En local los pone `supabase/config.toml`. En un proyecto remoto hay que dejarlos igual: la tabla está
-en `README.md`. Si «exigir la contraseña actual» queda apagado, Supabase ignora la que manda la aplicación.
-
-### Lo que queda fuera
-
-- **Recuperar la contraseña por correo.** No está. Se resuelve desde el panel de Supabase.
-- **Códigos de respaldo del segundo factor.** No están. Si se pierde el dispositivo, se resuelve desde el panel de
-  Supabase. Por eso conviene registrar un segundo dispositivo.
+en `README.md`. Si «exigir la contraseña actual» queda apagado, Supabase ignora la que manda la aplicación; la
+comprobación de la app sigue en pie, así que el ajuste queda como segunda barrera.
 
 ## Decisiones tomadas y por confirmar
 
 Estas decisiones se tomaron sin preguntar, para no parar la construcción. Las filas (a) a (m) son lo que el encargo
 dejaba abierto o no se podía cumplir tal cual. Las filas (n) a (p) son límites del modelo frente a cómo trabajan hoy
-las pasarelas; lo que dicen de las pasarelas conviene confirmarlo en sus páginas de tarifas. La fila (q) es una
-consecuencia de cómo se definió «por caer».
+las pasarelas; lo que dicen de las pasarelas conviene confirmarlo en sus páginas de tarifas. La fila (q) es la
+definición de «por caer». Las filas (r) a (x) se tomaron al construir las pantallas y tras la revisión final.
 
 | Decisión | Por qué | Qué cambia si el dueño decide lo contrario |
 |---|---|---|
@@ -1199,11 +1333,73 @@ consecuencia de cómo se definió «por caer».
 | **(j)** Es una aplicación autónoma en `pasarelas/`, con su propia entrada y segundo factor. No es un módulo de otra plataforma | Lo decidió el dueño el 2026-11-09. El encargo original lo describía como módulo de una plataforma que ya tenía entrada, papelera y kit de interfaz | Para mudarlo a otra plataforma Next + Supabase: se llevan el motor, la migración y las pantallas, y se cambian la entrada y el kit por los de allá. Está preparado: rutas bajo `/pasarelas`, motor en una carpeta y todo en la base con prefijo `pay_` |
 | **(k)** La rama de trabajo es la de la sesión, no `pasarelas/v1` | La sesión solo puede empujar a su propia rama (su nombre está en el diseño, spec §1) | Renombrarla o abrir `pasarelas/v1` lo hace alguien con permiso. No cambia el código |
 | **(l)** Los patrones son propios | El encargo pedía copiar los de otro repositorio, y no se pudo leer | Si se consigue acceso, se ajustan nombres y estructura. El motor y la base no dependen de ellos. Las convenciones están en `AGENTS.md` |
-| **(m)** Todo se probó contra un Supabase local. No se tocó ningún proyecto remoto ni Vercel | El dueño decidió elegir la base remota al final | Cuando el dueño elija la base: aplicar la migración (con copia antes) y crear el proyecto de Vercel. Hasta entonces no hay nada publicado |
-| **(n)** El costo de disputa es uno solo y desaparece si la disputa se gana | Así lo pide E6: al ganar, el cobro vuelve a las cifras de E1 | Según lo publicado al escribir esto (sin confirmar en la página oficial de tarifas), Stripe cobra 15,00 al recibir la disputa, que no devuelve aunque se gane, y otros 15,00 al contestarla, que sí devuelve. Para reflejarlo hay que partir el costo en dos, y E6 «ganada» ya no volvería a E1 |
+| **(m)** Todo se probó contra un Supabase local. No se tocó ningún proyecto remoto ni Vercel | El dueño decidió elegir la base remota al final | Cuando el dueño elija la base, se siguen los pasos de [«Pasar a producción»](../README.md#pasar-a-producción), en el README. Hasta entonces no hay nada publicado |
+| **(n)** El costo de disputa es uno solo y desaparece si la disputa se gana | Así lo pide el encargo, y E6: al ganar, el cobro vuelve a las cifras de E1 | Según la documentación de Stripe consultada al construir (conviene confirmarla en su página de tarifas), desde junio de 2025 Stripe cobra un costo al recibir la disputa, que **no** devuelve aunque se gane, y otro al contestarla, que sí devuelve. Con Stripe, hoy el libro da por devuelto lo que no vuelve: cada disputa ganada deja el neto más alto que el real. Para reflejarlo, por pasarela: «el costo de disputa se devuelve si se gana» (sí o no), o partir el costo en dos. Es una migración aditiva, el motor y la pantalla de pasarelas, y E6 «ganada» ya no volvería a E1 |
 | **(o)** Las opciones no tienen monto mínimo | El encargo solo pedía porcentaje y cuota fija | Los depósitos instantáneos suelen tener una comisión mínima (0,50, por confirmar). En cobros chicos, el costo real del pago rápido sería mayor que el calculado. Hace falta un campo «mínimo» en la opción |
 | **(p)** Los días al depósito se cuentan desde la fecha del cobro en Nueva York | Es una sola regla para todas las pasarelas, y la fecha estimada se puede corregir a mano | Hay pasarelas que cuentan en UTC, que empiezan en el siguiente día hábil o que cuentan desde el retiro. Para afinar hace falta, por pasarela, la zona de corte y cómo trata un cobro en día inhábil |
 | **(q)** «Por caer» es lo que se ve como registrado o en tránsito. Un cobro sin depositar con la disputa abierta o reembolsado del todo no está por caer. Consecuencia: «neto total = por caer + depositado» deja de cuadrar exacto cuando hay cobros así | «Por caer» responde a «cuánto me va a llegar al banco». Con la disputa abierta la pasarela retiene el dinero, y un reembolso total ya se devolvió: contarlos prometería un depósito que no va a llegar. Así la tarjeta, el filtro, los próximos depósitos, lo atrasado y la vista de cuentas dan lo mismo | Si se quiere que «por caer» más «depositado» sume siempre el neto, esos cobros vuelven a contar en «por caer» (el neto de E4 restaría 3,20 a lo que se espera recibir) y hay que cambiar el motor, el filtro de la lista y la vista. La otra salida es enseñar la diferencia como una tercera cifra, «retenido o devuelto» |
+| **(r)** La primera tarifa de una pasarela y la primera versión de un esquema valen «desde el inicio» (`2000-01-01`). Una versión nueva, por defecto desde mañana; se puede elegir otra fecha | Así cualquier cobro, aunque sea viejo o se registre tarde, tiene tarifa y reparto | Si un esquema nuevo debe valer solo desde su fecha, al crearlo se elige «Desde una fecha». Sin eso, recalcular un cobro viejo «con la tarifa de la fecha del cobro» le aplicaría ese esquema |
+| **(s)** Al importar, cada pasarela recuerda el formato y las columnas usadas, y avisa («Ojo: puede duplicar cobros») si después llega otro formato. En el informe de saldo de Stripe la referencia es `source_id`, el id del cobro, cuando el archivo la trae | Los dos archivos de Stripe dan referencias distintas al mismo cobro (`txn_…` y `ch_…`): importar los dos lo registraría dos veces. Con `source_id`, la referencia es la misma que se suele teclear a mano (`ch_…`) | Si se cambia de formato a propósito, se marca «Son otros cobros: importar igual». Sin el aviso, ese error pasaría en silencio |
+| **(t)** Los encabezados de la exportación de **pagos** de Stripe no tienen fuente oficial: se tomaron de exportaciones de ejemplo. El informe de saldo y la actividad de PayPal sí la tienen | No se encontró una página de Stripe que los publique, y no se inventan | Si no coinciden, el archivo sale como no reconocido y se eligen las columnas a mano una vez (la pasarela lo recuerda). Con la fila de encabezados de una exportación real, sin datos, se ajusta el reconocimiento |
+| **(u)** No se guarda el nombre original del archivo de un comprobante. La columna ya no existe en la migración | El nombre puede traer el de un comprador u otra persona, y la regla es no guardar datos de compradores | El archivo se reconoce por tipo, tamaño y fecha. Si hace falta el nombre, vuelve con una migración aditiva |
+| **(v)** Una sesión cerrada deja de leer datos al instante: lo comprueba la base, no la app | La base defiende también a quien llame a la API directo, y no suma una llamada a Auth por cada página | Comprobarlo en la app con Auth en cada página es una llamada de red más por página, y la API directa seguiría abierta hasta una hora |
+| **(w)** «Marcar depositado» en lote solo marca lo que está por caer. La fecha de un depósito ya hecho se cambia solo desde el detalle del cobro | El lote pisaba en silencio fechas reales (y con ellas el tiempo real de depósito) y depositaba cobros con la disputa abierta | Si se quiere corregir fechas en lote, hoy se hace cobro por cobro |
+| **(x)** El Resumen abre en la moneda con más cobros del período (a igual número, la de más empresas). Se puede elegir otra | Comparar brutos de monedas distintas no tiene sentido: un cobro de 2 300 MXN ganaba a muchos en USD | Si se prefiere una moneda fija (por ejemplo, USD si hay), es un cambio chico en el Resumen |
+
+### Lo que el dueño tiene que decidir
+
+Por orden de lo que más afecta al dinero:
+
+1. **Disputas en Stripe (n).** ¿Se separa el costo que no se devuelve? Hoy cada disputa ganada deja el neto más
+   alto que el real.
+2. **Encabezados de pagos de Stripe (t).** Mandar la fila de encabezados de una exportación real, sin datos.
+3. **Costos de un reembolso (a) y (b).** ¿La plataforma y las opciones devuelven lo suyo? ¿La pérdida la comparten
+   los beneficiarios o solo la empresa?
+4. **Pago rápido y días (o) y (p).** ¿El pago rápido tiene un mínimo? ¿Cómo cuenta los días cada pasarela?
+5. **«Por caer» (q).** ¿Así, o con una tercera cifra para lo retenido o devuelto?
+6. **Publicar (m).** Elegir la base remota y el proyecto de Vercel.
+
+Lo que hay que decidir para la fase C está aparte, en su
+[§9](#9-lo-que-el-dueño-tiene-que-decidir).
+
+## Lo que queda
+
+**No se construyó:**
+
+- La [fase C](#fase-c-conectar-con-las-pasarelas): conectar con las pasarelas. Es solo diseño.
+- Recuperar la contraseña por correo. Se resuelve desde el panel de Supabase.
+- Códigos de respaldo del segundo factor. Si se pierde el teléfono, se quita el factor desde el panel de Supabase.
+  Por eso conviene registrar un segundo dispositivo.
+
+**Para producción.** No hay nada publicado. Los pasos (copia previa, aplicar la migración, ajustes de Auth, crear
+el usuario dueño y el proyecto de Vercel) están en [«Pasar a producción»](../README.md#pasar-a-producción), en el
+README.
+
+**Límites conocidos** que se notan al usar la app:
+
+- Abrir el detalle de un cobro de otro usuario (o uno que no existe) enseña «Esta página no existe», sin ningún
+  dato, pero la respuesta sale con código 200 en vez de 404.
+- Al importar no se elige el esquema de reparto: va el por defecto de la empresa, si está activo, o ninguno. Para
+  repartir con otro, se edita cada cobro después.
+- Los reembolsos de un CSV no se importan: se registran en el detalle de cada cobro. Un pago de Stripe ya
+  reembolsado entra por su monto original, con una nota que dice cuánto falta registrar.
+- Con «Estos cobros ya se depositaron», solo entran depositados los cobros cuya fecha estimada ya llegó, y la fecha
+  del depósito es esa estimada, no la real: así entra en el tiempo real promedio.
+- Si la sesión venció, la descarga de «Exportar todo» o de «Exportar CSV» guarda la página de entrada en vez del
+  archivo: entra de nuevo y repite la descarga.
+- En la ficha de la empresa, la cuota fija de un canal se muestra con la moneda de la empresa, pero se cobra en la
+  moneda de cada cobro (fila [(c)](#decisiones-tomadas-y-por-confirmar)).
+- Una cuenta destino desactivada se sigue usando en los cobros nuevos de las empresas que la tienen, hasta que se
+  cambie en cada empresa. La pantalla lo avisa al desactivarla.
+- Solo se siembran los feriados de 2026 y 2027. Los años siguientes se cargan en Feriados (el Resumen avisa). Si se
+  borran todos, 2026 y 2027 vuelven solos.
+- «Exportar todo» lee por tramos, no de una sola vez: si se registra algo mientras se descarga, una fila puede
+  salir repetida o faltar. Conviene exportar sin estar cambiando nada.
+- Tras el aviso de que una liquidación ya estaba guardada, el formulario queda listo para otra: pulsar otra vez
+  «Registrar liquidación» crea una segunda, sin el archivo elegido. Antes, revisar la lista.
+- Para probar desde el celular contra `next dev` por la red local hace falta https (`next dev
+  --experimental-https`): sin él, el navegador no da los identificadores que usan los formularios. En producción
+  siempre hay https.
 
 ## Fase C: conectar con las pasarelas
 
@@ -1240,7 +1436,7 @@ Resumen en cinco líneas:
 - El dinero sigue sin pasar por `number`, la base sigue defendiendo los cuadres y lo calculado sigue congelado en
   `pay_transactions.breakdown`.
 - No se guardan tarjetas, cuentas completas ni datos de compradores (regla 6 de `AGENTS.md`).
-- El registro a mano sigue igual, y el importador de CSV cuando exista. La conexión es opcional por empresa.
+- El registro a mano y el importador de CSV siguen igual. La conexión es opcional por empresa.
 
 **Lo que no se puede prometer en PayPal.** El token se pide con un `POST`, y el ejemplo oficial de token trae
 permisos de pagos, reembolsos y envíos de dinero `[F15]`. No está confirmado que se puedan quitar (§2.3). La app
@@ -1251,7 +1447,7 @@ queda sin conexión. Es una decisión del dueño (§9).
 
 | Hoy | Con la fase C |
 |---|---|
-| Teclea cada cobro | Los cobros de una cuenta conectada aparecen solos al sincronizar |
+| Teclea cada cobro o importa el CSV de la pasarela | Los cobros de una cuenta conectada aparecen solos al sincronizar |
 | La comisión es la **calculada** con la tarifa guardada | Se compara con la comisión **real** que cobró la pasarela y se avisa si no coinciden |
 | Marca «depositado» a mano, por grupo | En Stripe, un depósito real marca sus cobros como depositados, con su fecha |
 | La fecha de depósito es una estimación | Queda la fecha que informa la pasarela (y sigue midiéndose el tiempo real) |
@@ -1478,13 +1674,14 @@ misma cadena**. De ahí salen cuatro cuidados:
 
 1. **Una referencia canónica por pasarela, decidida antes de la primera importación real.** Stripe: el
    identificador del cobro (`ch_…` o `py_…`), que es el `source` del movimiento de saldo. PayPal:
-   `transaction_id`. El diseño del importador de la fase B deja elegir la columna de referencia: si alguien mapea
-   el identificador del movimiento (`txn_…`) y la API usa `ch_…`, el mismo cobro entra dos veces y el índice no lo
-   ve. El importador todavía no está escrito: conviene fijar ahí esta misma regla.
+   `transaction_id`. El importador de CSV ya sigue esta regla con el informe de saldo de Stripe: toma `source_id`
+   cuando el archivo la trae y avisa cuando no. Pero deja elegir otra columna de referencia: si alguien mapea el
+   identificador del movimiento (`txn_…`) y la API usa `ch_…`, el mismo cobro entra dos veces y el índice no lo ve.
 2. **Cobros a mano sin referencia.** El índice no cubre las filas con referencia vacía. Antes de crear, la
    sincronización busca un cobro de la misma empresa y pasarela, misma moneda, mismo bruto, fecha a un día de
    distancia y sin referencia. Si lo hay, **no crea**: lo muestra como «posible repetido» y el dueño decide si son
-   el mismo (y entonces solo se le pone la referencia).
+   el mismo (y entonces solo se le pone la referencia). El importador de CSV ya hace esa búsqueda, aunque allí solo
+   se elige importar o no.
 3. **Papelera.** Un cobro en la papelera conserva su referencia, así que la sincronización no lo revive. Si se
    borra del todo, la próxima sincronización lo vuelve a crear. Hay que elegir: aceptar eso, o guardar una lista de
    referencias descartadas por conexión.
@@ -1492,7 +1689,7 @@ misma cadena**. De ahí salen cuatro cuidados:
    «Stripe». Los identificadores de Stripe y de PayPal no se repiten entre cuentas, así que el índice sigue
    sirviendo.
 
-Antes de escribir, la sincronización muestra la pantalla «Así lo entendí» prevista para el importador: nuevos,
+Antes de escribir, la sincronización muestra la misma pantalla «Así lo entendí» del importador: nuevos,
 repetidos, posibles repetidos y con error. La primera vez de cada conexión, siempre. Después se puede dejar en
 automático.
 
@@ -1882,13 +2079,8 @@ Cuidados de (a), cualquiera sea el caso:
   cualquier cosa con forma de clave (`sk_`, `rk_`, `whsec_`).
 - Rotar al menos una vez al año y cada vez que cambie quién tiene acceso a Vercel.
 
-#### Lo que el dueño tiene que decidir aquí
-
-1. ¿Quién va a dar de alta una empresa nueva: él, desde la app, o quien administra Vercel?
-2. ¿Cuántas empresas y pasarelas espera conectar en el primer año?
-3. ¿Acepta cambiar la regla 5 de `AGENTS.md` para que el servidor lea secretos de pasarela?
-4. ¿Quiénes tienen hoy acceso al proyecto de Vercel y al de Supabase? Esa lista es, en la práctica, quién puede
-   leer los secretos.
+Lo que el dueño tiene que decidir sobre los secretos está en [§9](#9-lo-que-el-dueño-tiene-que-decidir), preguntas
+3 a 5.
 
 ### 5. Leer comprobantes con IA
 
@@ -1897,8 +2089,8 @@ persona la revisa y confirma. **Nunca se guarda sola.**
 
 **Flujo.**
 
-1. En «Registrar cobro», la persona adjunta el comprobante. Según el diseño (spec §6), el navegador achica la
-   imagen a 1600 px y la vuelve a codificar, lo que le quita los metadatos.
+1. En «Registrar cobro», la persona adjunta el comprobante. Como ya pasa hoy, el navegador achica la imagen a
+   1600 px y la vuelve a codificar, lo que le quita los metadatos.
 2. Aparece un botón **«Leer comprobante»**. No se lee solo al subir: mandar el archivo fuera es una decisión de la
    persona, cada vez.
 3. Una acción del servidor verifica la sesión, baja el archivo de Storage con la sesión del usuario y lo manda al
@@ -2160,7 +2352,7 @@ medición. Sirven para comparar pasos entre sí, no para comprometer fechas.
 
 | # | Paso | Tamaño | Depende de | Riesgo principal |
 |---|---|---|---|---|
-| 0 | Publicar la app (base remota y Vercel), terminar el importador de la fase B y fijar la referencia canónica | — | — | Sin esto no hay fase C |
+| 0 | Publicar la app (base remota y Vercel) y confirmar la referencia canónica de cada pasarela | — | — | Sin esto no hay fase C |
 | 1 | **Stripe a pedido, nivel 1**: conexiones, módulo de secretos, comprobación de la clave, lectura de movimientos de saldo, «Así lo entendí», posibles repetidos, conciliar comisión | Mediano (4–6 días) | 0 | Duplicar contra lo ya cargado; monedas sin decimales; que la clave tenga permisos de más |
 | 2 | **Depósitos de Stripe**: `pay_payouts`, marcar cobros, revertir si falla | Mediano (3–4 días) | 1 | Depósitos manuales o instantáneos, que no se pueden enlazar; depósitos que fallan después de «pagado» |
 | 3 | **Vista del socio** | Mediano (3–5 días) | 0 | Exponer una columna de más. Es el paso donde un error filtra datos entre personas |
@@ -2189,25 +2381,29 @@ ve la comisión real y sus depósitos se marcan solos, sin endpoint público y s
    automática no puede separarlas.
 2. **¿Qué quiere primero:** dejar de teclear cobros (pasos 1 y 2), darle su vista a los socios (paso 3) o leer
    comprobantes (paso 6)?
-3. **¿Acepta que el servidor guarde secretos de pasarela** en variables de Vercel, cambiando la regla 5? ¿Y quién
-   dará de alta una empresa nueva: él o quien administra Vercel?
-4. **¿Webhooks sí o no?** Si no, el libro se pone al día cuando él entra y pulsa «Sincronizar». Si sí, hay que
+3. **¿Acepta que el servidor guarde secretos de pasarela** en variables de Vercel, cambiando la regla 5 de
+   `AGENTS.md`? ¿Y quién dará de alta una empresa nueva: él, desde la app, o quien administra Vercel?
+4. **¿Cuántas empresas y pasarelas espera conectar en el primer año?** De eso depende cuánto dura la opción (a) de
+   [§4](#4-dónde-guardar-los-secretos).
+5. **¿Quiénes tienen hoy acceso al proyecto de Vercel y al de Supabase?** Esa lista es, en la práctica, quién puede
+   leer los secretos.
+6. **¿Webhooks sí o no?** Si no, el libro se pone al día cuando él entra y pulsa «Sincronizar». Si sí, hay que
    aceptar una excepción escrita a «el rol `anon` no puede nada».
-5. **¿Los cobros de la API entran solos o siempre pasan por «Así lo entendí»?** Se recomienda revisar siempre la
+7. **¿Los cobros de la API entran solos o siempre pasan por «Así lo entendí»?** Se recomienda revisar siempre la
    primera vez de cada conexión.
-6. **Si la comisión real no coincide con la calculada y el reparto ya se liquidó, ¿qué se hace?** Aplicarla mueve
+8. **Si la comisión real no coincide con la calculada y el reparto ya se liquidó, ¿qué se hace?** Aplicarla mueve
    el saldo de los beneficiarios. Se recomienda mostrarla y que él decida caso por caso.
-7. **Cobros en otra moneda:** ¿se registran en la moneda en que la pasarela los liquida, o en la que pagó el
+9. **Cobros en otra moneda:** ¿se registran en la moneda en que la pasarela los liquida, o en la que pagó el
    comprador?
-8. **PayPal, la credencial:** si no se pueden quitar los permisos de pagos y reembolsos, ¿acepta guardar un
-   secreto de PayPal que puede mover dinero, o PayPal sigue por CSV?
-9. **PayPal, los retiros:** ¿le sirve que los retiros al banco sean una sugerencia que él confirma? No hay forma de
-   hacerlo automático.
-10. **Stripe, otros medios de pago:** ¿cobra solo con tarjeta, o también con débito bancario u otros medios? De eso
+10. **PayPal, la credencial:** si no se pueden quitar los permisos de pagos y reembolsos, ¿acepta guardar un
+    secreto de PayPal que puede mover dinero, o PayPal sigue por CSV?
+11. **PayPal, los retiros:** ¿le sirve que los retiros al banco sean una sugerencia que él confirma? No hay forma de
+    hacerlo automático.
+12. **Stripe, otros medios de pago:** ¿cobra solo con tarjeta, o también con débito bancario u otros medios? De eso
     depende si la primera versión lee solo `charge` o también `payment`.
-11. **Socios:** ¿ven el nombre de la empresa y el bruto de cada cobro, o solo lo que les tocó? ¿Se les exige
+13. **Socios:** ¿ven el nombre de la empresa y el bruto de cada cobro, o solo lo que les tocó? ¿Se les exige
     segundo factor siempre? ¿Acepta que una cuenta sea de dueño o de socio, y no las dos cosas?
-12. **IA:** ¿acepta que la imagen de un comprobante, que puede traer datos de quien pagó, salga a un proveedor
+14. **IA:** ¿acepta que la imagen de un comprobante, que puede traer datos de quien pagó, salga a un proveedor
     externo cuando él pulse el botón? ¿Con qué tope de gasto al mes?
 
 ### Fuentes

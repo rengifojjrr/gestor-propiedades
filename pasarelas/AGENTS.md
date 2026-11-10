@@ -30,13 +30,15 @@ Qué es y por qué: [`docs/PASARELAS.md`](docs/PASARELAS.md). Diseño: `docs/sup
 npm ci                 # instala lo del lockfile; funciona con npm 10 y con npm 11
 npm run db:start       # Supabase local con Docker; escribe .env.local solo si falta o si le falta la clave
 npm run db:env         # vuelve a escribir en .env.local la URL y las claves del stack (conserva lo demás)
+npm run db:status      # estado del stack local
+npm run seed           # usuario demo@example.com + libro de ejemplo en el stack local; imprime la contraseña
 npm run dev            # http://localhost:3000
 npm run typecheck      # next typegen && tsc --noEmit   (tsc a secas falla en un clon limpio)
 npm run lint           # eslint (no existe `next lint`)
 npm test               # Vitest: pruebas puras junto al código
 npm run coverage       # exige 100 % en src/lib/pasarelas
 npm run test:int       # Vitest contra el Supabase local (tests/integration)
-npm run test:e2e       # Playwright (compila y arranca en el puerto 3100, o en E2E_PORT) — pásale `--trace off`
+npm run test:e2e       # Playwright (compila y arranca en el puerto 3100, o en E2E_PORT; trace ya va apagado)
 npm run db:types       # regenera src/lib/supabase/database.types.ts
 npm run db:reset       # BORRA la base local y vuelve a aplicar las migraciones
 npm run db:stop        # detiene el stack local (para TODOS los que lo estén usando)
@@ -45,16 +47,27 @@ npm run db:stop        # detiene el stack local (para TODOS los que lo estén us
 Para **agregar o cambiar dependencias** con npm 10 usa `npx npm@11 install <paquete>`: lo que puede fallar con
 npm 10 («edgesOut») es `npm install` cuando tiene que resolver el árbol, no `npm ci`.
 
+La semilla (`scripts/seed-pasarelas-demo.ts`, datos en `scripts/demo-data.ts`) solo siembra sobre un libro vacío;
+`npm run seed -- --reset` borra antes todo lo de `demo@example.com`. Cada corrida le pone una contraseña nueva. Se
+niega a correr fuera del stack local salvo con `SEED_ALLOW_REMOTE=1`, y ahí entra con `SEED_EMAIL` y
+`SEED_PASSWORD` (nunca con la clave secreta) y no admite `--reset`.
+
 El stack local es **uno solo y compartido**: si hay más gente o agentes trabajando, no hagas `db:reset` **ni
 `db:stop`**; crea tus propios usuarios de prueba (cada usuario solo ve lo suyo). Para tu propio servidor usa otro
 puerto. Punta a punta, de dos maneras:
 
 - **Modo producción** (compila y arranca su propio servidor con `next build && next start`):
-  `E2E_PORT=31xx npm run test:e2e -- --trace off e2e/<archivo>`. No reutiliza un servidor ajeno: si el puerto está
-  ocupado, falla.
+  `E2E_PORT=31xx npm run test:e2e -- e2e/<archivo>`. No reutiliza un servidor ajeno: si el puerto está ocupado,
+  falla. **Una corrida por carpeta**: dos a la vez en la misma copia de trabajo compilan en el mismo `.next` y se
+  rompen entre sí. Para correr en paralelo, cada una en su propio worktree.
 - **Desarrollo** (contra un servidor que ya tienes corriendo): `npx next dev -p 31xx` y
-  `E2E_BASE_URL=http://127.0.0.1:31xx npm run test:e2e -- --trace off e2e/<archivo>`.
+  `E2E_BASE_URL=http://127.0.0.1:31xx npm run test:e2e -- e2e/<archivo>`.
   Dos `next dev` no arrancan en la misma carpeta.
+
+Desde otro dispositivo de la red local (`http://<IP>:3000`) el navegador no da `crypto.randomUUID` (no es un
+contexto seguro), y lo usan registrar un cobro, subir comprobantes o logos, agregar opciones al crear una pasarela,
+agregar líneas a un esquema y registrar liquidaciones: arranca con `npx next dev --experimental-https -H <IP>`. A
+propósito no se programó una alternativa a `crypto.randomUUID`: para probar desde el celular se usa https.
 
 ## Next 16.4: lo que NO es como lo recuerdas
 
@@ -88,7 +101,9 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
   sin verificarla). Usa `getClaims()` (verifica la firma; trae `sub`, `email`, `aal`) y, para saber si hay factor,
   `mfa.listFactors()`.
 - En `proxy.ts` no existe `response.cookies.setAll`: copia las cookies una a una.
-- El rol `authenticated` no puede leer `auth.mfa_factors`: por eso `private.pay_mfa_ok()` es `security definer`.
+- El rol `authenticated` no puede leer `auth.mfa_factors` ni `auth.sessions`: por eso `private.pay_mfa_ok()` es
+  `security definer` y vive en `private`, un esquema que la Data API no expone (en `public` se podría llamar por
+  `/rest/v1/rpc`).
 - PostgREST devuelve `numeric` como número JSON: **lee el dinero con `::text`**
   (`select('id, gross_amount::text')`) y escríbelo como cadena. Usa las listas de columnas de `dto.ts`.
 - **`Database` se importa de `@/lib/supabase/types`**, no de `database.types.ts` (el generado, que no se edita):
@@ -101,25 +116,63 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 - Storage: `delete from storage.objects` está bloqueado; se borra por API (`list` + `remove`) y **antes** de borrar la
   fila. `remove()` sobre rutas sin permiso devuelve `[]` sin error: comprueba cuántas borró. El tipo MIME se valida
   contra lo declarado, no contra el contenido: valida también en la app.
-- CLI 3: todo es local por defecto; lo remoto se pide con `--remote`. Nada en este repo usa `--remote`.
+- CLI 3: todo es local por defecto; lo remoto se pide con `--remote` (o `--remote=<cadena>`; `--db-url` está
+  obsoleto). Ningún guion ni prueba usa `--remote`: solo el paso a paso de producción del README, a mano.
+- Comprobantes: **no se guarda el nombre original del archivo** (puede traer el nombre de un comprador). La columna
+  no existe; el archivo se guarda como `<usuario>/<cobro>/<uuid>.<ext>` y en pantalla se nombra por tipo, fecha y
+  tamaño (`receiptLabel` y `receiptSize` de `components/pasarelas/receipts/label.ts`). El tipo y el tamaño que se
+  guardan son los que dice Storage (`storedFile` de `ops/receipts.ts`), no los que declara el navegador. No lo
+  vuelvas a agregar, ni en la exportación.
 - Los permisos (`grant`) van explícitos en la migración: no se depende de los que el proyecto dé por defecto.
 
 ## Sesión
 
-- Cada página y cada Server Action empieza con `await requireSession()` (`@/lib/auth/session`): sin sesión manda a
+- Cada página, cada Route Handler y cada Server Action pasa por `await requireSession()` (`@/lib/auth/session`):
+  directo, o a través de `runAction`. Se libran solo `/login` (sus páginas y sus acciones), la raíz (que solo
+  redirige) y la galería `/kit` (sin datos; su banco `/kit/acciones` sí lo llama). Sin sesión manda a
   `/login`; con segundo factor y sin el código (aal1), a `/login/verificar`. El proxy (`src/proxy.ts`) solo refresca
-  la cookie y manda a `/login` a quien no tiene sesión; el layout solo pinta el aviso del segundo factor. Ninguno de
-  los dos protege una pantalla ni una acción.
+  la cookie, manda a `/login` a quien no tiene sesión y saca de `/login` a quien ya la tiene (a `siguiente`, o al
+  Resumen); el layout solo pinta el aviso del segundo factor. Ninguno de los dos protege una pantalla ni una acción.
 - `siguiente` (a dónde se vuelve tras entrar) viene de la URL: pásalo siempre por `safeNextPath`
   (`@/lib/auth/next-path`).
 - `getClaims()` no nota una sesión cerrada desde otro dispositivo hasta que el token caduca (1 h); `mfa.listFactors()`
-  sí, porque pregunta a Auth. Tras `mfa.unenroll()` el token sigue en aal2 hasta `refreshSession()`; renovado baja a
-  aal1 si no queda ningún factor **o** si el que se quitó era el que usó esa sesión, aunque queden otros.
+  sí, porque pregunta a Auth. **La base sí lo nota al instante**: `private.pay_mfa_ok()` exige además que la sesión
+  del token (`session_id` del JWT) siga en `auth.sessions`, y Auth borra esa fila al cerrar la sesión (en ese
+  dispositivo o en todos) y al cambiar la contraseña (todas menos la propia). Desde ese momento la RLS no le da ni
+  una fila ni le deja escribir, también por la API directa y en el bucket `comprobantes`, aunque `requireSession()`
+  todavía deje abrir la pantalla. No hace falta otra comprobación en la app (lo prueba `tests/integration/sesiones.test.ts`).
+- Tras `mfa.unenroll()` el token sigue en aal2 hasta `refreshSession()`; renovado baja a aal1 si no queda ningún
+  factor **o** si el que se quitó era el que usó esa sesión, aunque queden otros.
 - Cambiar `supabase/config.toml` no tiene efecto hasta reiniciar el stack (`db:stop` y `db:start`). Sin
   `require_current_password`, Auth **ignora** la contraseña actual al cambiarla: por eso `changePassword` la comprueba
   en la app (entra con ella en un cliente aparte, sin cookies ni sesión guardada) antes de cambiar nada.
 - Punta a punta: `newUser()`, `login()` y `loginWithTotp()` de `e2e/helpers.ts` (usuarios reales del stack local,
-  entrando por la pantalla).
+  entrando por la pantalla). Para preparar datos sin pasar por la pantalla, `e2e/server-data.ts`: `serverData()` da
+  las `ops` y `queries` de cobros (`createTx`, `getSnapshots`, `trashTx`…) y `demoData()` la semilla
+  (`seedDemo`), con el cliente del propio usuario de prueba (`signInAal1` de `tests/integration/helpers.ts`), así que
+  valen las mismas restricciones que en la app. Cargan esos módulos con `require` y `server-only` vacío: no los
+  importes directo desde un spec.
+
+## Acciones desde el navegador
+
+- Las Server Actions del módulo (`src/server/pasarelas/actions/`) se arman con `runAction(schema, input, fn, opts)`
+  (`src/server/pasarelas/action.ts`): sesión, Zod, el cliente con la RLS, errores en español (`errors.ts`) y
+  `revalidatePath`. Devuelve `ActionResult` (`{ ok: true, data }` o `{ ok: false, error, fieldErrors? }`); no lanza
+  salvo las redirecciones de Next. Sin `opts.revalidate` revalida todo `/pasarelas`; una acción que solo lee pasa
+  `{ revalidate: [] }`. Las de Ajustes → Seguridad (`src/app/(dashboard)/ajustes/actions.ts`) y las de `/login` van
+  aparte, con sus propios tipos de resultado.
+- Desde un diálogo, una barra o un botón se llama **siempre** con `callAction(() => accion(…))`
+  (`components/pasarelas/callAction.ts`). Si la llamada no llega o la respuesta no vuelve (un corte de red), no
+  lanza: devuelve un error con `unsure: true` («no se sabe si se guardó»). Así el fallo no sube a `error.tsx`, no
+  desmonta la pantalla y no se pierde lo escrito. Deja pasar las redirecciones (`unstable_rethrow`). Los
+  formularios y diálogos de `companies/` (logo incluido) y el importador no lo usan: atrapan el corte con su propio
+  `try/catch` y su propio texto.
+- El error se pinta con `<ActionError failure={failureOf(result)} />` (`components/pasarelas/ActionError.tsx`); dentro
+  de un diálogo, `<DialogActionError>`. Con `unsure` ofrece «Ver cómo quedó», que hace `router.refresh()`.
+  `callAction` **no refresca solo**: con mala señal el refresco fallido recargaría la página entera. Al cerrar un
+  diálogo con esa duda en pantalla, se refresca (`useRefreshOnClose`).
+- Lo que no es idempotente (reembolso, liquidación, alta de un cobro) lleva un id creado en el navegador o la
+  versión vista (`expectedUpdatedAt`): repetirlo tras la duda no duplica dinero ni pisa cambios de otra pestaña.
 
 ## Dónde va cada cosa
 
@@ -129,10 +182,12 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 | `src/lib/supabase/`, `src/lib/auth/` | Clientes de Supabase (navegador, servidor, proxy), tipos generados y la sesión verificada |
 | `src/server/pasarelas/queries/` | Lecturas, solo servidor (`import 'server-only'`). Devuelven DTO, nunca filas crudas |
 | `src/server/pasarelas/ops/` | Escrituras con el cliente inyectado: se prueban sin Next (`tests/integration`) |
-| `src/server/pasarelas/actions/` | Server Actions delgadas: sesión + Zod + `ops` + `revalidatePath` |
-| `src/components/ui/` | Kit propio de interfaz. `src/components/pasarelas/` son las piezas del dominio |
-| `src/app/(auth)/`, `src/app/(dashboard)/` | Entrada y pantallas; todas las del módulo bajo `/pasarelas` |
+| `src/server/pasarelas/actions/` | Server Actions delgadas: `runAction` (sesión + Zod + `ops` + `revalidatePath`) |
+| `src/server/pasarelas/queries/paging.ts` | `readAll(page, what)`: leer por tramos de 1000 filas sin cortar en silencio |
+| `src/components/ui/` | Kit propio de interfaz. `src/components/pasarelas/` son las piezas del dominio (con `callAction` y `ActionError`) |
+| `src/app/(auth)/`, `src/app/(dashboard)/` | Entrada y pantallas: las del módulo bajo `/pasarelas`, más `/ajustes` y la galería `/kit` (solo en desarrollo) |
 | `supabase/migrations/` | El esquema. `supabase/config.toml` es el stack local |
+| `scripts/` | `stack.sh` (los `db:*`), la semilla (`seed-pasarelas-demo.ts` + `demo-data.ts`), `capturas.ts` e íconos |
 | `tests/integration/`, `e2e/` | Pruebas contra el Supabase local y de punta a punta (390×844 y 1280×800, con axe) |
 
 ## Pruebas
@@ -148,7 +203,8 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 - Las pantallas se arman con `@/components/ui` y `@/components/shell`. La galería `/kit` muestra cada componente con
   sus props: existe con `next dev`; en producción da 404 salvo que se compile **y** se arranque con `PASARELAS_KIT=1`
   (`PASARELAS_KIT=1 npm run build && PASARELAS_KIT=1 npx next start -p 3110`; sin ella `next build` deja el 404 fijo).
-  No es un secreto y no va en Vercel; `npm run test:e2e` la enciende sola para `e2e/kit.spec.ts`.
+  No es un secreto y no va en Vercel. `npm run test:e2e` compila **todo** con `PASARELAS_KIT=1` (para
+  `e2e/kit.spec.ts`): ninguna prueba comprueba el 404 de `/kit` en el build que se entrega.
 - **Los colores por defecto de Tailwind están apagados**: `bg-white` o `text-gray-500` no hacen nada. Usa los tokens de
   `src/app/globals.css` (`bg-surface`, `text-ink-soft`, `border-rule`…), que ya traen su par para el modo oscuro.
 - Dinero y porcentajes se pintan con `<Money value currency />` y `<Percent value />`, que llaman a `formatMoney` y
