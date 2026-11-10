@@ -22,6 +22,7 @@ import {
   planRevertDeposit,
   planTransit,
   planTrash,
+  requireSameRegistration,
 } from "./write";
 import type { NewTxInput, PayStateCode } from "./write";
 
@@ -326,6 +327,32 @@ describe("PayStateError", () => {
   });
 });
 
+// ─── requireSameRegistration ────────────────────────────────────────────────────────────────────────────────
+
+describe("requireSameRegistration", () => {
+  test("el mismo envío otra vez (el mismo instante escrito de otra forma, las opciones en otro orden) pasa", () => {
+    const tx = savedE1({ extraIds: [DEMO.extraId] });
+    expect(() => requireSameRegistration(tx, inputE1())).not.toThrow();
+    const sameInstant = inputE1({ occurredAt: "2026-11-13T10:30:00-05:00", note: "Otra nota", status: "en_transito" });
+    expect(() => requireSameRegistration(tx, sameInstant)).not.toThrow();
+  });
+
+  test.each<[string, Partial<NewTxInput>]>([
+    ["monto", { grossOriginal: "150.00" }],
+    ["moneda", { currency: "EUR" }],
+    ["fecha", { occurredAt: "2026-11-13T15:31:00Z" }],
+    ["empresa", { companyId: "co-otra" }],
+    ["pasarela", { gatewayId: "gw-otra" }],
+    ["canal", { channelId: null }],
+    ["opciones", { extraIds: [] }],
+    ["esquema", { schemeId: null }],
+    ["referencia", { reference: "ch_demo_otra" }],
+  ])("con otro dato (%s) no es el mismo envío: lo dice", (_label, patch) => {
+    const tx = savedE1();
+    expectStateError(() => requireSameRegistration(tx, inputE1(patch)), "ya_registrado");
+  });
+});
+
 // ─── planCreate ─────────────────────────────────────────────────────────────────────────────────────────────
 
 describe("planCreate", () => {
@@ -456,6 +483,13 @@ describe("planCreate", () => {
       expectStateError(() => planCreate(cfgDemo(), withNull), "falta_fecha_deposito");
     });
 
+    test("depositado antes del día del cobro no se puede; el mismo día, sí", () => {
+      const early = inputE1({ status: "depositado", depositedOn: "2026-11-12" });
+      expectStateError(() => planCreate(cfgDemo(), early), "deposito_antes_del_cobro");
+      const sameDay = planCreate(cfgDemo(), inputE1({ status: "depositado", depositedOn: VIERNES }));
+      expect(sameDay.fields.depositedOn).toBe(VIERNES);
+    });
+
     test("una fecha de depósito sin el estado «depositado» no se guarda", () => {
       const write = planCreate(cfgDemo(), inputE1({ depositedOn: "2026-11-16" }));
       expect([write.fields.status, write.fields.depositedOn]).toEqual(["registrado", null]);
@@ -578,6 +612,20 @@ describe("planEdit", () => {
     expect(write.event.kind).toBe("editado");
     expect(write.event.summary).toBe("Editado: monto");
     save(write, tx);
+  });
+
+  test("otro monto en un cobro con la comisión informada: esa comisión era de otro monto y se descarta", () => {
+    const tx = savedE1({ feeOverride: "3.41" });
+    const write = planEdit(cfgDemo(), tx, { grossOriginal: "200.00" });
+    const gateway = write.fields.breakdown?.rules.gateway;
+    expect(gateway !== undefined && "feeOverride" in gateway).toBe(false);
+    // Vale la tarifa congelada en el cobro: 2,9 % + 0,30 de 200,00.
+    expect(write.fields.breakdown?.lines[0]).toMatchObject({ kind: "pasarela", baseKind: "bruto", amount: "6.10" });
+    save(write, tx);
+    // Si el monto no cambia, la comisión informada se queda: otro día con la misma tarifa no toca el desglose.
+    const moved = planEdit(cfgDemo(), tx, { occurredAt: "2026-11-16T15:30:00Z" });
+    expect(moved.fields.breakdown).toBeUndefined();
+    expect(tx.breakdown.rules.gateway.feeOverride).toBe("3.41");
   });
 
   test("cambiar de pasarela trae su tarifa, y la fecha estimada se vuelve a calcular", () => {
@@ -1493,6 +1541,51 @@ describe("planDeposit", () => {
   test("un fallido no se deposita", () => {
     const e1 = savedE1();
     expectStateError(() => planDeposit(save(planFail(e1), e1), VIERNES), "fallido");
+  });
+
+  test("la fecha del depósito no puede ser anterior a la del cobro", () => {
+    expectStateError(() => planDeposit(savedE1(), "2026-11-12"), "deposito_antes_del_cobro");
+    expectStateError(() => planDeposit(savedE1(), "2026-11-12", { onlyPending: true }), "deposito_antes_del_cobro");
+  });
+
+  describe("solo lo que está por caer (el lote)", () => {
+    const pendingOnly = { onlyPending: true };
+
+    test("registrado o en tránsito: se deposita igual que sin la marca", () => {
+      const tx = savedE1();
+      expect(planDeposit(tx, MARTES, pendingOnly).fields).toEqual({ status: "depositado", depositedOn: MARTES });
+      const moving = save(planTransit(tx), tx);
+      expect(planDeposit(moving, MARTES, pendingOnly).fields).toEqual({ status: "depositado", depositedOn: MARTES });
+    });
+
+    test("con un reembolso parcial sigue por caer", () => {
+      const tx = savedE1();
+      const partial = save(planRefund(tx, { amount: "40.00", on: "2026-11-16" }), tx);
+      expect(planDeposit(partial, MARTES, pendingOnly).fields).toEqual({ status: "depositado", depositedOn: MARTES });
+    });
+
+    test("uno ya depositado se salta: su fecha real no se pisa", () => {
+      const tx = savedE1();
+      const deposited = save(planDeposit(tx, VIERNES), tx);
+      expectStateError(() => planDeposit(deposited, MARTES, pendingOnly), "depositado");
+    });
+
+    test("con la disputa abierta o reembolsado del todo no está por caer", () => {
+      const tx = savedE1();
+      const disputed = save(planDispute(tx, { action: "abrir", on: "2026-11-16" }), tx);
+      expectStateError(() => planDeposit(disputed, MARTES, pendingOnly), "no_por_caer");
+      const refunded = save(planRefund(tx, { amount: "100.00", on: "2026-11-16" }), tx);
+      expectStateError(() => planDeposit(refunded, MARTES, pendingOnly), "no_por_caer");
+      // Sin la marca (el detalle de un cobro), se puede.
+      expect(planDeposit(disputed, MARTES).fields).toEqual({ status: "depositado", depositedOn: MARTES });
+    });
+
+    test("un fallido o uno en la papelera, igual que sin la marca", () => {
+      const e1 = savedE1();
+      expectStateError(() => planDeposit(save(planFail(e1), e1), VIERNES, pendingOnly), "fallido");
+      const trashed = save(planTrash(e1, "2026-11-14T12:00:00Z"), e1);
+      expectStateError(() => planDeposit(trashed, VIERNES, pendingOnly), "en_papelera");
+    });
   });
 
   test("una fecha que no existe no se guarda", () => {

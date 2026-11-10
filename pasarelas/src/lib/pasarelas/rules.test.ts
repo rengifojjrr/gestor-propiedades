@@ -456,6 +456,14 @@ describe("reResolve", () => {
     expect(informed.gateway.feeOverride).toBe("4.10");
   });
 
+  test("monto: la comisión informada (que era de otro monto) se descarta y queda la tarifa congelada", () => {
+    const prev: Rules = { ...frozen(), gateway: { ...frozen().gateway, feeOverride: "3.33" } };
+    const next = reResolve(prev, cfgDemo(), selE1(), { ...NOTHING, amount: true });
+    expect(next).toEqual(frozen());
+    // Sin comisión informada, otro monto no cambia ninguna regla.
+    expect(reResolve(frozen(), cfgDemo(), selE1(), { ...NOTHING, amount: true })).toEqual(frozen());
+  });
+
   test("opciones: solo cambian las opciones", () => {
     const prev = frozen();
     const next = reResolve(prev, cfgDemo(), selE1(), { ...NOTHING, extras: true });

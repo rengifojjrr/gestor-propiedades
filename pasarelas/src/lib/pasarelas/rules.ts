@@ -80,6 +80,11 @@ function gatewayRule(cfg: PayConfig, sel: Selection, on: ISODate): GatewayRule {
   };
 }
 
+/** La regla de la pasarela sin comisión informada: la clave no queda (el desglose guardado no admite `undefined`). */
+function withoutOverride({ feeOverride: _informed, ...gateway }: GatewayRule): GatewayRule {
+  return gateway;
+}
+
 /** Las opciones elegidas, en el orden de la configuración. Cada una tiene que ser de esa pasarela. */
 function extraRules(cfg: PayConfig, sel: Selection): ExtraRule[] {
   const { extras } = gatewayOf(cfg, sel.gatewayId);
@@ -172,17 +177,19 @@ export function resolveRules(cfg: PayConfig, sel: Selection, versionsOn: ISODate
  *    arrastra.
  *  - `date`: solo la tarifa de la pasarela y la versión del esquema que rigen en la fecha nueva.
  *  - `extras`: las opciones. `channel`: la plataforma. `scheme`: el esquema.
+ *  - `amount`: la comisión informada era la de otro monto: se descarta y vale la tarifa congelada.
  */
 export function reResolve(
   prev: Rules,
   cfg: PayConfig,
   sel: Selection,
-  changed: { gateway: boolean; channel: boolean; extras: boolean; scheme: boolean; date: boolean },
+  changed: { gateway: boolean; channel: boolean; extras: boolean; scheme: boolean; date: boolean; amount?: boolean },
 ): Rules {
   const on = sel.occurredOn;
   let { gateway } = prev;
+  if (changed.amount === true) gateway = withoutOverride(gateway);
   if (changed.gateway) gateway = gatewayRule(cfg, sel, on);
-  else if (changed.date) gateway = { ...prev.gateway, ...feeRule(gatewayOf(cfg, sel.gatewayId), on) };
+  else if (changed.date) gateway = { ...gateway, ...feeRule(gatewayOf(cfg, sel.gatewayId), on) };
   return {
     gateway,
     extras: changed.gateway || changed.extras ? extraRules(cfg, sel) : prev.extras,

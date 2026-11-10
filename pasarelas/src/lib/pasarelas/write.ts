@@ -12,6 +12,7 @@ import { estimateDepositDate, formatDate, nyDate } from "./dates";
 import { ZERO, isMoney } from "./decimal";
 import { add, cmp, formatMoney } from "./money";
 import { reResolve, resolvePayout, resolveRules } from "./rules";
+import { isPending } from "./status";
 import type {
   AllocWrite,
   Breakdown,
@@ -35,6 +36,9 @@ import type {
 export type PayStateCode =
   | "fecha_inconsistente"
   | "falta_fecha_deposito"
+  | "deposito_antes_del_cobro"
+  | "no_por_caer"
+  | "ya_registrado"
   | "monto_invalido"
   | "reembolso_excede"
   | "sin_cambios"
@@ -55,6 +59,11 @@ export type PayStateCode =
 export const PAY_STATE_TEXT: Record<PayStateCode, string> = {
   fecha_inconsistente: "La fecha del cobro no coincide con su fecha y hora en Nueva York.",
   falta_fecha_deposito: "Para registrarlo como depositado hace falta la fecha del depósito.",
+  deposito_antes_del_cobro: "La fecha del depósito no puede ser anterior a la del cobro.",
+  no_por_caer: "El cobro no está por caer: tiene la disputa abierta o está reembolsado por completo.",
+  ya_registrado:
+    "Este cobro ya se había guardado en el primer intento, con los datos de entonces: lo que cambiaste no se " +
+    "guardó. Corrígelo en su detalle; no lo registres otra vez.",
   monto_invalido: "El monto tiene que ser mayor que cero y llevar dos decimales.",
   reembolso_excede: "Lo reembolsado no puede pasar de lo cobrado.",
   sin_cambios: "No hay cambios que guardar.",
@@ -262,6 +271,11 @@ function requireNotTrashed(tx: TxSnapshot): void {
   if (tx.deletedAt !== null) throw new PayStateError("en_papelera");
 }
 
+/** El dinero no puede llegar al banco antes del día en que se cobró. */
+function requireDepositAfter(occurredOn: ISODate, depositedOn: ISODate): void {
+  if (depositedOn < occurredOn) throw new PayStateError("deposito_antes_del_cobro");
+}
+
 /** Ni en la papelera ni fallido: lo que piden los reembolsos, las disputas, el depósito y recalcular. */
 function requireLive(tx: TxSnapshot): void {
   requireNotTrashed(tx);
@@ -302,6 +316,7 @@ export function planCreate(cfg: PayConfig, input: NewTxInput, kind: "creado" | "
   const status = input.status ?? "registrado";
   const depositedOn = status === "depositado" ? (input.depositedOn ?? null) : null;
   if (status === "depositado" && depositedOn === null) throw new PayStateError("falta_fecha_deposito");
+  if (depositedOn !== null) requireDepositAfter(occurredOn, depositedOn);
 
   const rules = resolveRules(cfg, input);
   const state = { grossOriginal: input.grossOriginal, refunded: ZERO, dispute: null, failed: false };
@@ -338,6 +353,26 @@ export function planCreate(cfg: PayConfig, input: NewTxInput, kind: "creado" | "
       data: { antes: null, despues: photo(fields) },
     },
   };
+}
+
+/**
+ * Un alta que llega con el id de un cobro ya guardado es el mismo envío repetido (una respuesta que se perdió) solo
+ * si trae lo mismo que define el cobro: monto, moneda, instante, empresa, pasarela, canal, opciones, esquema y
+ * referencia. Si algo difiere, la persona cambió datos creyendo que no se había guardado: `ya_registrado`, para
+ * que no se dé por guardado lo que no se guardó. La nota, el estado inicial y la fecha estimada no cuentan.
+ */
+export function requireSameRegistration(tx: TxSnapshot, input: NewTxInput): void {
+  const same =
+    cmp(tx.grossOriginal, input.grossOriginal) === 0 &&
+    tx.currency === input.currency &&
+    Date.parse(tx.occurredAt) === Date.parse(input.occurredAt) &&
+    tx.companyId === input.companyId &&
+    tx.gatewayId === input.gatewayId &&
+    tx.channelId === input.channelId &&
+    sameIds(selectionOf(tx).extraIds, input.extraIds) &&
+    tx.schemeId === input.schemeId &&
+    tx.reference === input.reference;
+  if (!same) throw new PayStateError("ya_registrado");
 }
 
 // ─── Editar ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -407,7 +442,7 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
   if (!lost && cmp(grossOriginal, tx.refunded) < 0) throw new PayStateError("reembolso_excede");
 
   // Un canal es de una sola empresa: si cambia la empresa, la plataforma se vuelve a resolver (y a comprobar).
-  const again = { ...changed, channel: changed.channel || changed.company };
+  const again = { ...changed, channel: changed.channel || changed.company, amount: grossOriginal !== tx.grossOriginal };
   const anyRule = again.gateway || again.channel || again.extras || again.scheme || again.date;
   const state = { ...prev.state, grossOriginal, refunded: lost ? grossOriginal : prev.state.refunded };
   // Lo congelado solo se vuelve a calcular si cambió algo que entra en el cálculo.
@@ -532,10 +567,22 @@ export function planTransit(tx: TxSnapshot): TxWrite {
   return update(tx, { status: "en_transito" }, "en_transito", "En tránsito");
 }
 
-/** Depositado el día `on`, desde «registrado» o «en tránsito»; si ya lo estaba, cambia la fecha. */
-export function planDeposit(tx: TxSnapshot, on: ISODate): TxWrite {
+/**
+ * Depositado el día `on` (no antes del día del cobro), desde «registrado» o «en tránsito»; si ya lo estaba, cambia
+ * la fecha. Con `onlyPending` —el lote: la barra de Cobros y los próximos depósitos— solo lo que está por caer
+ * (`isPending`): uno ya depositado conserva su fecha real (`depositado`) y uno con la disputa abierta o reembolsado
+ * del todo no se toca (`no_por_caer`). Cambiar la fecha de un depósito ya hecho queda para el detalle del cobro.
+ */
+export function planDeposit(tx: TxSnapshot, on: ISODate, opts: { onlyPending?: boolean } = {}): TxWrite {
   requireLive(tx);
-  return update(tx, { status: "depositado", depositedOn: on }, "depositado", `Depositado el ${formatDate(on)}`);
+  if (opts.onlyPending === true) {
+    if (tx.status === "depositado") throw new PayStateError("depositado");
+    if (!isPending(tx)) throw new PayStateError("no_por_caer");
+  }
+  // Primero la fecha: una que no existe la rechaza `formatDate` con `RangeError`.
+  const summary = `Depositado el ${formatDate(on)}`;
+  requireDepositAfter(tx.occurredOn, on);
+  return update(tx, { status: "depositado", depositedOn: on }, "depositado", summary);
 }
 
 /** Deshace el depósito: el cobro vuelve a «en tránsito». */
