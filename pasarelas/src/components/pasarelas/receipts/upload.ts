@@ -45,7 +45,7 @@ export async function uploadToFolder(
  * Guarda en el servidor lo que apunta a un archivo ya subido (`path`; `null` si no se subió ninguno). Si el servidor
  * lo rechaza (`ok: false`), borra el archivo: nada lo va a usar. Si la llamada lanza (se cortó la conexión), NO lo
  * borra, porque no se sabe si lo guardó y el archivo puede ser suyo; lanza lo mismo. Si no se puede borrar, el
- * archivo queda en su carpeta y se va con ella (al borrar el cobro o la empresa).
+ * archivo queda en su carpeta y se va con ella: al borrar del todo el cobro, al borrar la liquidación o la empresa.
  */
 export async function saveUploaded<T>(
   path: string | null,

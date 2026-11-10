@@ -1,8 +1,10 @@
 import "server-only";
-import type { Currency, ISODate, Money } from "@/lib/pasarelas";
+import { SETTLEMENT_ALREADY_SAVED_TEXT } from "@/components/pasarelas/splits/settlementText";
+import { cmp, type Currency, type ISODate, type Money } from "@/lib/pasarelas";
 import type { Db } from "../dto";
 import { UserError } from "../errors";
-import { LIST_LIMIT, RECEIPTS_BUCKET, fileProblem, storedFile } from "./receipts";
+import { RECEIPTS_BUCKET, fileProblem, storedFile } from "./receipts";
+import { emptyFolder } from "./transactions";
 
 /**
  * Las liquidaciones: lo que ya se le pagó a un beneficiario (positivo) o lo que él le devolvió a la empresa
@@ -10,7 +12,7 @@ import { LIST_LIMIT, RECEIPTS_BUCKET, fileProblem, storedFile } from "./receipts
  * eso el id de la liquidación se genera antes de subir); la base exige que la ruta sea de esa carpeta.
  *
  * Registrar una es idempotente por su id: si la respuesta se pierde por el camino, el formulario vuelve a mandar
- * el mismo id y la liquidación no se duplica.
+ * el mismo id y la liquidación no se duplica. Un reintento con otros datos no se da por bueno (queda la primera).
  */
 
 export type SettlementInput = {
@@ -31,7 +33,7 @@ const BENEFICIARY_NOT_FOUND = "Ese beneficiario ya no existe.";
 const WRONG_FOLDER = "El comprobante no corresponde a esta liquidación.";
 const NOT_UPLOADED = "El archivo no llegó a subirse. Vuelve a intentarlo.";
 const NO_RECEIPT = "Esa liquidación no tiene comprobante.";
-const NOT_REMOVED = "No se pudo borrar el archivo del comprobante. Inténtalo de nuevo.";
+const NOT_REMOVED = "No se pudo borrar el comprobante de la liquidación. La liquidación sigue ahí: inténtalo de nuevo.";
 
 /** La restricción de la base: la ruta del comprobante es de la carpeta de la liquidación. */
 const RECEIPT_FOLDER_CHECK = "pay_settlements_receipt_folder_check";
@@ -49,15 +51,43 @@ function isDuplicateId(error: unknown): boolean {
   return codeOf(error) === "23505" && messageOf(error).includes('"pay_settlements_pkey"');
 }
 
+/** Lo que decide si dos envíos con el mismo id son la misma liquidación. */
+type SavedSettlement = Pick<SettlementInput, "beneficiaryId" | "paidOn" | "currency" | "amount"> & {
+  receiptPath: string | null;
+};
+
 /** La liquidación con ese id, o `null` si no existe (o es de otro usuario). */
-async function existing(supabase: Db, id: string): Promise<{ receiptPath: string | null } | null> {
+async function existing(supabase: Db, id: string): Promise<SavedSettlement | null> {
   const { data } = await supabase
     .from("pay_settlements")
-    .select("receipt_path")
+    .select("beneficiary_id, paid_on, currency, amount::text, receipt_path")
     .eq("id", id)
     .maybeSingle()
     .throwOnError();
-  return data === null ? null : { receiptPath: data.receipt_path };
+  return data === null
+    ? null
+    : {
+        beneficiaryId: data.beneficiary_id,
+        paidOn: data.paid_on,
+        currency: data.currency,
+        amount: data.amount,
+        receiptPath: data.receipt_path,
+      };
+}
+
+/**
+ * ¿Es el reintento la misma liquidación que la ya guardada? Cuentan el beneficiario, la fecha, la moneda, el monto
+ * (con su signo) y si tiene comprobante o no. No cuentan el medio ni la nota, ni cuál archivo: volver a elegir el
+ * mismo archivo lo sube con otra ruta.
+ */
+function sameSettlement(saved: SavedSettlement, retry: SettlementInput): boolean {
+  return (
+    saved.beneficiaryId === retry.beneficiaryId &&
+    saved.paidOn === retry.paidOn &&
+    saved.currency === retry.currency &&
+    cmp(saved.amount, retry.amount) === 0 &&
+    (saved.receiptPath === null) === (retry.receipt === null)
+  );
 }
 
 /**
@@ -85,7 +115,9 @@ async function storedReceipt(supabase: Db, s: SettlementInput): Promise<Settleme
 /**
  * Registra la liquidación con su id y devuelve ese id. Si ya hay una con ese id —el mismo envío que llega dos veces,
  * p. ej. un reintento tras un corte—, no crea otra y devuelve su id. Si ese reintento subió otro comprobante, lo
- * borra: la liquidación ya tiene el suyo.
+ * borra: la liquidación ya tiene el suyo. Si el reintento trae otros datos (la persona creyó que no había quedado y
+ * cambió algo), no lo da por bueno: dice que quedó la del primer intento. Ahí no borra nada: el archivo nuevo, si lo
+ * hay, lo borra el navegador al ver el rechazo.
  */
 export async function saveSettlement(supabase: Db, s: SettlementInput): Promise<string> {
   const receipt = await storedReceipt(supabase, s);
@@ -108,6 +140,7 @@ export async function saveSettlement(supabase: Db, s: SettlementInput): Promise<
   } catch (error) {
     const already = isDuplicateId(error) ? await existing(supabase, s.id) : null;
     if (already !== null) {
+      if (!sameSettlement(already, s)) throw new UserError(SETTLEMENT_ALREADY_SAVED_TEXT);
       // Si no se puede borrar, el archivo de más queda en la carpeta de la liquidación: no se le enseña a nadie.
       if (receipt !== null && receipt.path !== already.receiptPath) {
         await supabase.storage.from(RECEIPTS_BUCKET).remove([receipt.path]);
@@ -133,29 +166,17 @@ async function receiptPathOf(supabase: Db, id: string): Promise<string | null> {
   return data.receipt_path;
 }
 
-/** ¿Sigue el archivo en Storage? */
-async function fileExists(supabase: Db, path: string): Promise<boolean> {
-  const cut = path.lastIndexOf("/");
-  const name = path.slice(cut + 1);
-  const { data, error } = await supabase.storage
-    .from(RECEIPTS_BUCKET)
-    .list(path.slice(0, cut), { limit: LIST_LIMIT, search: name });
-  if (error) throw error;
-  return data.some((file) => file.name === name && file.id !== null);
-}
-
 /**
- * Borra la liquidación y su comprobante: primero el archivo y después la fila (al revés, un fallo dejaría un
- * archivo que ya nadie ve). Storage no da error cuando no borra: si no borró nada y el archivo sigue ahí, no se
- * pudo. Si el archivo ya no estaba —un borrado anterior a medias—, borra la fila igual.
+ * Borra la liquidación y su carpeta `{userId}/{id}/` entera: el comprobante y lo que hayan dejado los intentos que no
+ * se supo cómo terminaron. Primero los archivos y después la fila (al revés, un fallo dejaría archivos que ya nadie
+ * ve). Si Storage deja alguno, no borra la fila y lo dice. Si la carpeta ya estaba vacía —un borrado anterior a
+ * medias—, borra la fila igual. `userId` es el usuario de la sesión: la fila se lee con su sesión, así que si existe
+ * es suya y la carpeta también.
  */
-export async function deleteSettlement(supabase: Db, id: string): Promise<void> {
-  const path = await receiptPathOf(supabase, id);
-  if (path !== null) {
-    const { data, error } = await supabase.storage.from(RECEIPTS_BUCKET).remove([path]);
-    if (error) throw error;
-    if (data.length === 0 && (await fileExists(supabase, path))) throw new UserError(NOT_REMOVED);
-  }
+export async function deleteSettlement(supabase: Db, userId: string, id: string): Promise<void> {
+  // Que exista (y sea de esta sesión) antes de tocar Storage; si no, «Esa liquidación ya no existe.».
+  await receiptPathOf(supabase, id);
+  await emptyFolder(supabase, `${userId}/${id}`, NOT_REMOVED);
   const { data } = await supabase.from("pay_settlements").delete().eq("id", id).select("id").throwOnError();
   if (data.length === 0) throw new UserError(NOT_FOUND);
 }

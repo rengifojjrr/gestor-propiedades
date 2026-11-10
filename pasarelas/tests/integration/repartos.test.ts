@@ -542,14 +542,53 @@ describe("liquidaciones y saldos", () => {
     expect(await settlementReceiptUrl(user.client, id)).toContain("/storage/v1/object/sign/");
 
     // Otro usuario no la borra ni ve su comprobante.
-    await expect(deleteSettlement(other.client, id)).rejects.toThrow("Esa liquidación ya no existe.");
+    await expect(deleteSettlement(other.client, other.id, id)).rejects.toThrow("Esa liquidación ya no existe.");
     await expect(settlementReceiptUrl(other.client, id)).rejects.toThrow("Esa liquidación ya no existe.");
     expect(await filesIn(`${user.id}/${id}`)).toHaveLength(1);
 
-    await deleteSettlement(user.client, id);
+    await deleteSettlement(user.client, user.id, id);
     expect(await filesIn(`${user.id}/${id}`)).toEqual([]);
     const { count } = await admin.from("pay_settlements").select("id", { count: "exact", head: true }).eq("id", id);
     expect(count).toBe(0);
+  });
+
+  it("deleteSettlement vacía la carpeta entera: también los archivos que dejaron intentos dudosos", async () => {
+    const withReceipt = randomUUID();
+    const kept = await upload(user, withReceipt);
+    // Un intento que no se supo cómo terminó subió otro archivo, que ninguna fila nombra.
+    await upload(user, withReceipt);
+    await saveSettlement(user.client, {
+      id: withReceipt,
+      beneficiaryId: basics.beneficiaryIds.b,
+      paidOn: "2026-11-19",
+      currency: "USD",
+      amount: "4.00",
+      method: null,
+      note: null,
+      receipt: { path: kept, mime: "image/png", sizeBytes: PNG.length },
+    });
+    // Y una sin comprobante, con el archivo de un intento cuyo comprobante no llegó a guardarse.
+    const without = randomUUID();
+    await upload(user, without);
+    await saveSettlement(user.client, {
+      id: without,
+      beneficiaryId: basics.beneficiaryIds.b,
+      paidOn: "2026-11-19",
+      currency: "USD",
+      amount: "6.00",
+      method: null,
+      note: null,
+      receipt: null,
+    });
+    expect(await filesIn(`${user.id}/${withReceipt}`)).toHaveLength(2);
+    expect(await filesIn(`${user.id}/${without}`)).toHaveLength(1);
+
+    for (const id of [withReceipt, without]) {
+      await deleteSettlement(user.client, user.id, id);
+      expect(await filesIn(`${user.id}/${id}`)).toEqual([]);
+      const { count } = await admin.from("pay_settlements").select("id", { count: "exact", head: true }).eq("id", id);
+      expect(count).toBe(0);
+    }
   });
 
   it("un comprobante de otra carpeta no se acepta", async () => {
@@ -635,6 +674,52 @@ describe("liquidaciones y saldos", () => {
     );
     expect(rows).toEqual([{ amount: "7.00", receipt_path: path }]);
     expect(await filesIn(`${user.id}/${id}`)).toEqual([path.slice(path.lastIndexOf("/") + 1)]);
+
+    // Otro medio u otra nota no cuentan: es el mismo envío, que llega otra vez.
+    expect(await saveSettlement(user.client, { ...settlement, method: "Zelle", note: "Reintento" })).toBe(id);
+    // El mismo monto escrito de otra manera, tampoco.
+    expect(await saveSettlement(user.client, { ...settlement, amount: "7.0" })).toBe(id);
+  });
+
+  it("un reintento con el mismo id y OTROS datos no se da por bueno: queda la del primer intento", async () => {
+    const id = randomUUID();
+    const settlement = {
+      id,
+      beneficiaryId: basics.beneficiaryIds.b,
+      paidOn: "2026-11-18",
+      currency: "USD",
+      amount: "500.00",
+      method: null,
+      note: null,
+      receipt: null,
+    };
+    await saveSettlement(user.client, settlement);
+    const path = await upload(user, id);
+
+    for (const changed of [
+      { amount: "50.00" },
+      { amount: "-500.00" },
+      { currency: "EUR" },
+      { paidOn: "2026-11-17" },
+      { beneficiaryId: basics.beneficiaryIds.c },
+      { receipt: { path, mime: "image/png", sizeBytes: PNG.length } },
+    ]) {
+      await expect(saveSettlement(user.client, { ...settlement, ...changed })).rejects.toThrow(
+        "Esta liquidación ya se había guardado en el primer intento, con los datos de entonces: lo que cambiaste no " +
+          "se guardó. Revísala en la lista.",
+      );
+    }
+
+    const rows = unwrap(
+      await admin
+        .from("pay_settlements")
+        .select("beneficiary_id, paid_on, currency, amount::text, receipt_path")
+        .eq("id", id),
+      "liquidaciones",
+    );
+    expect(rows).toEqual([
+      { beneficiary_id: basics.beneficiaryIds.b, paid_on: "2026-11-18", currency: "USD", amount: "500.00", receipt_path: null },
+    ]);
   });
 
   it("una liquidación para un beneficiario ajeno (o que no existe) no se guarda", async () => {

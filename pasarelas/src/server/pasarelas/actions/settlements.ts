@@ -50,9 +50,11 @@ export async function saveSettlement(input: unknown): Promise<ActionResult<{ id:
   }));
 }
 
-/** Borra la liquidación y su comprobante. */
+/** Borra la liquidación y su carpeta de archivos (el comprobante y lo que dejaron intentos dudosos). */
 export async function deleteSettlement(input: unknown): Promise<ActionResult> {
-  return runAction(z.object({ id: zId }), input, ({ supabase }, { id }) => ops.deleteSettlement(supabase, id));
+  return runAction(z.object({ id: zId }), input, ({ supabase, session }, { id }) =>
+    ops.deleteSettlement(supabase, session.userId, id),
+  );
 }
 
 /** Una URL firmada de 60 segundos para ver el comprobante de una liquidación. Solo lee: no revalida nada. */
