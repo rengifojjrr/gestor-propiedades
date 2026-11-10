@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { todayNY } from "../src/lib/pasarelas/dates";
-import { e1Item, saveTransactions, signInAal1 } from "../tests/integration/helpers";
+import { adminClient, e1Item, saveTransactions, signInAal1 } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
 import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
 
@@ -11,6 +11,7 @@ import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
  */
 
 let user: TestUser;
+const admin = adminClient();
 
 test.beforeAll(async () => {
   user = await newUser();
@@ -98,6 +99,11 @@ test("cada cuenta dice lo depositado, lo que está por caer y cuánto tarda; bor
   const confirm = page.getByRole("alertdialog", { name: "¿Borrar «Cuenta principal»?" });
   await expect(confirm).toContainText("2 cobros");
   await expectCleanScreen(page);
+  // Lo que dice de desactivarla es verdad: la cuenta de Stripe de Escuela Demo la sigue usando.
+  await expect(confirm).toContainText("deja de ofrecerse al elegir cuenta");
+  await expect(confirm).toContainText(
+    "La cuenta de pasarela que la usa la seguirá usando en los cobros nuevos hasta que la cambies en su empresa.",
+  );
   await confirm.getByRole("button", { name: "Desactivar" }).click();
   await expect(confirm).toBeHidden();
   await expect(principal.getByText("Inactiva")).toBeVisible();
@@ -107,6 +113,85 @@ test("cada cuenta dice lo depositado, lo que está por caer y cuánto tarda; bor
 
   await principal.getByRole("button", { name: "Activar" }).click();
   await expect(principal.getByText("Inactiva")).toBeHidden();
+});
+
+test("desactivar una cuenta que usa una cuenta de pasarela avisa antes que los cobros nuevos la seguirán usando", async ({
+  page,
+}) => {
+  await page.goto("/pasarelas/cuentas");
+  const principal = page.getByRole("region", { name: "Cuenta principal" });
+  await principal.getByRole("button", { name: "Desactivar" }).click();
+  const confirm = page.getByRole("alertdialog", { name: "¿Desactivar «Cuenta principal»?" });
+  await expect(confirm).toContainText(
+    "Es la cuenta destino de 1 cuenta de pasarela: los cobros nuevos de esa empresa la seguirán usando hasta que la cambies en la empresa.",
+  );
+  await expectCleanScreen(page);
+  await confirm.getByRole("button", { name: "Cancelar" }).click();
+  await expect(principal.getByText("Inactiva")).toBeHidden();
+
+  await principal.getByRole("button", { name: "Desactivar" }).click();
+  await confirm.getByRole("button", { name: "Desactivar" }).click();
+  await expect(confirm).toBeHidden();
+  await expect(principal.getByText("Inactiva")).toBeVisible();
+
+  // La ficha de la empresa lo marca junto a su cuenta de Stripe.
+  await page.goto(`/pasarelas/empresas/${user.basics.companyId}`);
+  const stripe = page
+    .getByRole("region", { name: "Pasarelas de la empresa" })
+    .getByRole("listitem")
+    .filter({ hasText: "Stripe" });
+  await expect(stripe).toContainText("Cuenta principal");
+  await expect(stripe.getByText("Cuenta inactiva")).toBeVisible();
+  await expectCleanScreen(page);
+
+  await page.goto("/pasarelas/cuentas");
+  await principal.getByRole("button", { name: "Activar" }).click();
+  await expect(principal.getByText("Inactiva")).toBeHidden();
+
+  // Una que ninguna cuenta de pasarela usa se desactiva sin preguntar.
+  const demo = page.getByRole("region", { name: "Cuenta Demo" });
+  await demo.getByRole("button", { name: "Desactivar" }).click();
+  await expect(demo.getByText("Inactiva")).toBeVisible();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await demo.getByRole("button", { name: "Activar" }).click();
+  await expect(demo.getByText("Inactiva")).toBeHidden();
+});
+
+test("un fallo dentro del diálogo de borrar se dice en el diálogo, no detrás de él", async ({ page }, testInfo) => {
+  const alias = `Cuenta Borrada ${testInfo.project.name}`;
+  const { data: created } = await admin
+    .from("pay_bank_accounts")
+    .insert({ user_id: user.id, alias })
+    .select("id")
+    .single()
+    .throwOnError();
+  await page.goto("/pasarelas/cuentas");
+  const card = page.getByRole("region", { name: alias });
+  await card.getByRole("button", { name: "Borrar" }).click();
+  const confirm = page.getByRole("alertdialog", { name: `¿Borrar «${alias}»?` });
+  await expect(confirm).toBeVisible();
+  // Se borra por detrás con el diálogo abierto.
+  await admin.from("pay_bank_accounts").delete().eq("id", created.id).throwOnError();
+  await confirm.getByRole("button", { name: "Borrar" }).click();
+  await expect(confirm.getByRole("alert")).toHaveText("Esa cuenta ya no existe.");
+  await expectCleanScreen(page);
+});
+
+test("feriados: un fallo al quitar uno se dice en su diálogo", async ({ page }) => {
+  const { data: created } = await admin
+    .from("pay_holidays")
+    .insert({ user_id: user.id, day: "2029-03-15", name: "Cierre demo borrado" })
+    .select("id")
+    .single()
+    .throwOnError();
+  await page.goto("/pasarelas/feriados?anio=2029");
+  await page.getByRole("button", { name: "Quitar Cierre demo borrado" }).click();
+  const confirm = page.getByRole("alertdialog", { name: "¿Quitar este feriado?" });
+  await expect(confirm).toBeVisible();
+  await admin.from("pay_holidays").delete().eq("id", created.id).throwOnError();
+  await confirm.getByRole("button", { name: "Quitar" }).click();
+  await expect(confirm.getByRole("alert")).toHaveText("Ese feriado ya no existe.");
+  await expectCleanScreen(page);
 });
 
 test("feriados: cargar los bancarios de 2028 los agrega una sola vez", async ({ page }) => {

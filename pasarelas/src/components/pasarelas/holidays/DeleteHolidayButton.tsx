@@ -2,36 +2,46 @@
 
 import { Trash2 } from "lucide-react";
 import { useState, useTransition } from "react";
-import { ConfirmDialog, DateText, IconButton, notify } from "@/components/ui";
+import { Alert, Button, DateText, Dialog, IconButton, notify } from "@/components/ui";
 import type { ISODate } from "@/lib/pasarelas/types";
 import { deleteHoliday } from "@/server/pasarelas/actions/holidays";
 
-/** Quitar un feriado, preguntando antes. */
+/** Quitar un feriado, preguntando antes. Si falla, se dice en el diálogo: un aviso pasajero quedaría detrás. */
 export function DeleteHolidayButton({ id, day, name }: { id: string; day: ISODate; name: string }) {
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const remove = () =>
     startTransition(async () => {
+      setError(null);
       const result = await deleteHoliday({ id });
       if (!result.ok) {
-        notify.error(result.error);
+        setError(result.error);
         return;
       }
       setOpen(false);
       notify.success("Feriado quitado.");
     });
 
+  const close = () => setOpen(false);
+
   return (
     <>
-      <IconButton label={`Quitar ${name}`} onClick={() => setOpen(true)} disabled={pending}>
+      <IconButton
+        label={`Quitar ${name}`}
+        onClick={() => {
+          setError(null);
+          setOpen(true);
+        }}
+        disabled={pending}
+      >
         <Trash2 aria-hidden className="size-5" />
       </IconButton>
-      <ConfirmDialog
+      <Dialog
         open={open}
-        onClose={() => setOpen(false)}
-        onConfirm={remove}
-        pending={pending}
+        onClose={close}
+        role="alertdialog"
         title="¿Quitar este feriado?"
         description={
           <>
@@ -39,9 +49,23 @@ export function DeleteHolidayButton({ id, day, name }: { id: string; day: ISODat
             volver a agregarlo.
           </>
         }
-        confirmLabel="Quitar"
-        variant="danger"
-      />
+        footer={
+          <>
+            <Button onClick={close} disabled={pending}>
+              Cancelar
+            </Button>
+            <Button variant="danger" onClick={remove} disabled={pending}>
+              Quitar
+            </Button>
+          </>
+        }
+      >
+        {error ? (
+          <Alert tone="danger" announce>
+            {error}
+          </Alert>
+        ) : null}
+      </Dialog>
     </>
   );
 }

@@ -347,7 +347,11 @@ export function GatewaysCard({
                     <dl className="grid grid-cols-1 gap-1 text-sm sm:grid-cols-3 sm:gap-x-4">
                       <div className="min-w-0">
                         <dt className="text-ink-soft">Cuenta destino</dt>
-                        <dd>{bank?.label ?? "Sin cuenta destino"}</dd>
+                        <dd className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          {bank?.label ?? "Sin cuenta destino"}
+                          {/* Los cobros nuevos de esta pasarela siguen cayendo ahí hasta que se cambie. */}
+                          {bank?.active === false ? <Badge>Cuenta inactiva</Badge> : null}
+                        </dd>
                       </div>
                       <div>
                         <dt className="text-ink-soft">Depósito</dt>
