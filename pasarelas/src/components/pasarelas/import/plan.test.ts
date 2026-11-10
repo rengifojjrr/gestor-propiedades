@@ -1,8 +1,19 @@
 import { readFileSync } from "node:fs";
 import Papa from "papaparse";
 import { describe, expect, it } from "vitest";
-import { presetFor, type ColumnMapping } from "@/lib/pasarelas";
-import { chunk, columnChoices, formatConflict, groupSkips, isBuyerColumn, proposeMapping } from "./plan";
+import { presetFor, type ColumnMapping, type ImportRow } from "@/lib/pasarelas";
+import type { ImportPreview } from "@/server/pasarelas/ops/import";
+import {
+  chunk,
+  columnChoices,
+  formatConflict,
+  groupSkips,
+  isBuyerColumn,
+  mergePreviews,
+  planReview,
+  proposeMapping,
+  schemeText,
+} from "./plan";
 
 /** Los encabezados de un archivo de ejemplo, leídos como los lee la pantalla. */
 function headersOf(fixture: string): string[] {
@@ -123,6 +134,107 @@ describe("groupSkips", () => {
       { reason: "reembolso", lines: [3, 5] },
       { reason: "retiro", lines: [4] },
     ]);
+  });
+});
+
+/** Una fila ya convertida: 100,00 USD el día que se diga. */
+const row = (line: number, reference: string, occurredOn = "2026-11-02"): ImportRow => ({
+  line,
+  reference,
+  occurredAt: `${occurredOn}T15:00:00.000Z`,
+  occurredOn,
+  grossOriginal: "100.00",
+  currency: "USD",
+  reportedFee: null,
+  note: null,
+});
+
+const part = (extra: Partial<ImportPreview>): ImportPreview => ({
+  today: "2026-11-10",
+  estimates: [],
+  existing: [],
+  manual: [],
+  scheme: { kind: "activo", name: "Reparto 50/30/20" },
+  ...extra,
+});
+
+describe("mergePreviews", () => {
+  it("junta las vistas previas de cada lote; un cobro a mano que salió en dos lotes cuenta una vez", () => {
+    const manual = { id: "m1", reference: null, currency: "USD", grossOriginal: "100.00", occurredOn: "2026-11-02" };
+    const merged = mergePreviews([
+      part({
+        estimates: [{ line: 2, estimatedDepositOn: "2026-11-04" }],
+        existing: [{ reference: "a", trashed: false }],
+        manual: [manual],
+      }),
+      part({
+        estimates: [{ line: 3, estimatedDepositOn: "2026-11-12" }],
+        existing: [{ reference: "b", trashed: true }],
+        manual: [manual],
+      }),
+    ]);
+    expect(merged).toEqual({
+      today: "2026-11-10",
+      estimates: new Map([
+        [2, "2026-11-04"],
+        [3, "2026-11-12"],
+      ]),
+      existing: [
+        { reference: "a", trashed: false },
+        { reference: "b", trashed: true },
+      ],
+      manual: [manual],
+      scheme: { kind: "activo", name: "Reparto 50/30/20" },
+    });
+  });
+});
+
+describe("planReview", () => {
+  const rows = [row(2, "ch_1"), row(3, "ch_2"), row(4, "ch_3", "2026-11-09"), row(5, "ch_4", "2026-11-12")];
+  const manual = { id: "m1", reference: null, currency: "USD", grossOriginal: "100.00", occurredOn: "2026-11-12" };
+  const preview = mergePreviews([
+    part({
+      estimates: [
+        { line: 2, estimatedDepositOn: "2026-11-04" },
+        { line: 3, estimatedDepositOn: "2026-11-04" },
+        { line: 4, estimatedDepositOn: "2026-11-10" },
+        { line: 5, estimatedDepositOn: "2026-11-16" },
+      ],
+      existing: [{ reference: "ch_1", trashed: true }],
+      manual: [manual],
+    }),
+  ]);
+
+  it("sin confirmar los posibles repetidos, se mandan las demás filas y se dice cuántas quedan fuera", () => {
+    const plan = planReview(rows, preview, { includePossible: false });
+    expect(plan.check.trashed).toEqual([rows[0]]);
+    expect(plan.check.possible).toEqual([{ row: rows[3], match: manual }]);
+    // Lo repetido también viaja: el servidor lo salta y lo cuenta.
+    expect(plan.send).toEqual([rows[0], rows[1], rows[2]]);
+    expect(plan.heldBack).toBe(1);
+    // De las que se crean (líneas 3 y 4): una atrasada (estimada el 4) y dos con la fecha hasta hoy.
+    expect(plan.deposit).toEqual({ creating: 2, overdue: 1, dueByToday: 2 });
+  });
+
+  it("confirmados, los posibles repetidos también se importan", () => {
+    const plan = planReview(rows, preview, { includePossible: true });
+    expect(plan.send).toEqual(rows);
+    expect(plan.heldBack).toBe(0);
+    expect(plan.deposit).toEqual({ creating: 3, overdue: 1, dueByToday: 2 });
+  });
+});
+
+describe("schemeText", () => {
+  it("nombra el esquema que se aplicará o dice por qué no hay reparto", () => {
+    expect(schemeText({ kind: "activo", name: "Reparto 50/30/20" }, "Escuela Demo")).toBe(
+      "Reparto: «Reparto 50/30/20», el esquema por defecto de Escuela Demo.",
+    );
+    expect(schemeText({ kind: "desactivado", name: "Reparto 50/30/20" }, "Escuela Demo")).toBe(
+      "Sin reparto: el esquema por defecto está desactivado («Reparto 50/30/20»). Si lo vuelves a activar en Repartos, se aplicará a lo que importes después.",
+    );
+    expect(schemeText({ kind: "ninguno" }, "Escuela Demo")).toBe(
+      "Sin reparto: Escuela Demo no tiene esquema por defecto.",
+    );
   });
 });
 

@@ -3,13 +3,21 @@
  * choca con el formato que ya se usó en esa pasarela, qué columnas se ofrecen y cómo se parten los lotes.
  */
 import {
+  classifyRepeats,
+  depositedOnImport,
   detectFormat,
   presetFor,
   validateMapping,
   type ColumnMapping,
+  type ExistingRef,
   type ImportFormat,
+  type ImportRow,
   type ImportSkip,
+  type ManualTx,
+  type RepeatCheck,
 } from "@/lib/pasarelas/import";
+import type { ISODate } from "@/lib/pasarelas/types";
+import type { ImportPreview, ImportScheme } from "@/server/pasarelas/ops/import";
 import type { SavedImportMapping } from "@/server/pasarelas/queries/import";
 
 /** Un archivo con más filas que estas no se lee. */
@@ -101,6 +109,78 @@ export function groupSkips(skips: readonly ImportSkip[]): { reason: string; line
   const groups = new Map<string, number[]>();
   for (const { line, reason } of skips) groups.set(reason, [...(groups.get(reason) ?? []), line]);
   return [...groups].map(([reason, lines]) => ({ reason, lines })).sort((a, b) => b.lines.length - a.lines.length);
+}
+
+// ─── «Así lo entendí»: lo que ya está guardado y cuándo cae el dinero ────────────────────────────────────────
+
+/** Las vistas previas de todos los lotes de un archivo, juntas. */
+export type MergedPreview = {
+  today: ISODate;
+  /** La fecha estimada de depósito de cada fila, por línea. */
+  estimates: Map<number, ISODate>;
+  existing: ExistingRef[];
+  manual: ManualTx[];
+  scheme: ImportScheme;
+};
+
+/** Junta las vistas previas de cada lote (al menos una); un cobro a mano que salió en dos lotes cuenta una vez. */
+export function mergePreviews(parts: readonly ImportPreview[]): MergedPreview {
+  const manual = new Map<string, ManualTx>();
+  for (const tx of parts.flatMap((p) => p.manual)) manual.set(tx.id, tx);
+  return {
+    today: parts[0]!.today,
+    estimates: new Map(parts.flatMap((p) => p.estimates).map((e) => [e.line, e.estimatedDepositOn])),
+    existing: parts.flatMap((p) => p.existing),
+    manual: [...manual.values()],
+    scheme: parts[0]!.scheme,
+  };
+}
+
+export type ReviewPlan = {
+  check: RepeatCheck;
+  /** Las filas que viajan al servidor, en orden. Lo repetido también: el servidor lo salta y lo cuenta. */
+  send: ImportRow[];
+  /** Los posibles repetidos que no se mandan porque no se confirmaron. */
+  heldBack: number;
+  /**
+   * De las filas que se crearían: cuántas son, cuántas tienen la fecha estimada ya pasada (entrarían atrasadas) y
+   * cuántas la tienen hasta hoy (con «ya se depositaron» entran depositadas).
+   */
+  deposit: { creating: number; overdue: number; dueByToday: number };
+};
+
+/** Qué se manda y qué se le dice a la persona, con la vista previa del servidor y lo que eligió. */
+export function planReview(
+  rows: readonly ImportRow[],
+  preview: MergedPreview,
+  { includePossible }: { includePossible: boolean },
+): ReviewPlan {
+  const check = classifyRepeats(rows, preview.existing, preview.manual);
+  const held = new Set(includePossible ? [] : check.possible.map(({ row }) => row.line));
+  const creating = [...check.fresh, ...(includePossible ? check.possible.map(({ row }) => row) : [])];
+  const estimates = creating.map((row) => preview.estimates.get(row.line)!);
+  return {
+    check,
+    send: rows.filter((row) => !held.has(row.line)),
+    heldBack: held.size,
+    deposit: {
+      creating: creating.length,
+      overdue: estimates.filter((on) => on < preview.today).length,
+      dueByToday: estimates.filter((on) => depositedOnImport(on, preview.today, true) !== null).length,
+    },
+  };
+}
+
+/** Qué esquema de reparto se aplicará a lo importado, dicho para la persona. */
+export function schemeText(scheme: ImportScheme, companyName: string): string {
+  switch (scheme.kind) {
+    case "activo":
+      return `Reparto: «${scheme.name}», el esquema por defecto de ${companyName}.`;
+    case "desactivado":
+      return `Sin reparto: el esquema por defecto está desactivado («${scheme.name}»). Si lo vuelves a activar en Repartos, se aplicará a lo que importes después.`;
+    case "ninguno":
+      return `Sin reparto: ${companyName} no tiene esquema por defecto.`;
+  }
 }
 
 /** Parte una lista en lotes de `size`, en orden. */
