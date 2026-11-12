@@ -675,7 +675,10 @@ describe("listGatewayTotals", () => {
         currency: "USD",
         txCount: 3,
         gross: "300.00",
+        // Sin cobros cuya comisión pagó el comprador: lo facturado es todo lo cobrado y no hay comisiones suyas.
+        sale: "300.00",
         fees: "9.60",
+        buyerFees: "0.00",
         net: "290.40",
         depositedCount: 3,
         avgDays: "3.67",

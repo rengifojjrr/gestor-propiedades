@@ -6,7 +6,7 @@ import { runAction } from "../action";
 import * as ops from "../ops/import";
 import { zColumnMapping, zImportFormat } from "../queries/import";
 import type { ActionResult } from "../result";
-import { zId } from "../zod";
+import { zFeesPaidBy, zId } from "../zod";
 
 /**
  * Las Server Actions de «Importar». El archivo nunca llega aquí: el navegador lo lee y manda solo las filas ya
@@ -20,6 +20,7 @@ const zBatch = z.object({
   channelId: zId.nullable(),
   extraIds: z.array(zId),
   useReportedFee: z.boolean(),
+  feesPaidBy: zFeesPaidBy.optional(),
   rows: z.array(z.unknown()),
 });
 

@@ -144,6 +144,22 @@ describe("importTransactions", () => {
     expect(txs.get(ref(2))!.breakdown).not.toHaveProperty("rules.gateway.feeOverride");
   });
 
+  it("«las comisiones las pagaron los compradores» vale para todo el archivo; sin decirlo, las pagó el negocio", async () => {
+    const ref = refs();
+    await importTransactions(user.client, { ...choice([row(ref(1))]), feesPaidBy: "comprador" });
+    await importTransactions(user.client, choice([row(ref(2))]));
+    const { data } = await user.client
+      .from("pay_transactions")
+      .select("reference, fees_paid_by, alloc_base")
+      .in("reference", [ref(1), ref(2)])
+      .order("reference")
+      .throwOnError();
+    expect(data).toEqual([
+      { reference: ref(1), fees_paid_by: "comprador", alloc_base: "neto" },
+      { reference: ref(2), fees_paid_by: "nosotros", alloc_base: "neto" },
+    ]);
+  });
+
   it("importar dos veces el mismo archivo no duplica nada: lo repetido se cuenta y no se toca", async () => {
     const ref = refs();
     const rows = [row(ref(1)), row(ref(2), { line: 3, grossOriginal: "50.00" })];

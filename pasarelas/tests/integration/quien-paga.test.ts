@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ZERO, add, type NewTxInput } from "@/lib/pasarelas";
 import { createTx, editTx } from "@/server/pasarelas/ops/transactions";
+import { getCompany } from "@/server/pasarelas/queries/companies";
+import { listGatewayTotals } from "@/server/pasarelas/queries/gateways";
 import { getSnapshots } from "@/server/pasarelas/queries/transactions";
 import {
   createUser,
@@ -228,6 +230,14 @@ describe("las vistas de totales", () => {
     const expected = { currency: "USD", tx_count: 2, gross: "190.30", fees: "9.70", net: "180.60", buyer_fees: "9.70" };
     expect(await companyTotals(own.client)).toEqual([{ company_id: basics.companyId, ...expected }]);
     expect(await gatewayTotals(own.client)).toEqual([{ gateway_id: basics.gatewayId, ...expected }]);
+
+    // Lo que leen las pantallas: la empresa, lo facturado; la pasarela, además, todo lo cobrado (cuadra con ella).
+    expect((await getCompany(own.client, basics.companyId))?.totals).toMatchObject([
+      { currency: "USD", count: 2, gross: "190.30", fees: "9.70", net: "180.60" },
+    ]);
+    expect(await listGatewayTotals(own.client)).toMatchObject([
+      { gatewayId: basics.gatewayId, txCount: 2, gross: "200.00", sale: "190.30", fees: "9.70", buyerFees: "9.70" },
+    ]);
   });
 
   it("un libro sin «comprador» da los mismos totales que antes: la suma de bruto, comisiones y neto de sus cobros", async () => {

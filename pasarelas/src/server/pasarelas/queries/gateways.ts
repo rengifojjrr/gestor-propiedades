@@ -1,5 +1,5 @@
 import "server-only";
-import { dec, toMoney } from "@/lib/pasarelas";
+import { add, dec, toMoney } from "@/lib/pasarelas";
 import type { Currency, GatewayCfg, Money } from "@/lib/pasarelas";
 import {
   EXTRA_COLUMNS,
@@ -14,11 +14,14 @@ import {
  * Las lecturas de la pantalla Pasarelas que no cubre la configuración (`getPayConfig`): la ficha de una pasarela
  * con su nota, y los totales de toda la historia de la vista `pay_gateway_totals` (que no cuenta la papelera ni los
  * fallidos). El dinero y los días se piden con `::text`.
+ *
+ * En la vista, `gross` es lo facturado (la venta del negocio: el neto de los cobros cuya comisión pagó el comprador)
+ * y `fees`, las comisiones del negocio; las de los compradores van en `buyer_fees`.
  */
 
 const GATEWAY_DETAIL_COLUMNS = `${GATEWAY_COLUMNS}, notes` as const;
 const GATEWAY_TOTALS_COLUMNS =
-  "gateway_id, currency, tx_count, gross::text, fees::text, net::text, deposited_count, avg_days::text, median_days::text";
+  "gateway_id, currency, tx_count, gross::text, fees::text, net::text, deposited_count, avg_days::text, median_days::text, buyer_fees::text";
 
 type GatewayDetailRow = GatewayRow & { notes: string | null };
 type GatewayTotalsRow = {
@@ -31,6 +34,7 @@ type GatewayTotalsRow = {
   deposited_count: number | null;
   avg_days: string | null;
   median_days: string | null;
+  buyer_fees: string | null;
 };
 
 /** La pasarela con su nota, sus tarifas (de la más antigua a la más nueva) y sus opciones (en su orden). */
@@ -41,8 +45,14 @@ export type GatewayTotals = {
   gatewayId: string;
   currency: Currency;
   txCount: number;
+  /** Todo lo cobrado por la pasarela: lo facturado más lo que pagaron los compradores (cuadra con la pasarela). */
   gross: Money;
+  /** Lo facturado: la venta del negocio. */
+  sale: Money;
+  /** Las comisiones del negocio. */
   fees: Money;
+  /** Las comisiones que pagaron los compradores. */
+  buyerFees: Money;
   net: Money;
   depositedCount: number;
   avgDays: string | null;
@@ -88,8 +98,10 @@ export async function listGatewayTotals(supabase: Db): Promise<GatewayTotals[]> 
     gatewayId: row.gateway_id,
     currency: row.currency,
     txCount: row.tx_count ?? 0,
-    gross: money(row.gross),
+    gross: add(money(row.gross), money(row.buyer_fees)),
+    sale: money(row.gross),
     fees: money(row.fees),
+    buyerFees: money(row.buyer_fees),
     net: money(row.net),
     depositedCount: row.deposited_count ?? 0,
     avgDays: row.avg_days,

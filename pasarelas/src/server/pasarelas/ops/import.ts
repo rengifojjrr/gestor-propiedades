@@ -10,7 +10,16 @@ import {
   todayNY,
   validateMapping,
 } from "@/lib/pasarelas";
-import type { ExistingRef, ImportRow, ISODate, ManualTx, NewTxInput, PayConfig, TxWrite } from "@/lib/pasarelas";
+import type {
+  ExistingRef,
+  FeesPaidBy,
+  ImportRow,
+  ISODate,
+  ManualTx,
+  NewTxInput,
+  PayConfig,
+  TxWrite,
+} from "@/lib/pasarelas";
 import type { Db } from "../dto";
 import { UserError } from "../errors";
 import { loadPayConfig } from "../queries/config";
@@ -107,6 +116,11 @@ export type ImportBatch = {
   extraIds: string[];
   /** Usar la comisión que informa el archivo (si la fila la trae) en vez de la calculada con la tarifa. */
   useReportedFee: boolean;
+  /**
+   * Quién pagó la comisión de todos los cobros del archivo (el archivo no lo dice por fila). Por defecto, el
+   * negocio («nosotros»).
+   */
+  feesPaidBy?: FeesPaidBy;
   /** Las filas ya convertidas por el navegador: entrada no confiable. */
   rows: readonly unknown[];
 };
@@ -164,6 +178,7 @@ function planRows(
       grossOriginal: row.grossOriginal,
       reference: row.reference,
       note: row.note,
+      feesPaidBy: batch.feesPaidBy ?? "nosotros",
       ...(batch.useReportedFee && row.reportedFee !== null ? { feeOverride: row.reportedFee } : {}),
     };
     const plan = planCreate(cfg, tx, "importado");
@@ -175,10 +190,10 @@ function planRows(
 }
 
 /**
- * Importa un lote de hasta 500 filas, todas con la misma empresa, pasarela, canal y opciones, y con el esquema de
- * reparto por defecto de la empresa si está activo. Devuelve cuántos cobros se crearon, cuántos ya existían (misma
- * referencia en esa pasarela) y no se tocaron, y cuántos de esos están en la papelera (que conserva la referencia:
- * hay que restaurarlos o borrarlos del todo).
+ * Importa un lote de hasta 500 filas, todas con la misma empresa, pasarela, canal, opciones y quien pagó la
+ * comisión, y con el esquema de reparto por defecto de la empresa si está activo. Devuelve cuántos cobros se
+ * crearon, cuántos ya existían (misma referencia en esa pasarela) y no se tocaron, y cuántos de esos están en la
+ * papelera (que conserva la referencia: hay que restaurarlos o borrarlos del todo).
  *
  * Todo o nada por lote: si una fila no es válida no se escribe ninguna y el error dice cuál; si la base rechaza
  * algo, el lote entero se deshace.

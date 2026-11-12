@@ -11,7 +11,7 @@ import {
   parseMoney,
   parsePct,
 } from "@/lib/pasarelas";
-import type { Currency, ISODate, Money, Pct } from "@/lib/pasarelas";
+import type { Currency, FeesPaidBy, ISODate, Money, Pct } from "@/lib/pasarelas";
 
 /**
  * Los esquemas que comparten todas las acciones: validan lo que llega de un formulario (siempre entrada no
@@ -153,3 +153,8 @@ export function refineDaysWindow<Min extends string, Max extends string>(minKey:
     if (min === null || max < min) ctx.addIssue({ code: "custom", message, path: [maxKey] });
   };
 }
+
+/** Quién pagó la comisión de un cobro: el negocio («nosotros») o el comprador. */
+export const zFeesPaidBy: z.ZodType<FeesPaidBy> = z.enum(["nosotros", "comprador"], {
+  error: "Elige quién pagó la comisión",
+});

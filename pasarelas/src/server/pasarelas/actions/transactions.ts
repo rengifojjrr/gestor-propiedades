@@ -26,7 +26,7 @@ import {
 } from "../ops/transactions";
 import type { DepositOutcome } from "../ops/transactions";
 import type { ActionResult } from "../result";
-import { zCurrency, zDate, zId, zMoney, zOptionalText, zPositiveMoney, zReference } from "../zod";
+import { zCurrency, zDate, zFeesPaidBy, zId, zMoney, zOptionalText, zPositiveMoney, zReference } from "../zod";
 
 /**
  * Las Server Actions de los cobros: delgadas. Cada una recibe `input: unknown` (un POST público), y `runAction`
@@ -75,6 +75,8 @@ const zNewTx = z.object({
   depositedOn: zDepositDate.nullish(),
   bankAccountId: zId.nullish(),
   estimatedDepositOn: zDate.nullish(),
+  /** Sin decirlo, la comisión la pagó el negocio («nosotros»). */
+  feesPaidBy: zFeesPaidBy.optional(),
 });
 
 /** Lo que no viene (`undefined`) no se toca; lo que viene con `null` se vacía. */
@@ -90,6 +92,7 @@ const zEditTx = zSeen.extend({
   reference: zReference.optional(),
   note: zNote.optional(),
   bankAccountId: zId.nullable().optional(),
+  feesPaidBy: zFeesPaidBy.optional(),
 });
 
 /**

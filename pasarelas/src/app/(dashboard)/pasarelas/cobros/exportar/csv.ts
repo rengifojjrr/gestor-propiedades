@@ -10,6 +10,7 @@ import {
   type CsvFormat,
   type PayConfig,
 } from "@/lib/pasarelas";
+import { FEES_PAID_BY_LABEL } from "@/components/pasarelas/tx/payer";
 import type { TxListItem } from "@/server/pasarelas/dto";
 
 /**
@@ -17,7 +18,8 @@ import type { TxListItem } from "@/server/pasarelas/dto";
  * de compradores (la base no los guarda). Las cuentas, el estado, el porcentaje y los días salen del motor.
  *
  * «Fecha estimada» es la más tardía de la ventana de depósito (la de siempre) y «Fecha estimada (desde)», la más
- * temprana (la misma, si es un solo día). Va al final para no mover las columnas de quien ya usa el archivo.
+ * temprana (la misma, si es un solo día). «Comisión pagada por» dice si la comisión la pagó el negocio o el
+ * comprador. Las dos van al final para no mover las columnas de quien ya usa el archivo.
  */
 
 export const TX_CSV_HEADER = [
@@ -41,6 +43,7 @@ export const TX_CSV_HEADER = [
   "Comprobantes",
   "Nota",
   "Fecha estimada (desde)",
+  "Comisión pagada por",
 ] as const;
 
 /** Las columnas de dinero: `toCsv` les pone el separador decimal del formato. */
@@ -91,6 +94,7 @@ export function txCsv(rows: readonly TxListItem[], cfg: PayConfig, fmt: CsvForma
       String(tx.receiptsCount),
       tx.note,
       depositWindowOf(tx)?.from ?? null,
+      FEES_PAID_BY_LABEL[tx.feesPaidBy],
     ];
   });
   return toCsv(TX_CSV_HEADER, body, fmt, MONEY_COLUMNS);

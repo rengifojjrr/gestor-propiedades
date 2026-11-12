@@ -4,6 +4,7 @@ import {
   zAlias,
   zCurrency,
   zDate,
+  zFeesPaidBy,
   zHttpUrl,
   zId,
   zMoney,
@@ -222,6 +223,15 @@ describe("zReference", () => {
   test("NO lleva la guarda de tarjeta: los identificadores largos de una pasarela son normales", () => {
     expect(zReference.parse("4111111111111111")).toBe("4111111111111111");
     expect(zReference.parse("4111 1111 1111 1111")).toBe("4111 1111 1111 1111");
+  });
+});
+
+describe("zFeesPaidBy", () => {
+  test("«nosotros» o «comprador»; otra cosa no, y lo dice", () => {
+    expect(zFeesPaidBy.parse("nosotros")).toBe("nosotros");
+    expect(zFeesPaidBy.parse("comprador")).toBe("comprador");
+    expect(messageOf(zFeesPaidBy, "cliente")).toBe("Elige quién pagó la comisión");
+    expect(messageOf(zFeesPaidBy, undefined)).toBe("Elige quién pagó la comisión");
   });
 });
 
