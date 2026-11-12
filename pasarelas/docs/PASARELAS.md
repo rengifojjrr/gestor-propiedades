@@ -15,7 +15,7 @@ como está guardado, con punto (`"90.30"`).
 2. [Cómo se usa](#cómo-se-usa)
 3. [Las piezas](#las-piezas)
 4. [Las reglas del dinero](#las-reglas-del-dinero)
-5. [Cómo se calcula un cobro](#cómo-se-calcula-un-cobro) (ejemplos E1 a E6)
+5. [Cómo se calcula un cobro](#cómo-se-calcula-un-cobro) (ejemplos E1 a E8)
 6. [Cuándo cae el dinero](#cuándo-cae-el-dinero) (ejemplos F1 a F3)
 7. [Lo que se congela y lo que lo cambia](#lo-que-se-congela-y-lo-que-lo-cambia)
 8. [Estados de un cobro](#estados-de-un-cobro)
@@ -116,6 +116,25 @@ ficha»** → «Esquema de reparto por defecto».
 opciones» van el esquema, la cuenta destino, la fecha estimada a mano, el estado inicial y la nota. **«Guardar»**.
 **«Repetir el último»** vuelve a poner la empresa, el canal, la pasarela, las opciones, la moneda y el esquema del
 cobro anterior.
+
+**¿Quién paga la comisión?** Al registrar (y al editar) se elige **«Nosotros»** o **«El comprador»**:
+
+- **«Nosotros»** es lo de siempre y la opción por defecto. El monto es lo cobrado, la comisión es un costo del negocio
+  y se resta.
+- **«El comprador»** sirve cuando al cliente se le cobró de más para cubrir la comisión. El monto que se escribe es
+  **lo que pagó el comprador**, por ejemplo 1040.
+  - La comisión se calcula con la tarifa real: con Stripe (2,9 % + 0,30), 1040 da 30,46, no 40. Te quedan 1009,54.
+  - El reparto se hace sobre esos 1009,54, aunque el esquema diga «Sobre el bruto».
+  - En el Resumen esa comisión no cuenta como costo del negocio: sale aparte, como «Además, los compradores pagaron
+    $X en comisiones».
+  - Si se reembolsa o se disputa, el costo del reembolso y el de la disputa sí son del negocio (ver
+    [E8](#e8--reembolsos-y-disputas-de-un-cobro-del-comprador)).
+
+  En la lista de cobros, los del comprador llevan una marca; en el detalle, «Comisión pagada por». Al importar, «Las
+  comisiones las pagaron los compradores» vale para todo el archivo.
+
+  Si se quiere que el comprador cubra exactamente la comisión, el recargo sobre 1000 es 30,96, no 40: con 40 queda un
+  extra, que cuenta como venta y se reparte.
 
 **Marcar depositados varios cobros.** Cobros → «Más filtros» → Estado «Por caer» → marcar las casillas →
 **«Marcar depositado»** → la fecha en que llegó el dinero. O desde el Resumen, en «Próximos depósitos», el botón
@@ -487,6 +506,52 @@ Entrada: el cobro E1, con una disputa abierta. El costo de disputa de la pasarel
 
 **Si se perdiera** (no es parte de E6, pero lo cubren las pruebas): reembolso total más el costo de disputa.
 Comisiones 3,20 + 15,00 = 18,20; neto −18,20; reparto −9,10 · −5,46 · −3,64.
+
+### E7 · La comisión la pagó el comprador
+
+Entrada: Stripe 2,9 % + 0,30, sin opciones ni plataforma. Al comprador se le cobraron **1040,00** para cubrir la
+comisión. El esquema es 50/30/20 «Sobre el bruto».
+
+- Comisión: 1040 × 2,9 % + 0,30 = **30,46**. Es la tarifa real, no los 40 de recargo.
+- Neto: 1040,00 − 30,46 = **1009,54**. Es lo que la pasarela deposita.
+- Reparto: va sobre el **neto**, aunque el esquema diga «Sobre el bruto», porque lo que el comprador pagó de más no
+  es venta del negocio. 1009,54 × 50 % = 504,77; × 30 % = 302,862; × 20 % = 201,908. Truncados suman 1009,53, y el
+  centavo que falta va al de mayor resto (201,908). Resultado: **504,77 · 302,86 · 201,91**.
+- Para el negocio:
+  - lo facturado es 1009,54;
+  - sus comisiones son 0;
+  - los compradores pagaron 30,46.
+
+**E7b**, el mismo cobro con «Nosotros»: misma comisión (30,46) y mismo neto (1009,54). El reparto va sobre el bruto:
+**520,00 · 312,00 · 208,00**. Lo facturado es 1040,00, y las comisiones del negocio son 30,46.
+
+**La regla**, en cada cobro:
+
+- **Lo que pagaron los compradores** (`buyer_fees`): con «El comprador», las líneas que se cobran sobre lo que el
+  comprador sigue pagando (pasarela, opciones y plataforma). Con «Nosotros», 0.
+- **Comisiones del negocio**: todas las comisiones menos las de los compradores.
+- **Lo facturado** (la venta del negocio): el bruto vigente menos lo de los compradores.
+
+Siempre neto = facturado − comisiones del negocio. El % de las comisiones del Resumen y el costo efectivo de cada
+pasarela se miden sobre lo facturado. Sin cobros del comprador, lo facturado es el bruto y todo da lo de siempre.
+
+### E8 · Reembolsos y disputas de un cobro del comprador
+
+El cobro E7 (1040,00 pagados por el comprador; la pasarela no devuelve la comisión al reembolsar y cobra 15,00 por
+disputa). El costo del reembolso y el de la disputa los cobra la pasarela **al negocio**: nunca son del comprador.
+
+| | Comisión de la pasarela | Costo del reembolso | Costo de disputa | Neto | Compradores | Negocio | Facturado | Reparto (sobre el neto) |
+|---|---|---|---|---|---|---|---|---|
+| **E8a** · reembolso total | 0,00 | 30,46 | — | −30,46 | 0,00 | 30,46 | 0,00 | −15,23 · −9,14 · −6,09 |
+| **E8b** · reembolso parcial de 520 | 15,38 | 15,08 | — | 489,54 | 15,38 | 15,08 | 504,62 | 244,77 · 146,86 · 97,91 |
+| **E8c** · disputa abierta o perdida, sin reembolso | 30,46 | — | 15,00 | 994,54 | 30,46 | 15,00 | 1009,54 | — |
+
+- En **E8a** el comprador recuperó todo y los 30,46 que se quedó la pasarela los perdió el negocio. Lo facturado es 0,
+  así que no hay %.
+- En **E8b**, 520 × 2,9 % + 0,30 = 15,38 es lo que pagó el comprador sobre lo que sigue pagando. 30,46 − 15,38 = 15,08
+  es el costo del reembolso, del negocio.
+- **E8c** se calcula así dentro del motor. En la app, perder una disputa reembolsa todo: queda como E8a más los 15,00
+  de la disputa (comprador 0, negocio 45,46, neto −45,46).
 
 ## Cuándo cae el dinero
 
@@ -863,6 +928,8 @@ Un **esquema** dice cómo se reparte un cobro. Tiene un nombre y una o más **ve
   línea. Si las líneas ya suman 100 %, el «Resto» no recibe nada.
 - **Base:** `neto` o `bruto`. Sobre el neto se reparte lo que queda después de las comisiones. Sobre el bruto se
   reparte el bruto vigente: con E1 serían 50,00 · 30,00 · 20,00, aunque el neto sea 90,30.
+  En un cobro cuya comisión pagó el comprador, el reparto va siempre sobre el neto
+  ([E7](#e7--la-comisión-la-pagó-el-comprador)).
 - **Vigente desde** y un número de versión.
 
 Reglas que se cumplen dos veces, en el motor (para avisar antes, en español) y en la base (para que nadie las
@@ -949,6 +1016,10 @@ Columnas comunes de las 17 tablas:
   sobre el neto, o su bruto vigente si es sobre el bruto. Sin esquema no hay ni base ni monto. Así nadie guarda un
   reparto que cuadre contra una base inventada. La base del reparto solo puede decir «neto» o «bruto»
   (`pay_transactions_alloc_base_kind_check`).
+- **Quién paga la comisión** es «nosotros» o «comprador» (`pay_transactions_fees_paid_by_check`). Con «comprador»
+  el reparto no puede ir sobre el bruto (`pay_transactions_fees_paid_by_alloc_check`). Lo que pagaron los
+  compradores (`buyer_fees`) no es negativo y es 0 si la comisión la pagamos nosotros
+  (`pay_transactions_buyer_fees_check`).
 - La moneda son tres letras mayúsculas. La referencia tiene de 1 a 120 caracteres y la nota hasta 280. El resumen
   de un evento del historial, de 1 a 300.
 
@@ -1080,9 +1151,13 @@ lo suyo. Ninguna cuenta los cobros de la papelera ni los fallidos. Todas van por
 | Vista | Qué da |
 |---|---|
 | `pay_beneficiary_balances` | Asignado, liquidado y saldo por beneficiario |
-| `pay_company_totals` | Por empresa: cobros, bruto vigente, comisiones, neto, y la primera y la última fecha de cobro |
-| `pay_gateway_totals` | Por pasarela: cobros, bruto vigente, comisiones y neto (sin primera ni última fecha), más cuántos depositados y el promedio y la mediana de días al depósito |
+| `pay_company_totals` | Por empresa: cobros, bruto vigente, comisiones, neto, y la primera y la última fecha de cobro; al final, `buyer_fees` (lo que pagaron los compradores) |
+| `pay_gateway_totals` | Por pasarela: cobros, bruto vigente, comisiones y neto (sin primera ni última fecha), más cuántos depositados y el promedio y la mediana de días al depósito; al final, `buyer_fees` |
 | `pay_bank_account_totals` | Por cuenta destino: lo depositado, lo que está [por caer](#por-caer-y-depositado) (con la misma definición del motor) y los días al depósito. No salen los cobros sin cuenta destino |
+
+En las dos de totales, `gross` y `fees` son todo lo cobrado y todas las comisiones, como desde la migración 1. Lo
+facturado (`gross − buyer_fees`) y las comisiones del negocio (`fees − buyer_fees`) se derivan en el servidor (ver
+[E7](#e7--la-comisión-la-pagó-el-comprador)).
 
 Los totales **por período** (el Resumen, los totales de un filtro) no salen de estas vistas: los suma el motor sobre
 las filas del período, traídas por páginas (`leanTx`). La API tiene las agregaciones apagadas y un tope de 1000

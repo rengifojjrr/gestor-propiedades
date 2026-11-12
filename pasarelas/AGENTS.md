@@ -23,6 +23,12 @@ Qué es y por qué: [`docs/PASARELAS.md`](docs/PASARELAS.md). Diseño: `docs/sup
 7. Interfaz **en español**, **celular primero** (390 px), objetivos táctiles ≥ 44 px, contraste AA. Dinero con coma
    decimal (`$1.234,56`) usando `formatMoney`, no `Intl`. Fechas en `America/New_York`.
 8. Migraciones **solo aditivas**, con nombre en español, y todo objeto de la base con prefijo `pay_`.
+9. **Quién paga la comisión** (`fees_paid_by`). Lo que pagaron los compradores sale solo de `buyerFeesOf(breakdown)`,
+   que se guarda en `pay_transactions.buyer_fees` junto a `fees_total`. Cuenta solo las líneas pasarela, opción y
+   plataforma, y nunca el costo del reembolso ni el de la disputa, que son del negocio.
+   - Lo facturado es `gross − buyerFees` y las comisiones del negocio, `fees − buyerFees`.
+   - En las vistas, `gross` y `fees` conservan su significado de siempre.
+   - No inventes otra regla en un componente: llama a esa función.
 
 ## Comandos (desde `pasarelas/`)
 
@@ -207,7 +213,7 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 
 ## Pruebas
 
-- Motor: pruebas puras junto al código, con los casos exactos del spec (E1–E6, F1–F3). Cobertura 100 %.
+- Motor: pruebas puras junto al código, con los casos exactos del spec (E1–E6, F1–F3) y los de la guía (E7–E8). Cobertura 100 %.
 - En Vitest, `server-only` está simulado (`vitest.setup.ts`). `cookies()` y `headers()` no existen fuera de una
   petición: lo que las use se prueba de punta a punta.
 - Integración: dos usuarios reales del stack local; cada prueba crea los suyos y no depende de datos de otra.
