@@ -119,7 +119,15 @@ describe("loadSummary", () => {
     expect(view.periodCurrencies).toEqual(["EUR", "USD"]);
     expect(view.summary?.totals).toMatchObject({ count: USD_COUNT, gross: "12000.00", net: "10836.00" });
     expect(view.months).toEqual([
-      { month: "2026-11", label: "nov 2026", gross: "12000.00", fees: "1164.00", net: "10836.00", count: USD_COUNT },
+      {
+        month: "2026-11",
+        label: "nov 2026",
+        gross: "12000.00",
+        fees: "1164.00",
+        buyerFees: "0.00",
+        net: "10836.00",
+        count: USD_COUNT,
+      },
     ]);
 
     // Los depósitos: todo lo por caer, sin período (el de octubre también), solo en USD. El de la disputa no.
