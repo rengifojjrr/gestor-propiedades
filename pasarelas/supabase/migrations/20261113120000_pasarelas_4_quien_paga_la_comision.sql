@@ -4,16 +4,20 @@
 -- «Nosotros» (lo de siempre): el monto es lo cobrado, la comisión es un costo del negocio y se resta. «Comprador»: al
 -- cliente se le cobró de más para cubrir la comisión; el monto es lo que pagó el comprador (1040 por algo de 1000).
 -- La comisión se calcula igual, con la tarifa real; pero lo que el comprador pagó de más no es venta del negocio: el
--- reparto va sobre el NETO, aunque el esquema diga «Sobre el bruto», y en los totales esa comisión sale aparte.
+-- reparto va sobre el NETO, aunque el esquema diga «Sobre el bruto».
 --
--- Por cada cobro:
---   · venta del negocio («lo facturado»): el bruto vigente si paga «nosotros»; el neto si paga «comprador»;
---   · comisiones del negocio: las comisiones si paga «nosotros»; 0 si paga «comprador»;
---   · comisiones que pagaron los compradores: 0 si paga «nosotros»; las comisiones si paga «comprador».
+-- Lo que pagaron los compradores (`buyer_fees`) son las comisiones que se cobran sobre lo que el comprador sigue
+-- pagando: la de la pasarela, las de sus opciones y la de la plataforma. El costo de un reembolso y el de una disputa
+-- son del negocio (el comprador que recupera su dinero no paga la comisión que la pasarela se queda). Por cobro:
+--   · comisiones que pagaron los compradores: `buyer_fees` (0 si paga «nosotros»);
+--   · comisiones del negocio: `fees_total − buyer_fees`;
+--   · venta del negocio («lo facturado»): `gross_amount − buyer_fees`.
+-- La calcula la app desde el desglose congelado y la escribe junto con `fees_total`.
 --
 -- ADITIVA y repetible: se aplica tal cual sobre la base que ya tiene las migraciones 20261110120000,
--- 20261111120000 y 20261112120000 (y sus datos). Lo ya guardado queda en «nosotros», y con eso cada total da
--- exactamente lo de antes. No toca nada fuera de lo `pay_` de Pasarelas.
+-- 20261111120000 y 20261112120000 (y sus datos). Lo ya guardado queda en «nosotros» y sin comisiones de compradores;
+-- las vistas de totales conservan el significado de sus columnas (bruto, comisiones y neto de siempre) y suman
+-- `buyer_fees` al final. No toca nada fuera de lo `pay_` de Pasarelas.
 -- ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 -- 1. Quién pagó la comisión. Con valor por defecto constante: Postgres no reescribe la tabla, y los cobros que ya
@@ -39,9 +43,29 @@ begin
 end;
 $$;
 
--- 3. pay_save_transactions: la misma de la migración 20261112120000, más `fees_paid_by` en lo que inserta y en lo
---    que actualiza. Acepta exactamente lo de antes: sin `fees_paid_by`, un alta queda en «nosotros» y una
---    actualización no lo toca.
+-- 3. Lo que pagaron los compradores: las comisiones de la pasarela, de sus opciones y de la plataforma de un cobro
+--    cuya comisión pagó el comprador. Con valor por defecto constante (Postgres no reescribe la tabla): los cobros
+--    que ya existen quedan en 0. Nunca negativa, y solo un cobro de «comprador» puede tener algo.
+alter table public.pay_transactions
+  add column if not exists buyer_fees numeric(16,2) not null default 0;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'pay_transactions_buyer_fees_check'
+      and conrelid = 'public.pay_transactions'::regclass
+  ) then
+    alter table public.pay_transactions
+      add constraint pay_transactions_buyer_fees_check
+        check (buyer_fees >= 0 and (fees_paid_by = 'comprador' or buyer_fees = 0));
+  end if;
+end;
+$$;
+
+-- 4. pay_save_transactions: la misma de la migración 20261112120000, más `fees_paid_by` y `buyer_fees` en lo que
+--    inserta y en lo que actualiza. Acepta exactamente lo de antes: sin decirlos, un alta queda en «nosotros» y sin
+--    comisiones de compradores, y una actualización no los toca.
 --   p_items: [{ mode: 'insert' | 'update', tx: {...columnas...}, expected_updated_at?, allocations?: [...] | null,
 --              event?: { kind, summary, data } }]
 --   · En «update», tx solo trae las columnas que cambian (más id). allocations = null o ausente → no se tocan.
@@ -110,7 +134,7 @@ begin
           gross_original, refunded_amount, gross_amount, fees_total, net_amount, alloc_base, alloc_base_amount,
           breakdown, fee_version_id, scheme_id, scheme_version_id, reference, note, status,
           dispute_state, dispute_opened_on, dispute_closed_on, estimated_deposit_on, estimated_deposit_from,
-          estimated_is_manual, deposited_on, bank_account_id, fees_paid_by
+          estimated_is_manual, deposited_on, bank_account_id, fees_paid_by, buyer_fees
         ) values (
           v_id, v_new.occurred_at, v_new.occurred_on, v_new.company_id, v_new.channel_id, v_new.gateway_id,
           v_new.currency, v_new.gross_original, coalesce(v_new.refunded_amount, 0), v_new.gross_amount,
@@ -119,7 +143,7 @@ begin
           v_reference, v_new.note, coalesce(v_new.status, 'registrado'),
           v_new.dispute_state, v_new.dispute_opened_on, v_new.dispute_closed_on, v_new.estimated_deposit_on,
           v_new.estimated_deposit_from, coalesce(v_new.estimated_is_manual, false), v_new.deposited_on,
-          v_new.bank_account_id, coalesce(v_new.fees_paid_by, 'nosotros')
+          v_new.bank_account_id, coalesce(v_new.fees_paid_by, 'nosotros'), coalesce(v_new.buyer_fees, 0)
         );
         v_inserted := true;
       end if;
@@ -167,7 +191,8 @@ begin
         deposited_on = v_new.deposited_on,
         bank_account_id = v_new.bank_account_id,
         deleted_at = v_new.deleted_at,
-        fees_paid_by = v_new.fees_paid_by
+        fees_paid_by = v_new.fees_paid_by,
+        buyer_fees = v_new.buyer_fees
       where t.id = v_id;
 
     else
@@ -204,11 +229,12 @@ $$;
 revoke all on function public.pay_save_transactions(jsonb, boolean) from public, anon;
 grant execute on function public.pay_save_transactions(jsonb, boolean) to authenticated, service_role;
 
--- 4. Los totales de toda la historia por empresa y por pasarela. Las columnas de antes conservan nombre, tipo y
---    orden: `gross` es lo facturado (la venta del negocio) y `fees`, las comisiones del negocio; `net` no cambia.
---    `buyer_fees`, al final, son las comisiones que pagaron los compradores. Sin cobros de «comprador», `gross` y
---    `fees` son las sumas de siempre y `buyer_fees` es 0. (`pay_bank_account_totals` y `pay_beneficiary_balances`
---    no usan lo facturado ni las comisiones: no cambian.)
+-- 5. Los totales de toda la historia por empresa y por pasarela. Las columnas de antes conservan nombre, tipo, orden
+--    y significado, con el mismo cuerpo de la migración 20261110120000: `gross` es todo lo cobrado (el bruto
+--    vigente), `fees` todas las comisiones y `net` el neto. La única nueva, al final, es `buyer_fees`: lo que pagaron
+--    los compradores. La venta del negocio (`gross − buyer_fees`) y sus comisiones (`fees − buyer_fees`) las deriva
+--    la app. Sin cobros de «comprador», `buyer_fees` es 0. (`pay_bank_account_totals` y `pay_beneficiary_balances`
+--    no usan las comisiones: no cambian.)
 create or replace view public.pay_company_totals
 with (security_invoker = true) as
 select
@@ -216,12 +242,12 @@ select
   t.company_id,
   t.currency,
   count(*)::integer as tx_count,
-  sum(case when t.fees_paid_by = 'comprador' then t.net_amount else t.gross_amount end)::numeric(16,2) as gross,
-  sum(case when t.fees_paid_by = 'comprador' then 0 else t.fees_total end)::numeric(16,2) as fees,
+  sum(t.gross_amount)::numeric(16,2) as gross,
+  sum(t.fees_total)::numeric(16,2) as fees,
   sum(t.net_amount)::numeric(16,2) as net,
   min(t.occurred_on) as first_on,
   max(t.occurred_on) as last_on,
-  sum(case when t.fees_paid_by = 'comprador' then t.fees_total else 0 end)::numeric(16,2) as buyer_fees
+  sum(t.buyer_fees)::numeric(16,2) as buyer_fees
 from public.pay_transactions t
 where t.deleted_at is null and t.status <> 'fallido'
 group by t.user_id, t.company_id, t.currency;
@@ -233,14 +259,14 @@ select
   t.gateway_id,
   t.currency,
   count(*)::integer as tx_count,
-  sum(case when t.fees_paid_by = 'comprador' then t.net_amount else t.gross_amount end)::numeric(16,2) as gross,
-  sum(case when t.fees_paid_by = 'comprador' then 0 else t.fees_total end)::numeric(16,2) as fees,
+  sum(t.gross_amount)::numeric(16,2) as gross,
+  sum(t.fees_total)::numeric(16,2) as fees,
   sum(t.net_amount)::numeric(16,2) as net,
   (count(*) filter (where t.status = 'depositado'))::integer as deposited_count,
   round(avg(t.deposited_on - t.occurred_on) filter (where t.status = 'depositado'), 2) as avg_days,
   (percentile_cont(0.5) within group (order by (t.deposited_on - t.occurred_on))
      filter (where t.status = 'depositado'))::numeric(8,2) as median_days,
-  sum(case when t.fees_paid_by = 'comprador' then t.fees_total else 0 end)::numeric(16,2) as buyer_fees
+  sum(t.buyer_fees)::numeric(16,2) as buyer_fees
 from public.pay_transactions t
 where t.deleted_at is null and t.status <> 'fallido'
 group by t.user_id, t.gateway_id, t.currency;
@@ -250,7 +276,7 @@ revoke all on public.pay_company_totals, public.pay_gateway_totals from public, 
 grant select on public.pay_company_totals, public.pay_gateway_totals to authenticated, service_role;
 
 -- ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
--- 5. Comprobación final (la de siempre): ninguna tabla pay_ queda sin RLS ni sin la política del segundo factor
+-- 6. Comprobación final (la de siempre): ninguna tabla pay_ queda sin RLS ni sin la política del segundo factor
 -- ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 do $$
