@@ -36,7 +36,16 @@ function rulesE1(): Rules {
   };
 }
 
-const paid = (grossOriginal: string): State => ({ grossOriginal, refunded: "0.00", dispute: null, failed: false });
+const paid = (grossOriginal: string): State => ({
+  grossOriginal,
+  refunded: "0.00",
+  dispute: null,
+  failed: false,
+  feesPaidBy: "nosotros",
+});
+
+/** Lo cobrado cuando la comisión la pagó el comprador: el monto es lo que pagó él, con la comisión incluida. */
+const paidByBuyer = (grossOriginal: string): State => ({ ...paid(grossOriginal), feesPaidBy: "comprador" });
 
 const schemeOf = (rules: Rules): SchemeRule => rules.scheme as SchemeRule;
 const extraOf = (rules: Rules): ExtraRule => rules.extras[0] as ExtraRule;
@@ -45,6 +54,15 @@ const extraOf = (rules: Rules): ExtraRule => rules.extras[0] as ExtraRule;
 function rulesWithGateway(patch: Partial<Rules["gateway"]>): Rules {
   const rules = rulesE1();
   return { ...rules, gateway: { ...rules.gateway, ...patch } };
+}
+
+/**
+ * E7: solo Stripe (2,9 % + 0,30), sin opciones ni plataforma, y el esquema 50/30/20 «Sobre el bruto»: lo que pasa
+ * cuando la comisión la paga el comprador.
+ */
+function rulesE7(): Rules {
+  const rules = rulesE1();
+  return { ...rules, extras: [], platform: null, scheme: { ...schemeOf(rules), base: "bruto" } };
 }
 
 /** E3: solo Stripe y el pago rápido calculado sobre el bruto menos la comisión; sin plataforma. */
@@ -63,7 +81,11 @@ const shares = (b: Breakdown) => b.alloc.lines.map((l) => l.amount);
 
 describe("compute: casos que deben salir exactos", () => {
   test("E1", () => {
-    const b = compute(rulesE1(), { grossOriginal: "100.00", refunded: "0.00", dispute: null, failed: false }, "USD");
+    const b = compute(
+      rulesE1(),
+      { grossOriginal: "100.00", refunded: "0.00", dispute: null, failed: false, feesPaidBy: "nosotros" },
+      "USD",
+    );
     expect(b.lines.map((l) => [l.kind, l.amount])).toEqual([
       ["pasarela", "3.20"],
       ["opcion", "1.50"],
@@ -233,6 +255,84 @@ describe("compute: casos que deben salir exactos", () => {
     });
     const won = recompute(d, { dispute: "ganada" });
     expect({ ...won, state: e1.state }).toEqual(e1);
+  });
+
+  test("E7: 1040 que pagó el comprador; la comisión es la real y el reparto va sobre lo que queda", () => {
+    const b = compute(rulesE7(), paidByBuyer("1040.00"), "USD");
+    // 1040 × 2,9 % + 0,30 = 30,46 (no 40): lo que la pasarela de verdad se lleva.
+    expect(kindsAndAmounts(b)).toEqual([["pasarela", "30.46"]]);
+    expect([b.gross, b.feesTotal, b.net]).toEqual(["1040.00", "30.46", "1009.54"]);
+    // Aunque el esquema diga «Sobre el bruto»: lo que el comprador pagó de más no es venta del negocio.
+    expect(b.alloc).toMatchObject({ baseKind: "neto", baseAmount: "1009.54" });
+    // 504,77 · 302,862 · 201,908: truncados suman 1009,53 y el centavo va al de mayor resto (201,908 → 201,91).
+    expect(shares(b)).toEqual(["504.77", "302.86", "201.91"]);
+    expect(b.state.feesPaidBy).toBe("comprador");
+  });
+
+  test("E7b: el mismo cobro pagando nosotros: misma comisión y neto, el reparto sobre el bruto", () => {
+    const b = compute(rulesE7(), paid("1040.00"), "USD");
+    expect([b.gross, b.feesTotal, b.net]).toEqual(["1040.00", "30.46", "1009.54"]);
+    expect(b.alloc).toMatchObject({ baseKind: "bruto", baseAmount: "1040.00" });
+    expect(shares(b)).toEqual(["520.00", "312.00", "208.00"]);
+    expect(b.state.feesPaidBy).toBe("nosotros");
+  });
+});
+
+// ─── Quién paga la comisión ─────────────────────────────────────────────────────────────────────────────────
+
+describe("compute: quién paga la comisión", () => {
+  const e7 = compute(rulesE7(), paidByBuyer("1040.00"), "USD");
+
+  test("las comisiones son las mismas: con opciones, plataforma e internacional, se calculan igual", () => {
+    const byBuyer = compute(rulesE1(), paidByBuyer("100.00"), "USD");
+    expect(byBuyer.lines).toEqual(e1.lines);
+    expect([byBuyer.feesTotal, byBuyer.net]).toEqual([e1.feesTotal, e1.net]);
+    // Con un esquema que ya era sobre el neto, el reparto no cambia.
+    expect(byBuyer.alloc).toEqual(e1.alloc);
+  });
+
+  test("sin esquema no hay reparto, pague quien pague", () => {
+    const b = compute({ ...rulesE7(), scheme: null }, paidByBuyer("1040.00"), "USD");
+    expect(b.alloc).toEqual({ baseKind: null, baseAmount: "0.00", lines: [] });
+  });
+
+  test("un reembolso es sobre lo cobrado, como siempre, y el reparto sigue sobre lo que queda", () => {
+    // Se devuelven 40,00 de los 1040,00 que pagó el comprador: no se separa ningún «recargo».
+    const r = recompute(e7, { refunded: "40.00" });
+    expect(kindsAndAmounts(r)).toEqual([
+      ["pasarela", "29.30"], // 1000 × 2,9 % + 0,30
+      ["reembolso", "1.16"], // 30,46 − 29,30: lo que la pasarela se queda de lo reembolsado
+    ]);
+    expect([r.gross, r.feesTotal, r.net]).toEqual(["1000.00", "30.46", "969.54"]);
+    expect(r.alloc).toMatchObject({ baseKind: "neto", baseAmount: "969.54" });
+    expect(shares(r)).toEqual(["484.77", "290.86", "193.91"]);
+    expect(r.state.feesPaidBy).toBe("comprador");
+  });
+
+  test("el reembolso total deja el neto negativo y el reparto sobre él, como con E4", () => {
+    const r = recompute(e7, { refunded: "1040.00" });
+    expect([r.gross, r.feesTotal, r.net]).toEqual(["0.00", "30.46", "-30.46"]);
+    expect(r.alloc).toMatchObject({ baseKind: "neto", baseAmount: "-30.46" });
+  });
+
+  test("fallido: todo en cero, también la base del reparto (que sigue siendo el neto)", () => {
+    const b = recompute(e7, { failed: true });
+    expect(b.alloc).toMatchObject({ baseKind: "neto", baseAmount: "0.00" });
+    expect(shares(b)).toEqual(["0.00", "0.00", "0.00"]);
+  });
+
+  test("recalcular con otras reglas conserva quién pagó", () => {
+    const rules = rulesE7();
+    const r = recalc(e7, { ...rules, gateway: { ...rules.gateway, pct: "3.5" } });
+    expect(r.state.feesPaidBy).toBe("comprador");
+    expect(r.alloc.baseKind).toBe("neto");
+    expect([r.feesTotal, r.net]).toEqual(["36.70", "1003.30"]);
+  });
+
+  test("cambiar quién pagó vuelve a calcular el reparto: de «nosotros» a «comprador» y de vuelta", () => {
+    const ours = recompute(e7, { feesPaidBy: "nosotros" });
+    expect(ours.alloc).toMatchObject({ baseKind: "bruto", baseAmount: "1040.00" });
+    expect(recompute(ours, { feesPaidBy: "comprador" })).toEqual(e7);
   });
 });
 
@@ -608,7 +708,13 @@ describe("recompute y recalc", () => {
     const r = recompute(eur, { refunded: "40.00" });
     expect(r.rules).toEqual(eur.rules);
     expect(r.currency).toBe("EUR");
-    expect(r.state).toEqual({ grossOriginal: "100.00", refunded: "40.00", dispute: null, failed: false });
+    expect(r.state).toEqual({
+      grossOriginal: "100.00",
+      refunded: "40.00",
+      dispute: null,
+      failed: false,
+      feesPaidBy: "nosotros",
+    });
     expect(eur).toStrictEqual(copy);
   });
 
@@ -749,10 +855,12 @@ describe("parseBreakdown", () => {
     expect(parseBreakdown(stored(e1))).toEqual(e1);
     const complex = compute(
       rulesWithGateway({ feeOverride: "4.70" }),
-      { grossOriginal: "100.00", refunded: "40.00", dispute: "perdida", failed: false },
+      { grossOriginal: "100.00", refunded: "40.00", dispute: "perdida", failed: false, feesPaidBy: "nosotros" },
       "EUR",
     );
     expect(parseBreakdown(stored(complex))).toEqual(complex);
+    const byBuyer = compute(rulesE1(), paidByBuyer("100.00"), "USD");
+    expect(parseBreakdown(stored(byBuyer))).toEqual(byBuyer);
     const bare = compute({ ...rulesE1(), extras: [], platform: null, scheme: null }, paid("100.00"), "USD");
     expect(parseBreakdown(stored(bare))).toEqual(bare);
     const failed = recompute(e1, { failed: true });
@@ -776,6 +884,19 @@ describe("parseBreakdown", () => {
     const extras = (payoutDaysOverrideMax: unknown) => [{ ...rapido, payoutDaysOverrideMax }];
     for (const bad of [2.5, "3", null]) {
       expect(() => parseBreakdown({ ...stored(e1), rules: { ...e1.rules, extras: extras(bad) } })).toThrow();
+    }
+  });
+
+  test("un desglose guardado antes de saber quién pagó la comisión se lee como pagado por nosotros", () => {
+    const { feesPaidBy: _payer, ...oldState } = e1.state;
+    const old = { ...stored(e1), state: oldState };
+    expect(parseBreakdown(old)).toEqual(e1);
+    expect(parseBreakdown(old).state.feesPaidBy).toBe("nosotros");
+  });
+
+  test("quién pagó la comisión es «nosotros» o «comprador»; nada más", () => {
+    for (const bad of ["cliente", "Comprador", null, true]) {
+      expect(() => parseBreakdown({ ...stored(e1), state: { ...e1.state, feesPaidBy: bad } })).toThrow();
     }
   });
 
@@ -895,7 +1016,9 @@ describe("propiedades con 2 000 cobros generados", () => {
     const gross = chance(8) ? int(1, 500) : int(1, 5_000_000);
     const refunded = chance(2) ? 0 : chance(4) ? gross : int(0, gross);
     const dispute = ([null, null, null, "abierta", "ganada", "perdida"] as const)[int(0, 5)] as State["dispute"];
-    return { grossOriginal: moneyText(gross), refunded: moneyText(refunded), dispute, failed: chance(15) };
+    const failed = chance(15);
+    const feesPaidBy = chance(3) ? "comprador" : "nosotros";
+    return { grossOriginal: moneyText(gross), refunded: moneyText(refunded), dispute, failed, feesPaidBy };
   }
 
   const cases = Array.from({ length: 2000 }, () => {
@@ -917,6 +1040,7 @@ describe("propiedades con 2 000 cobros generados", () => {
     expect(count((c) => c.b.alloc.lines.some((l) => l.isRemainder))).toBeGreaterThan(200);
     expect(count((c) => c.rules.scheme === null)).toBeGreaterThan(200);
     expect(count((c) => new D(c.b.net).isNegative())).toBeGreaterThan(20);
+    expect(count((c) => c.state.feesPaidBy === "comprador" && c.rules.scheme?.base === "bruto")).toBeGreaterThan(80);
   });
 
   test("bruto vigente = cobrado − reembolsado; neto = bruto − comisiones; comisiones = suma de las líneas", () => {
@@ -929,14 +1053,15 @@ describe("propiedades con 2 000 cobros generados", () => {
     }
   });
 
-  test("el reparto suma exactamente su base, y la base es el neto o el bruto vigente según el esquema", () => {
-    for (const { rules, b } of cases) {
+  test("el reparto suma su base: el neto o el bruto según el esquema; el neto si pagó el comprador", () => {
+    for (const { rules, state, b } of cases) {
       expect(sum(b.alloc.lines.map((l) => l.amount)).eq(b.alloc.baseAmount), label(b)).toBe(true);
       if (rules.scheme === null) {
         expect(b.alloc).toEqual({ baseKind: null, baseAmount: "0.00", lines: [] });
       } else {
-        expect(b.alloc.baseKind).toBe(rules.scheme.base);
-        expect(b.alloc.baseAmount, label(b)).toBe(rules.scheme.base === "bruto" ? b.gross : b.net);
+        const base = state.feesPaidBy === "comprador" ? "neto" : rules.scheme.base;
+        expect(b.alloc.baseKind).toBe(base);
+        expect(b.alloc.baseAmount, label(b)).toBe(base === "bruto" ? b.gross : b.net);
         expect(sum(b.alloc.lines.map((l) => l.pct)).eq(100), label(b)).toBe(true);
       }
     }

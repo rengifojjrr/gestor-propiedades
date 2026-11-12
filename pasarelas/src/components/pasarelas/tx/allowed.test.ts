@@ -53,6 +53,7 @@ function apply(write: TxWrite, prev?: TxSnapshot): TxSnapshot {
     estimatedDepositFrom: f.estimatedDepositFrom,
     depositedOn: f.depositedOn,
     receiptsCount: 0,
+    feesPaidBy: "nosotros",
     schemeId: f.schemeId,
     reference: f.reference,
     note: f.note,
@@ -97,6 +98,7 @@ function columnsOf(tx: TxSnapshot): TxFields {
     depositedOn: tx.depositedOn,
     bankAccountId: tx.bankAccountId,
     deletedAt: tx.deletedAt,
+    feesPaidBy: tx.feesPaidBy,
   };
 }
 

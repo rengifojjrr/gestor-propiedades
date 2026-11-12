@@ -26,6 +26,7 @@ function e1(patch: Partial<TxListItem> = {}): TxListItem {
     estimatedDepositFrom: null,
     depositedOn: null,
     receiptsCount: 0,
+    feesPaidBy: "nosotros",
     schemeId: DEMO.schemeId,
     reference: "pi_demo_1",
     note: null,

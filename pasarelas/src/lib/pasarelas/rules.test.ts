@@ -216,7 +216,7 @@ describe("resolveRules", () => {
   test("con esas reglas, E1 da 9,70 de comisiones, 90,30 de neto y 45,15 / 27,09 / 18,06", () => {
     const b = compute(
       resolveRules(cfgDemo(), selE1()),
-      { grossOriginal: "100.00", refunded: "0.00", dispute: null, failed: false },
+      { grossOriginal: "100.00", refunded: "0.00", dispute: null, failed: false, feesPaidBy: "nosotros" },
       "USD",
     );
     expect([b.feesTotal, b.net]).toEqual(["9.70", "90.30"]);
@@ -242,7 +242,13 @@ describe("resolveRules", () => {
     const rules = resolveRules(cfg, selE1({ feeOverride: "3.2" }));
     expect(rules).toEqual({ ...rulesE1(), gateway: { ...rulesE1().gateway, feeOverride: "3.20" } });
     // compute exige montos canónicos: con reglas sin normalizar lanzaría RangeError.
-    const state = { grossOriginal: "100.00", refunded: "0.00", dispute: "abierta", failed: false } as const;
+    const state = {
+      grossOriginal: "100.00",
+      refunded: "0.00",
+      dispute: "abierta",
+      failed: false,
+      feesPaidBy: "nosotros",
+    } as const;
     expect(compute(rules, state, "USD").feesTotal).toBe("24.70");
   });
 

@@ -13,7 +13,7 @@ const E1: Selection = {
   schemeId: DEMO.schemeId,
   occurredOn: "2026-11-13",
 };
-const PAID = { grossOriginal: "100.00", refunded: "0.00", dispute: null, failed: false } as const;
+const PAID = { grossOriginal: "100.00", refunded: "0.00", dispute: null, failed: false, feesPaidBy: "nosotros" } as const;
 
 const html = (breakdown: ReturnType<typeof compute>) =>
   renderToStaticMarkup(createElement(AllocationList, { breakdown }));

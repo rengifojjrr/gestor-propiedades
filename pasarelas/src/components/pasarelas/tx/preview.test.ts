@@ -42,6 +42,7 @@ function savedE1(): TxSnapshot {
     estimatedDepositFrom: null,
     depositedOn: null,
     receiptsCount: 0,
+    feesPaidBy: "nosotros",
     schemeId: DEMO.schemeId,
     reference: null,
     note: null,

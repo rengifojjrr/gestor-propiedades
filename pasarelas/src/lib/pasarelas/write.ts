@@ -21,6 +21,7 @@ import type {
   DisputeState,
   EventKind,
   ExtraRule,
+  FeesPaidBy,
   ISODate,
   Lifecycle,
   Money,
@@ -110,6 +111,8 @@ export type NewTxInput = Selection & {
   bankAccountId?: string | null;
   /** Vacía = la automática. */
   estimatedDepositOn?: ISODate | null;
+  /** Quién pagó la comisión. Por defecto, `nosotros`: lo de siempre. */
+  feesPaidBy?: FeesPaidBy;
 };
 
 /** Lo que se quiere cambiar de un cobro: solo cuenta lo que viene (`undefined` = sin tocar). */
@@ -127,6 +130,7 @@ export type EditTxInput = Partial<
     | "reference"
     | "note"
     | "bankAccountId"
+    | "feesPaidBy"
   >
 >;
 
@@ -148,6 +152,7 @@ function derived(b: Breakdown) {
     schemeId: b.rules.scheme?.schemeId ?? null,
     schemeVersionId: b.rules.scheme?.versionId ?? null,
     disputeState: b.state.dispute,
+    feesPaidBy: b.state.feesPaidBy,
   } satisfies Partial<TxFields>;
 }
 
@@ -184,6 +189,7 @@ function columns(tx: TxSnapshot): TxFields {
     depositedOn: tx.depositedOn,
     bankAccountId: tx.bankAccountId,
     deletedAt: tx.deletedAt,
+    feesPaidBy: tx.feesPaidBy,
   };
 }
 
@@ -336,7 +342,8 @@ export function planCreate(cfg: PayConfig, input: NewTxInput, kind: "creado" | "
   if (depositedOn !== null) requireDepositAfter(occurredOn, depositedOn);
 
   const rules = resolveRules(cfg, input);
-  const state = { grossOriginal: input.grossOriginal, refunded: ZERO, dispute: null, failed: false };
+  const feesPaidBy = input.feesPaidBy ?? "nosotros";
+  const state = { grossOriginal: input.grossOriginal, refunded: ZERO, dispute: null, failed: false, feesPaidBy };
   const b = compute(rules, state, input.currency);
   const automatic = payout(cfg, input, rules.extras);
   const manual = input.estimatedDepositOn ?? null;
@@ -373,8 +380,8 @@ export function planCreate(cfg: PayConfig, input: NewTxInput, kind: "creado" | "
 
 /**
  * Un alta que llega con el id de un cobro ya guardado es el mismo envío repetido (una respuesta que se perdió) solo
- * si trae lo mismo que se guardó: monto, moneda, instante, empresa, pasarela, canal, opciones, esquema y
- * referencia, y también lo de «Más opciones» (estado inicial y fecha del depósito, cuenta destino, fecha estimada a
+ * si trae lo mismo que se guardó: monto, moneda, instante, empresa, pasarela, canal, opciones, quién pagó la
+ * comisión, esquema y referencia, y también lo de «Más opciones» (estado inicial y fecha del depósito, cuenta destino, fecha estimada a
  * mano y nota). Si algo difiere, la persona cambió datos creyendo que no se había guardado: `ya_registrado`, para
  * que no se dé por guardado lo que no se guardó. Sin cuenta destino elegida vale la que haya puesto la app.
  */
@@ -389,6 +396,7 @@ export function requireSameRegistration(tx: TxSnapshot, input: NewTxInput): void
     tx.gatewayId === input.gatewayId &&
     tx.channelId === input.channelId &&
     sameIds(selectionOf(tx).extraIds, input.extraIds) &&
+    tx.feesPaidBy === (input.feesPaidBy ?? "nosotros") &&
     tx.schemeId === input.schemeId &&
     tx.reference === input.reference &&
     tx.status === status &&
@@ -413,6 +421,8 @@ function sameIds(a: readonly string[], b: readonly string[]): boolean {
  * La edición de un cobro. Solo se vuelven a resolver las reglas de lo que cambió (pasarela, canal, opciones,
  * esquema o fecha); lo demás conserva lo congelado, igual que el reembolso, la disputa y el «fallido». La fecha
  * estimada se recalcula si cambió la fecha, la empresa, la pasarela o las opciones, salvo que esté puesta a mano.
+ * Cambiar quién pagó la comisión vuelve a calcular el desglose como cambiar una opción: las comisiones son las
+ * mismas, pero el reparto pasa al neto (si la pagó el comprador) o vuelve a la base del esquema.
  *
  * La cuenta destino es la que diga la edición (`bankAccountId`). Si no dice ninguna y cambia la empresa o la
  * pasarela, vuelve a ser la de la cuenta de esa pasarela en esa empresa (o ninguna): la de antes era de otra. Ese
@@ -438,6 +448,7 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
   };
   const currency = pick(input.currency, tx.currency);
   const grossOriginal = pick(input.grossOriginal, tx.grossOriginal);
+  const feesPaidBy = pick(input.feesPaidBy, prev.state.feesPaidBy);
   const changed = {
     company: sel.companyId !== before.companyId,
     channel: sel.channelId !== before.channelId,
@@ -456,6 +467,7 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
     { label: "canal", did: changed.channel },
     { label: "pasarela", did: changed.gateway },
     { label: "opciones", did: changed.extras },
+    { label: "quién paga la comisión", did: feesPaidBy !== prev.state.feesPaidBy },
     { label: "esquema", did: changed.scheme },
     { label: "referencia", did: pick(input.reference, tx.reference) !== tx.reference },
     { label: "nota", did: pick(input.note, tx.note) !== tx.note },
@@ -475,10 +487,10 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
     amount: grossOriginal !== tx.grossOriginal || currency !== tx.currency,
   };
   const anyRule = again.gateway || again.channel || again.extras || again.scheme || again.date;
-  const state = { ...prev.state, grossOriginal, refunded: lost ? grossOriginal : prev.state.refunded };
+  const state = { ...prev.state, grossOriginal, refunded: lost ? grossOriginal : prev.state.refunded, feesPaidBy };
   // Lo congelado solo se vuelve a calcular si cambió algo que entra en el cálculo.
   const b =
-    anyRule || grossOriginal !== tx.grossOriginal || currency !== tx.currency
+    anyRule || again.amount || feesPaidBy !== prev.state.feesPaidBy
       ? compute(reResolve(prev.rules, cfg, sel, again), state, currency)
       : prev;
   // Los días y la cuenta destino salen de la cuenta de la pasarela en la empresa: cambian con cualquiera de las dos.

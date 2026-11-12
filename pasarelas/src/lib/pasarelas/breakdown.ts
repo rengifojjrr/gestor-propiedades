@@ -8,11 +8,13 @@ import { z } from "zod";
 import { allocate } from "./allocate";
 import { D, ZERO, dec, isMoney, normPct, r2, toMoney } from "./decimal";
 import type {
+  AllocBase,
   AllocLine,
   Breakdown,
   BreakdownLine,
   Currency,
   DiffRow,
+  FeesPaidBy,
   LineKind,
   Money,
   Pct,
@@ -132,8 +134,12 @@ function feeLines(rules: Rules, state: State, g0: Decimal, g: Decimal): Breakdow
   return lines;
 }
 
-/** El reparto por mayor resto. Si las líneas suman menos de 100 %, lo que falta va al «Resto», al final. */
-function allocation(scheme: SchemeRule | null, gross: Decimal, net: Decimal): Breakdown["alloc"] {
+/**
+ * El reparto por mayor resto. Si las líneas suman menos de 100 %, lo que falta va al «Resto», al final. La base es
+ * la del esquema, salvo que la comisión la pagó el comprador: entonces el neto, porque lo que pagó de más para
+ * cubrirla no es venta del negocio (el desglose lo dice en `state.feesPaidBy`).
+ */
+function allocation(scheme: SchemeRule | null, gross: Decimal, net: Decimal, payer: FeesPaidBy): Breakdown["alloc"] {
   if (scheme === null) return { baseKind: null, baseAmount: ZERO, lines: [] };
 
   const shares = scheme.lines.map((line) => ({ ...line, pct: normPct(line.pct), isRemainder: false }));
@@ -143,7 +149,8 @@ function allocation(scheme: SchemeRule | null, gross: Decimal, net: Decimal): Br
   }
 
   // Un esquema que aun así no suma 100 % (se pasa, o le falta y no hay «Resto») es inválido: allocate lanza RangeError.
-  const baseAmount = toMoney(scheme.base === "bruto" ? gross : net);
+  const baseKind: AllocBase = payer === "comprador" ? "neto" : scheme.base;
+  const baseAmount = toMoney(baseKind === "bruto" ? gross : net);
   const amounts = allocate(
     baseAmount,
     shares.map((share) => share.pct),
@@ -155,7 +162,7 @@ function allocation(scheme: SchemeRule | null, gross: Decimal, net: Decimal): Br
     amount: amounts[i] as Money, // allocate devuelve un monto por porcentaje
     isRemainder: share.isRemainder,
   }));
-  return { baseKind: scheme.base, baseAmount, lines };
+  return { baseKind, baseAmount, lines };
 }
 
 /**
@@ -182,7 +189,7 @@ export function compute(rules: Rules, state: State, currency: Currency): Breakdo
     lines,
     feesTotal: toMoney(feesTotal),
     net: toMoney(net),
-    alloc: allocation(rules.scheme, g, net),
+    alloc: allocation(rules.scheme, g, net, state.feesPaidBy),
   };
 }
 
@@ -290,6 +297,8 @@ const zBreakdown = z.strictObject({
     refunded: zMoney,
     dispute: z.enum(["abierta", "ganada", "perdida"]).nullable(),
     failed: z.boolean(),
+    // Los desgloses guardados antes de poder decir quién pagó la comisión no la traen: la pagó el negocio.
+    feesPaidBy: z.enum(["nosotros", "comprador"]).default("nosotros"),
   }),
   gross: zMoney,
   lines: z.array(
@@ -321,7 +330,10 @@ const zBreakdown = z.strictObject({
   }),
 });
 
-/** Valida la forma de un desglose guardado (jsonb, versión 1). Lanza si no lo es: otra versión, montos como número… */
+/**
+ * Valida la forma de un desglose guardado (jsonb, versión 1). Lanza si no lo es: otra versión, montos como número…
+ * Uno sin `state.feesPaidBy` (guardado antes de existir) sale con `nosotros`.
+ */
 export function parseBreakdown(json: unknown): Breakdown {
   return zBreakdown.parse(json);
 }

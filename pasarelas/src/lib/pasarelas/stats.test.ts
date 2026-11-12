@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { addDays } from "./dates";
-import { lagStats, summarize, totalsOf, upcomingDeposits } from "./stats";
+import { businessFigures, lagStats, summarize, totalsOf, upcomingDeposits } from "./stats";
 import type { LeanTx, Money } from "./types";
 
 const HOY = "2026-11-09";
@@ -25,6 +25,7 @@ const tx = (id: string, patch: Partial<LeanTx> = {}): LeanTx => ({
   estimatedDepositFrom: null,
   depositedOn: null,
   receiptsCount: 0,
+  feesPaidBy: "nosotros",
   ...patch,
 });
 
@@ -125,7 +126,10 @@ describe("summarize: 6 filas en USD y 2 en EUR", () => {
     expect(resumen.USD?.totals).toEqual({
       count: 6,
       gross: "463.33",
+      // Ningún cobro lo pagó el comprador: lo facturado es el bruto, y las comisiones, todas del negocio.
+      sale: "463.33",
       fees: "23.88",
+      buyerFees: "0.00",
       net: "439.45",
       avgTicket: "77.22", // 463,33 ÷ 6 = 77,2216…
       feePct: "5.15", // 23,88 ÷ 463,33 = 5,1540… %
@@ -140,7 +144,9 @@ describe("summarize: 6 filas en USD y 2 en EUR", () => {
     expect(resumen.EUR?.totals).toEqual({
       count: 2,
       gross: "100.00",
+      sale: "100.00",
       fees: "3.50",
+      buyerFees: "0.00",
       net: "96.50",
       avgTicket: "50.00",
       feePct: "3.5",
@@ -153,24 +159,24 @@ describe("summarize: 6 filas en USD y 2 en EUR", () => {
 
   test("byMonth: por mes del cobro, en orden ascendente y solo los meses con filas", () => {
     expect(resumen.USD?.byMonth).toEqual([
-      { month: "2026-09", gross: "100.00", fees: "9.70", net: "90.30", count: 1 },
-      { month: "2026-10", gross: "250.00", fees: "8.35", net: "241.65", count: 2 },
-      { month: "2026-11", gross: "113.33", fees: "5.83", net: "107.50", count: 3 },
+      { month: "2026-09", gross: "100.00", sale: "100.00", fees: "9.70", buyerFees: "0.00", net: "90.30", count: 1 },
+      { month: "2026-10", gross: "250.00", sale: "250.00", fees: "8.35", buyerFees: "0.00", net: "241.65", count: 2 },
+      { month: "2026-11", gross: "113.33", sale: "113.33", fees: "5.83", buyerFees: "0.00", net: "107.50", count: 3 },
     ]);
     expect(resumen.EUR?.byMonth).toEqual([
-      { month: "2026-10", gross: "60.00", fees: "2.04", net: "57.96", count: 1 },
-      { month: "2026-11", gross: "40.00", fees: "1.46", net: "38.54", count: 1 },
+      { month: "2026-10", gross: "60.00", sale: "60.00", fees: "2.04", buyerFees: "0.00", net: "57.96", count: 1 },
+      { month: "2026-11", gross: "40.00", sale: "40.00", fees: "1.46", buyerFees: "0.00", net: "38.54", count: 1 },
     ]);
   });
 
-  test("byCompany: de mayor a menor bruto (como decimales: 380,00 va antes que 83,33)", () => {
+  test("byCompany: de mayor a menor lo facturado (como decimales: 380,00 va antes que 83,33)", () => {
     expect(resumen.USD?.byCompany).toEqual([
-      { companyId: "emp-tienda", gross: "380.00", fees: "18.90", net: "361.10", count: 3 },
-      { companyId: "emp-escuela", gross: "83.33", fees: "3.52", net: "79.81", count: 2 },
-      { companyId: "emp-estudio", gross: "0.00", fees: "1.46", net: "-1.46", count: 1 },
+      { companyId: "emp-tienda", gross: "380.00", sale: "380.00", fees: "18.90", buyerFees: "0.00", net: "361.10", count: 3 },
+      { companyId: "emp-escuela", gross: "83.33", sale: "83.33", fees: "3.52", buyerFees: "0.00", net: "79.81", count: 2 },
+      { companyId: "emp-estudio", gross: "0.00", sale: "0.00", fees: "1.46", buyerFees: "0.00", net: "-1.46", count: 1 },
     ]);
     expect(resumen.EUR?.byCompany).toEqual([
-      { companyId: "emp-tienda", gross: "100.00", fees: "3.50", net: "96.50", count: 2 },
+      { companyId: "emp-tienda", gross: "100.00", sale: "100.00", fees: "3.50", buyerFees: "0.00", net: "96.50", count: 2 },
     ]);
   });
 
@@ -179,7 +185,9 @@ describe("summarize: 6 filas en USD y 2 en EUR", () => {
       {
         gatewayId: "pas-stripe",
         gross: "333.33",
+        sale: "333.33",
         fees: "17.07",
+        buyerFees: "0.00",
         net: "316.26",
         count: 3,
         sharePct: "71.94", // 333,33 ÷ 463,33
@@ -188,20 +196,34 @@ describe("summarize: 6 filas en USD y 2 en EUR", () => {
       {
         gatewayId: "pas-paypal",
         gross: "130.00",
+        sale: "130.00",
         fees: "5.35",
+        buyerFees: "0.00",
         net: "124.65",
         count: 2,
         sharePct: "28.06", // 130,00 ÷ 463,33
         effectiveCostPct: "4.12", // 5,35 ÷ 130,00 = 4,1153… %
       },
       // Bruto 0,00: su parte es 0 % y no tiene costo efectivo (no se divide entre cero).
-      { gatewayId: "pas-zelle", gross: "0.00", fees: "1.46", net: "-1.46", count: 1, sharePct: "0", effectiveCostPct: null },
+      {
+        gatewayId: "pas-zelle",
+        gross: "0.00",
+        sale: "0.00",
+        fees: "1.46",
+        buyerFees: "0.00",
+        net: "-1.46",
+        count: 1,
+        sharePct: "0",
+        effectiveCostPct: null,
+      },
     ]);
     expect(resumen.EUR?.byGateway).toEqual([
       {
         gatewayId: "pas-stripe",
         gross: "100.00",
+        sale: "100.00",
         fees: "3.50",
+        buyerFees: "0.00",
         net: "96.50",
         count: 2,
         sharePct: "100",
@@ -243,10 +265,28 @@ describe("summarize: bordes", () => {
   test("con bruto 0,00 no hay % de comisión, ni parte del bruto, ni costo efectivo", () => {
     const reembolsado = { grossOriginal: "40.00", refunded: "40.00", gross: "0.00", fees: "1.46", net: "-1.46" };
     const usd = summarize([tx("r1", reembolsado), tx("r2", reembolsado)], HOY).USD;
-    expect(usd?.totals).toMatchObject({ count: 2, gross: "0.00", fees: "2.92", net: "-2.92", avgTicket: "0.00" });
+    expect(usd?.totals).toMatchObject({
+      count: 2,
+      gross: "0.00",
+      sale: "0.00",
+      fees: "2.92",
+      buyerFees: "0.00",
+      net: "-2.92",
+      avgTicket: "0.00",
+    });
     expect(usd?.totals.feePct).toBeNull();
     expect(usd?.byGateway).toEqual([
-      { gatewayId: "pas-stripe", gross: "0.00", fees: "2.92", net: "-2.92", count: 2, sharePct: null, effectiveCostPct: null },
+      {
+        gatewayId: "pas-stripe",
+        gross: "0.00",
+        sale: "0.00",
+        fees: "2.92",
+        buyerFees: "0.00",
+        net: "-2.92",
+        count: 2,
+        sharePct: null,
+        effectiveCostPct: null,
+      },
     ]);
   });
 
@@ -296,7 +336,7 @@ describe("summarize: bordes", () => {
     expect(resumen.EUR?.byAccount[0]).toMatchObject({ bankAccountId: "cta-a", avgDays: "5.0", medianDays: "5.0" });
   });
 
-  test("a igual bruto, las empresas van por su id", () => {
+  test("a igual lo facturado, las empresas van por su id", () => {
     const filas = [
       tx("1", { companyId: "emp-b" }),
       tx("2", { companyId: "emp-c", ...monto("250.00", "0.00", "250.00") }),
@@ -335,6 +375,106 @@ describe("summarize: bordes", () => {
       "cta-z",
       null,
     ]);
+  });
+});
+
+describe("quién paga la comisión: la venta y las comisiones del negocio", () => {
+  /** E1 pagando nosotros y E7 pagando el comprador (1040 por algo de 1000; Stripe se lleva 30,46). */
+  const nuestro = tx("n1", { ...monto("100.00", "9.70", "90.30") });
+  const delComprador = tx("c1", { ...monto("1040.00", "30.46", "1009.54"), feesPaidBy: "comprador" });
+
+  test("por cobro: la venta es el bruto o el neto, y la comisión, del negocio o del comprador", () => {
+    expect(businessFigures(nuestro)).toEqual({ sale: "100.00", fees: "9.70", buyerFees: "0.00" });
+    expect(businessFigures(delComprador)).toEqual({ sale: "1009.54", fees: "0.00", buyerFees: "30.46" });
+  });
+
+  test("con un cobro de cada uno: el bruto es todo lo cobrado; lo facturado y las comisiones, del negocio", () => {
+    const usd = summarize([nuestro, delComprador], HOY).USD;
+    expect(usd?.totals).toEqual({
+      count: 2,
+      gross: "1140.00", // todo lo cobrado: cuadra con la pasarela
+      sale: "1109.54", // 100,00 + 1009,54
+      fees: "9.70", // solo las que pagamos nosotros
+      buyerFees: "30.46", // aparte: las pagaron los compradores
+      net: "1099.84",
+      avgTicket: "570.00",
+      feePct: "9.7", // 9,70 sobre los 100,00 en que pagamos la comisión, no sobre los 1140,00
+      pendingNet: "1099.84",
+      pendingCount: 2,
+      depositedNet: "0.00",
+      depositedCount: 0,
+    });
+    expect(usd?.byMonth).toEqual([
+      { month: "2026-11", gross: "1140.00", sale: "1109.54", fees: "9.70", buyerFees: "30.46", net: "1099.84", count: 2 },
+    ]);
+    expect(usd?.byCompany).toEqual([
+      { companyId: "emp-tienda", gross: "1140.00", sale: "1109.54", fees: "9.70", buyerFees: "30.46", net: "1099.84", count: 2 },
+    ]);
+  });
+
+  test("las empresas van por lo facturado, no por lo cobrado", () => {
+    const otra = tx("a", { companyId: "emp-a", ...monto("1015.00", "0.00", "1015.00") });
+    const usd = summarize([otra, { ...delComprador, companyId: "emp-c" }], HOY).USD;
+    // emp-c cobró 1040,00 pero facturó 1009,54: va detrás de emp-a, que facturó 1015,00.
+    expect(usd?.byCompany.map((company) => [company.companyId, company.sale])).toEqual([
+      ["emp-a", "1015.00"],
+      ["emp-c", "1009.54"],
+    ]);
+  });
+
+  test("por pasarela: el costo efectivo es de las comisiones del negocio sobre lo que cobró pagándolas", () => {
+    const paypal = tx("p1", { gatewayId: "pas-paypal", ...monto("60.00", "2.04", "57.96"), feesPaidBy: "comprador" });
+    const usd = summarize([nuestro, delComprador, paypal], HOY).USD;
+    expect(usd?.byGateway).toEqual([
+      {
+        gatewayId: "pas-stripe",
+        gross: "1140.00",
+        sale: "1109.54",
+        fees: "9.70",
+        buyerFees: "30.46",
+        net: "1099.84",
+        count: 2,
+        sharePct: "95", // 1140,00 ÷ 1200,00: la parte de lo cobrado
+        effectiveCostPct: "9.7", // 9,70 ÷ 100,00
+      },
+      // Todas sus comisiones las pagaron los compradores: al negocio no le costó nada, y no hay % que medir.
+      {
+        gatewayId: "pas-paypal",
+        gross: "60.00",
+        sale: "57.96",
+        fees: "0.00",
+        buyerFees: "2.04",
+        net: "57.96",
+        count: 1,
+        sharePct: "5",
+        effectiveCostPct: null,
+      },
+    ]);
+  });
+
+  test("todo pagado por los compradores: comisiones del negocio en cero y sin % de comisión", () => {
+    const usd = summarize([delComprador], HOY).USD;
+    expect(usd?.totals).toMatchObject({ fees: "0.00", buyerFees: "30.46", sale: "1009.54", feePct: null });
+  });
+
+  test("un libro sin cobros del comprador da los mismos totales de siempre", () => {
+    // Las filas a mano son todas «nosotros»: lo facturado es el bruto, las comisiones son todas y no hay de
+    // compradores.
+    const resumen = summarize(FILAS, HOY);
+    const raw = totalsOf(FILAS);
+    for (const [currency, { totals, byMonth, byCompany, byGateway }] of Object.entries(resumen)) {
+      expect(totals).toMatchObject({ ...raw[currency], sale: raw[currency]?.gross, buyerFees: "0.00" });
+      for (const group of [...byMonth, ...byCompany, ...byGateway]) {
+        expect(group.sale).toBe(group.gross);
+        expect(group.buyerFees).toBe("0.00");
+      }
+    }
+  });
+
+  test("totalsOf (los totales de la lista) suma las comisiones de todos sus cobros, las haya pagado quien sea", () => {
+    expect(totalsOf([nuestro, delComprador])).toEqual({
+      USD: { count: 2, gross: "1140.00", fees: "40.16", net: "1099.84" },
+    });
   });
 });
 

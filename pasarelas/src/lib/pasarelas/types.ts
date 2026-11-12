@@ -19,6 +19,12 @@ export type Lifecycle = 'registrado' | 'en_transito' | 'depositado' | 'fallido';
 export type DisputeState = 'abierta' | 'ganada' | 'perdida';
 export type DisplayStatus = 'fallido' | 'en_disputa' | 'reembolsado' | 'depositado' | 'en_transito' | 'registrado';
 export type BeneficiaryKind = 'persona' | 'empresa' | 'cartera';
+/**
+ * Quién pagó la comisión de la pasarela. `nosotros` (lo de siempre): el monto es lo cobrado y la comisión, un costo
+ * del negocio. `comprador`: al comprador se le cobró de más para cubrirla; el monto es lo que pagó él, y lo que pagó
+ * de más no es venta del negocio.
+ */
+export type FeesPaidBy = 'nosotros' | 'comprador';
 
 // ─── Reglas congeladas ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -72,6 +78,11 @@ export type State = {
   refunded: Money;
   dispute: DisputeState | null;
   failed: boolean;
+  /**
+   * Quién pagó la comisión. Con `comprador` el reparto va sobre el neto aunque el esquema diga «Sobre el bruto»: lo
+   * que el comprador pagó de más no es del negocio. Un desglose guardado antes de existir la clave se lee `nosotros`.
+   */
+  feesPaidBy: FeesPaidBy;
 };
 
 // ─── Desglose congelado (lo que se guarda en pay_transactions.breakdown) ────────────────────────────────────
@@ -108,6 +119,7 @@ export type Breakdown = {
   lines: BreakdownLine[];
   feesTotal: Money;
   net: Money;
+  /** La base del reparto: la del esquema, salvo que la comisión la pagó el comprador (`state.feesPaidBy`): el neto. */
   alloc: { baseKind: AllocBase | null; baseAmount: Money; lines: AllocLine[] };
 };
 
@@ -237,6 +249,7 @@ export type LeanTx = {
   estimatedDepositFrom: ISODate | null;
   depositedOn: ISODate | null;
   receiptsCount: number;
+  feesPaidBy: FeesPaidBy;
 };
 
 /** El cobro completo guardado (lo que hace falta para planear un cambio). */
@@ -291,6 +304,7 @@ export type TxFields = {
   depositedOn: ISODate | null;
   bankAccountId: string | null;
   deletedAt: string | null;
+  feesPaidBy: FeesPaidBy;
 };
 
 export type AllocWrite = { beneficiaryId: string; amount: Money; base: AllocBase; pct: Pct; isRemainder: boolean };

@@ -125,6 +125,7 @@ const FIELD_NAMES: (keyof TxFields)[] = [
   "depositedOn",
   "bankAccountId",
   "deletedAt",
+  "feesPaidBy",
 ];
 
 /** Las restricciones y disparadores de `pay_transactions`, más la coherencia entre columnas y desglose. */
@@ -148,6 +149,7 @@ function expectRowIsSound({ fields: f, allocations }: Row): void {
     schemeVersionId: f.schemeVersionId,
     disputeState: f.disputeState,
     failed: f.status === "fallido",
+    feesPaidBy: f.feesPaidBy,
   }).toEqual({
     currency: b.currency,
     grossOriginal: b.state.grossOriginal,
@@ -162,6 +164,7 @@ function expectRowIsSound({ fields: f, allocations }: Row): void {
     schemeVersionId: b.rules.scheme?.versionId ?? null,
     disputeState: b.state.dispute,
     failed: b.state.failed,
+    feesPaidBy: b.state.feesPaidBy,
   });
   expect(allocations).toEqual(
     b.alloc.lines.map((line) => ({
@@ -185,6 +188,8 @@ function expectRowIsSound({ fields: f, allocations }: Row): void {
   if (f.disputeState === "perdida") expect(f.refundedAmount).toBe(f.grossOriginal);
   if (f.schemeVersionId === null) expect(f.allocBaseAmount).toBe("0.00");
   else expect(f.allocBase).not.toBeNull();
+  // pay_transactions_fees_paid_by_alloc_check: si pagó el comprador, el reparto no va sobre el bruto.
+  if (f.feesPaidBy === "comprador") expect(f.allocBase).not.toBe("bruto");
   // El disparador del reparto: la suma de lo asignado es exactamente la base.
   expect(add(...allocations.map((line) => line.amount))).toBe(f.allocBaseAmount);
   // pay_transactions_estimated_window_check, y además canónica: un solo día se guarda sin «desde».
@@ -267,6 +272,7 @@ function save(write: TxWrite, prev?: TxSnapshot): TxSnapshot {
     estimatedDepositFrom: f.estimatedDepositFrom,
     depositedOn: f.depositedOn,
     receiptsCount: 0,
+    feesPaidBy: f.feesPaidBy,
     schemeId: f.schemeId,
     reference: f.reference,
     note: f.note,
@@ -391,9 +397,118 @@ describe("requireSameRegistration", () => {
     ["opciones", { extraIds: [] }],
     ["esquema", { schemeId: null }],
     ["referencia", { reference: "ch_demo_otra" }],
+    ["quién pagó la comisión", { feesPaidBy: "comprador" }],
   ])("con otro dato (%s) no es el mismo envío: lo dice", (_label, patch) => {
     const tx = savedE1();
     expectStateError(() => requireSameRegistration(tx, inputE1(patch)), "ya_registrado");
+  });
+});
+
+// ─── Quién paga la comisión ─────────────────────────────────────────────────────────────────────────────────
+
+/** La configuración de ejemplo con el esquema 50/30/20 «Sobre el bruto». */
+function withSchemeOnGross(cfg: PayConfig = cfgDemo()): PayConfig {
+  only(only(cfg.schemes).versions).base = "bruto";
+  return cfg;
+}
+
+/** E7: 1040 que pagó el comprador por Stripe, sin opciones ni canal, con el esquema «Sobre el bruto». */
+const inputE7 = (patch: Partial<NewTxInput> = {}): NewTxInput =>
+  inputE1({ channelId: null, extraIds: [], grossOriginal: "1040.00", feesPaidBy: "comprador", ...patch });
+
+describe("quién paga la comisión", () => {
+  test("E7 al registrar: la comisión real, y el reparto y su base en el neto aunque el esquema diga bruto", () => {
+    const write = planCreate(withSchemeOnGross(), inputE7());
+    expect(write.fields).toMatchObject({
+      feesPaidBy: "comprador",
+      grossAmount: "1040.00",
+      feesTotal: "30.46",
+      netAmount: "1009.54",
+      allocBase: "neto",
+      allocBaseAmount: "1009.54",
+    });
+    expect(write.fields.breakdown?.state.feesPaidBy).toBe("comprador");
+    expect(shares(write)).toEqual(["504.77", "302.86", "201.91"]);
+    expect(write.allocations?.every((line) => line.base === "neto")).toBe(true);
+    save(write);
+  });
+
+  test("E7b: pagando nosotros, el mismo cobro se reparte sobre el bruto", () => {
+    const write = planCreate(withSchemeOnGross(), inputE7({ feesPaidBy: "nosotros" }));
+    expect(write.fields).toMatchObject({ feesPaidBy: "nosotros", allocBase: "bruto", allocBaseAmount: "1040.00" });
+    expect(shares(write)).toEqual(["520.00", "312.00", "208.00"]);
+    save(write);
+  });
+
+  test("el mismo envío otra vez pasa solo si dice lo mismo de quién pagó", () => {
+    const cfg = withSchemeOnGross();
+    const tx = save(planCreate(cfg, inputE7()));
+    expect(() => requireSameRegistration(tx, inputE7())).not.toThrow();
+    expectStateError(() => requireSameRegistration(tx, inputE7({ feesPaidBy: undefined })), "ya_registrado");
+  });
+
+  test("editar de «nosotros» a «comprador» recalcula el reparto, como cambiar una opción", () => {
+    const cfg = withSchemeOnGross();
+    const tx = save(planCreate(cfg, inputE7({ feesPaidBy: "nosotros" })));
+    const write = planEdit(cfg, tx, { feesPaidBy: "comprador" });
+    expect(fieldNames(write)).toEqual(["allocBase", "allocBaseAmount", "breakdown", "feesPaidBy"]);
+    expect(write.fields).toMatchObject({ feesPaidBy: "comprador", allocBase: "neto", allocBaseAmount: "1009.54" });
+    expect(shares(write)).toEqual(["504.77", "302.86", "201.91"]);
+    // Las comisiones no cambian: son las mismas, solo cambia quién las pagó.
+    expect(write.fields.breakdown?.lines).toEqual(tx.breakdown.lines);
+    expect(write.event.summary).toBe("Editado: quién paga la comisión");
+    const back = save(write, tx);
+
+    const undo = planEdit(cfg, back, { feesPaidBy: "nosotros" });
+    expect(undo.fields).toMatchObject({ feesPaidBy: "nosotros", allocBase: "bruto", allocBaseAmount: "1040.00" });
+    expect(shares(undo)).toEqual(["520.00", "312.00", "208.00"]);
+    save(undo, back);
+  });
+
+  test("con un esquema sobre el neto, cambiar quién pagó no mueve el reparto, pero queda guardado", () => {
+    const tx = savedE1();
+    const write = planEdit(cfgDemo(), tx, { feesPaidBy: "comprador" });
+    expect(fieldNames(write)).toEqual(["breakdown", "feesPaidBy"]);
+    expect(shares(write)).toEqual(["45.15", "27.09", "18.06"]);
+    save(write, tx);
+  });
+
+  test("decir lo mismo de quién pagó no es un cambio", () => {
+    const tx = save(planCreate(withSchemeOnGross(), inputE7()));
+    expectStateError(() => planEdit(cfgDemo(), tx, { feesPaidBy: "comprador" }), "sin_cambios");
+  });
+
+  test("editar otra cosa conserva quién pagó, y el reparto sigue sobre el neto", () => {
+    const cfg = withSchemeOnGross();
+    const tx = save(planCreate(cfg, inputE7()));
+    const write = planEdit(cfg, tx, { grossOriginal: "2080.00" });
+    expect(write.fields.feesPaidBy).toBeUndefined();
+    expect(write.fields).toMatchObject({ feesTotal: "60.62", netAmount: "2019.38", allocBaseAmount: "2019.38" });
+    expect(write.fields.breakdown?.state.feesPaidBy).toBe("comprador");
+    save(write, tx);
+  });
+
+  test("un reembolso parcial es sobre lo cobrado, como siempre; el reparto sigue sobre lo que queda", () => {
+    const cfg = withSchemeOnGross();
+    const tx = save(planCreate(cfg, inputE7()));
+    const write = planRefund(tx, { amount: "40.00", on: "2026-11-16" });
+    expect(write.fields.feesPaidBy).toBeUndefined();
+    // 29,30 de la pasarela sobre lo que queda y 1,16 que se queda de lo reembolsado: las comisiones siguen en 30,46.
+    expect(write.fields.feesTotal).toBeUndefined();
+    expect(write.fields).toMatchObject({ grossAmount: "1000.00", netAmount: "969.54", allocBaseAmount: "969.54" });
+    expect(write.fields.breakdown?.state).toMatchObject({ refunded: "40.00", feesPaidBy: "comprador" });
+    expect(shares(write)).toEqual(["484.77", "290.86", "193.91"]);
+    save(write, tx);
+  });
+
+  test("recalcular con la tarifa de hoy conserva quién pagó", () => {
+    const cfg = withSchemeOnGross();
+    const tx = save(planCreate(cfg, inputE7()));
+    only(stripe(cfg).feeVersions).pct = "3.5";
+    const { write } = planRecalc(cfg, tx, "hoy", VIERNES);
+    expect(write.fields).toMatchObject({ feesTotal: "36.70", netAmount: "1003.30", allocBaseAmount: "1003.30" });
+    expect(write.fields.breakdown?.state.feesPaidBy).toBe("comprador");
+    save(write, tx);
   });
 });
 
@@ -436,6 +551,8 @@ describe("planCreate", () => {
       depositedOn: null,
       bankAccountId: DEMO.bankAccountId,
       deletedAt: null,
+      // Sin decir quién pagó la comisión, la pagó el negocio: lo de siempre.
+      feesPaidBy: "nosotros",
     });
     expect(write.fields.breakdown?.lines.map((line) => [line.kind, line.amount])).toEqual([
       ["pasarela", "3.20"],
@@ -447,6 +564,7 @@ describe("planCreate", () => {
       refunded: "0.00",
       dispute: null,
       failed: false,
+      feesPaidBy: "nosotros",
     });
     expect(write.allocations).toEqual([
       { beneficiaryId: DEMO.beneficiaryIds.a, amount: "45.15", base: "neto", pct: "50", isRemainder: false },
@@ -1043,6 +1161,7 @@ describe("planEdit", () => {
       refunded: "40.00",
       dispute: "abierta",
       failed: false,
+      feesPaidBy: "nosotros",
     });
     expect(write.fields.grossAmount).toBe("160.00");
     expect(lineKinds(write)).toEqual(["pasarela", "reembolso", "opcion", "plataforma", "disputa"]);
@@ -1058,6 +1177,7 @@ describe("planEdit", () => {
       refunded: "200.00",
       dispute: "perdida",
       failed: false,
+      feesPaidBy: "nosotros",
     });
     expect(fieldNames(write)).toEqual([
       "allocBaseAmount",

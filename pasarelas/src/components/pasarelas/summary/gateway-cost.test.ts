@@ -7,7 +7,9 @@ type Gateway = CurrencySummary["byGateway"][number];
 const gateway = (gatewayId: string, effectiveCostPct: string | null): Gateway => ({
   gatewayId,
   gross: effectiveCostPct === null ? "0.00" : "100.00",
+  sale: effectiveCostPct === null ? "0.00" : "100.00",
   fees: "1.00",
+  buyerFees: "0.00",
   net: "99.00",
   count: 1,
   sharePct: null,

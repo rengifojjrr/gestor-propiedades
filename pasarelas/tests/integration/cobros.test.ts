@@ -1662,6 +1662,7 @@ describe("getTx, getSnapshots y lastTx", () => {
       refunded: "0.00",
       dispute: null,
       failed: false,
+      feesPaidBy: "nosotros",
     });
     expect(await getSnapshots(user.client, [])).toEqual([]);
   });

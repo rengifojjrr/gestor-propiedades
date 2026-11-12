@@ -71,7 +71,8 @@ function previewOf(cfg: PayConfig, input: PreviewInput): Preview {
   };
   try {
     const rules = resolveRules(cfg, selection);
-    const breakdown = compute(rules, { grossOriginal: gross, refunded: ZERO, dispute: null, failed: false }, input.currency);
+    const state = { grossOriginal: gross, refunded: ZERO, dispute: null, failed: false, feesPaidBy: "nosotros" } as const;
+    const breakdown = compute(rules, state, input.currency);
     if (isISODate(input.manualEstimate)) {
       const day = input.manualEstimate;
       return { kind: "listo", breakdown, estimated: { from: day, to: day }, manual: true };

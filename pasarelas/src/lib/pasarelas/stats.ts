@@ -1,6 +1,10 @@
 /**
  * El resumen de un grupo de cobros: totales, rankings, lo que tardan los depósitos y lo que está por caer.
  * Todo va por moneda (nunca se suman monedas distintas) y los cobros fallidos no cuentan en nada.
+ *
+ * Quién pagó la comisión cambia lo que es del negocio. Si la pagó el comprador (se le cobró de más para cubrirla),
+ * lo que pagó de más no es venta: lo facturado de ese cobro es su neto, y su comisión no es un costo del negocio
+ * sino «pagada por los compradores» (`businessFigures`). El bruto sigue siendo todo lo cobrado.
  */
 import type { Decimal } from "decimal.js";
 import { addDays, daysBetween, monthKey } from "./dates";
@@ -9,14 +13,30 @@ import { add, cmp, pctOf } from "./money";
 import { isOverdue, isPending } from "./status";
 import type { Currency, ISODate, LeanTx, Money, Pct } from "./types";
 
-export type Totals = {
+/**
+ * Las cifras de un grupo de cobros de UNA moneda. Siempre `gross = sale + buyerFees` y `sale = net + fees`; sin
+ * cobros cuya comisión pagó el comprador, `sale` es el bruto, `fees` son todas las comisiones y `buyerFees` es 0.
+ */
+export type Figures = {
   count: number;
+  /** Todo lo cobrado (el bruto vigente): lo que pasó por la pasarela. */
   gross: Money;
+  /** Lo facturado, la venta del negocio: el bruto si pagamos nosotros la comisión; el neto si la pagó el comprador. */
+  sale: Money;
+  /** Las comisiones del negocio: las de los cobros cuya comisión pagamos nosotros. */
   fees: Money;
+  /** Las comisiones que pagaron los compradores. */
+  buyerFees: Money;
   net: Money;
+};
+
+export type Totals = Figures & {
   /** Bruto ÷ cobros. */
   avgTicket: Money;
-  /** Comisiones sobre el bruto; `null` si el bruto es 0. */
+  /**
+   * Las comisiones del negocio sobre el bruto de los cobros en que las pagó (sin los del comprador, que no le
+   * costaron nada); `null` si ese bruto es 0.
+   */
   feePct: Pct | null;
   /** Por caer (`isPending`): lo que se ve como registrado o en tránsito. */
   pendingNet: Money;
@@ -28,19 +48,14 @@ export type Totals = {
 export type CurrencySummary = {
   totals: Totals;
   /** Por mes del cobro (`AAAA-MM`), en orden ascendente; solo los meses con cobros. */
-  byMonth: { month: string; gross: Money; fees: Money; net: Money; count: number }[];
-  /** De mayor a menor bruto. */
-  byCompany: { companyId: string; gross: Money; fees: Money; net: Money; count: number }[];
-  /** De mayor a menor bruto. `sharePct`: su parte del bruto de la moneda. `effectiveCostPct`: comisiones ÷ bruto. */
-  byGateway: {
-    gatewayId: string;
-    gross: Money;
-    fees: Money;
-    net: Money;
-    count: number;
-    sharePct: Pct | null;
-    effectiveCostPct: Pct | null;
-  }[];
+  byMonth: (Figures & { month: string })[];
+  /** De mayor a menor lo facturado (`sale`). */
+  byCompany: (Figures & { companyId: string })[];
+  /**
+   * De mayor a menor bruto. `sharePct`: su parte del bruto de la moneda. `effectiveCostPct`: las comisiones del
+   * negocio sobre el bruto de sus cobros en que las pagó (`null` si no hay ninguno con bruto).
+   */
+  byGateway: (Figures & { gatewayId: string; sharePct: Pct | null; effectiveCostPct: Pct | null })[];
   /**
    * De mayor a menor neto; `null` es «sin cuenta». `sharePct`: su parte del neto de la moneda, de 0 a 100 %; `null`
    * si el neto total es 0 o si alguna cuenta tiene pérdidas (neto negativo). Los días son de sus cobros ya
@@ -70,7 +85,8 @@ export type DepositGroup = {
   overdue: boolean;
 };
 
-type Sums = Pick<Totals, "count" | "gross" | "fees" | "net">;
+/** Las cifras y, aparte, el bruto de los cobros cuya comisión pagó el negocio: sobre él se mide su %. */
+type Sums = Figures & { feeBase: Money };
 type Lag = { count: number; avgDays: string; medianDays: string };
 
 const NO_LAG = { avgDays: null, medianDays: null };
@@ -95,18 +111,41 @@ function countedByCurrency(rows: readonly LeanTx[]): Map<Currency, LeanTx[]> {
   return groupBy(rows.filter(isCounted), (row) => row.currency);
 }
 
+/**
+ * Lo que un cobro es para el negocio según quién pagó la comisión. Si la pagamos nosotros: la venta es el bruto y
+ * la comisión, del negocio. Si la pagó el comprador: la venta es el neto (lo que pagó de más no es del negocio) y la
+ * comisión la pagaron los compradores.
+ */
+export function businessFigures(
+  row: Pick<LeanTx, "gross" | "fees" | "net" | "feesPaidBy">,
+): Pick<Figures, "sale" | "fees" | "buyerFees"> {
+  return row.feesPaidBy === "comprador"
+    ? { sale: row.net, fees: ZERO, buyerFees: row.fees }
+    : { sale: row.gross, fees: row.fees, buyerFees: ZERO };
+}
+
 /** Suma de filas de UNA moneda (quien llama ya las separó). */
 function sumRows(rows: readonly LeanTx[]): Sums {
   let gross = ZERO;
+  let sale = ZERO;
   let fees = ZERO;
+  let buyerFees = ZERO;
   let net = ZERO;
+  let feeBase = ZERO;
   for (const row of rows) {
+    const own = businessFigures(row);
     gross = add(gross, row.gross);
-    fees = add(fees, row.fees);
+    sale = add(sale, own.sale);
+    fees = add(fees, own.fees);
+    buyerFees = add(buyerFees, own.buyerFees);
     net = add(net, row.net);
+    if (row.feesPaidBy !== "comprador") feeBase = add(feeBase, row.gross);
   }
-  return { count: rows.length, gross, fees, net };
+  return { count: rows.length, gross, sale, fees, buyerFees, net, feeBase };
 }
+
+/** Las cifras de una suma, sin el bruto con que se mide el % de las comisiones. */
+const figuresOf = ({ feeBase: _base, ...figures }: Sums): Figures => figures;
 
 /** Orden por código de carácter, no por idioma: servidor y navegador dan exactamente lo mismo. */
 const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -153,28 +192,28 @@ function summarizeCurrency(rows: readonly LeanTx[]): CurrencySummary {
   const deposited = sumRows(rows.filter(isDeposited));
   return {
     totals: {
-      ...all,
+      ...figuresOf(all),
       avgTicket: toMoney(dec(all.gross).div(all.count)),
-      feePct: pctOf(all.fees, all.gross),
+      feePct: pctOf(all.fees, all.feeBase),
       pendingNet: pending.net,
       pendingCount: pending.count,
       depositedNet: deposited.net,
       depositedCount: deposited.count,
     },
     byMonth: [...groupBy(rows, (row) => monthKey(row.occurredOn))]
-      .map(([month, group]) => ({ month, ...sumRows(group) }))
+      .map(([month, group]) => ({ month, ...figuresOf(sumRows(group)) }))
       .sort((a, b) => byText(a.month, b.month)),
     byCompany: [...groupBy(rows, (row) => row.companyId)]
-      .map(([companyId, group]) => ({ companyId, ...sumRows(group) }))
-      .sort(largestFirst((company) => company.gross, (company) => company.companyId)),
+      .map(([companyId, group]) => ({ companyId, ...figuresOf(sumRows(group)) }))
+      .sort(largestFirst((company) => company.sale, (company) => company.companyId)),
     byGateway: [...groupBy(rows, (row) => row.gatewayId)]
       .map(([gatewayId, group]) => {
         const sums = sumRows(group);
         return {
           gatewayId,
-          ...sums,
+          ...figuresOf(sums),
           sharePct: pctOf(sums.gross, all.gross),
-          effectiveCostPct: pctOf(sums.fees, sums.gross),
+          effectiveCostPct: pctOf(sums.fees, sums.feeBase),
         };
       })
       .sort(largestFirst((gateway) => gateway.gross, (gateway) => gateway.gatewayId)),
@@ -213,12 +252,18 @@ export function summarize(rows: readonly LeanTx[], _today: ISODate): Record<Curr
   return Object.fromEntries(summary);
 }
 
-/** Cobros, bruto, comisiones y neto por moneda, sin los fallidos. */
+/**
+ * Cobros, bruto, comisiones y neto por moneda, sin los fallidos: los totales de una lista de cobros. Las comisiones
+ * son las de todos sus cobros, las haya pagado el negocio o el comprador (las mismas que se ven fila por fila).
+ */
 export function totalsOf(
   rows: readonly LeanTx[],
-): Record<Currency, Pick<Totals, "count" | "gross" | "fees" | "net">> {
-  const totals = new Map<Currency, Sums>();
-  for (const [currency, group] of countedByCurrency(rows)) totals.set(currency, sumRows(group));
+): Record<Currency, { count: number; gross: Money; fees: Money; net: Money }> {
+  const totals = new Map<Currency, { count: number; gross: Money; fees: Money; net: Money }>();
+  for (const [currency, group] of countedByCurrency(rows)) {
+    const { count, gross, fees, buyerFees, net } = sumRows(group);
+    totals.set(currency, { count, gross, fees: add(fees, buyerFees), net });
+  }
   return Object.fromEntries(totals);
 }
 

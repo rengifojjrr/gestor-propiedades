@@ -5,6 +5,9 @@ import { compute, recompute, resolveRules } from "@/lib/pasarelas";
 import { DEMO, cfgDemo } from "@/lib/pasarelas/demo.fixture";
 import { BreakdownCard } from "./BreakdownCard";
 
+/** Lo cobrado (100,00), sin reembolso ni disputa, con la comisión a cargo del negocio. */
+const PAID = { grossOriginal: "100.00", refunded: "0.00", dispute: null, failed: false, feesPaidBy: "nosotros" } as const;
+
 /** E1 del spec con la configuración de ejemplo: 100,00 por Stripe con pago rápido, canal al 5 % y 50/30/20. */
 function e1() {
   const rules = resolveRules(cfgDemo(), {
@@ -15,7 +18,7 @@ function e1() {
     schemeId: DEMO.schemeId,
     occurredOn: "2026-11-13",
   });
-  return compute(rules, { grossOriginal: "100.00", refunded: "0.00", dispute: null, failed: false }, "USD");
+  return compute(rules, PAID, "USD");
 }
 
 const html = (breakdown: ReturnType<typeof e1>) => renderToStaticMarkup(createElement(BreakdownCard, { breakdown }));
@@ -54,7 +57,7 @@ describe("BreakdownCard", () => {
       schemeId: null,
       occurredOn: "2026-11-13",
     });
-    const markup = html(compute(rules, { grossOriginal: "100.00", refunded: "0.00", dispute: null, failed: false }, "USD"));
+    const markup = html(compute(rules, PAID, "USD"));
     expect(text(markup)).toContain("Pago rápido 1,5 % de $96,80 (después de la comisión) $1,45");
     expect(byTestId(markup, "neto")).toBe("$95,35");
   });

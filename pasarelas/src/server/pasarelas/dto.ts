@@ -15,6 +15,7 @@ import type {
   EventKind,
   ExtraBase,
   ExtraCfg,
+  FeesPaidBy,
   FeeVersionCfg,
   GatewayCfg,
   ISODate,
@@ -62,7 +63,7 @@ export const SETTLEMENT_COLUMNS =
 
 /** La fila mínima de un cobro: lo que hace falta para totales, resumen y estados. */
 export const LEAN_TX_COLUMNS =
-  "id, occurred_on, company_id, channel_id, gateway_id, bank_account_id, currency, gross_original::text, refunded_amount::text, gross_amount::text, fees_total::text, net_amount::text, status, dispute_state, estimated_deposit_on, estimated_deposit_from, deposited_on, receipts_count";
+  "id, occurred_on, company_id, channel_id, gateway_id, bank_account_id, currency, gross_original::text, refunded_amount::text, gross_amount::text, fees_total::text, net_amount::text, status, dispute_state, estimated_deposit_on, estimated_deposit_from, deposited_on, receipts_count, fees_paid_by";
 /** Lo que pinta la lista de cobros: la fila mínima más sus textos y sus fechas. Sin el desglose. */
 export const TX_LIST_COLUMNS =
   `${LEAN_TX_COLUMNS}, occurred_at, scheme_id, reference, note, estimated_is_manual, dispute_opened_on, dispute_closed_on, deleted_at, updated_at` as const;
@@ -177,6 +178,7 @@ export type LeanTxRow = {
   estimated_deposit_from: string | null;
   deposited_on: string | null;
   receipts_count: number;
+  fees_paid_by: string;
 };
 export type TxListRow = LeanTxRow & {
   occurred_at: string;
@@ -269,6 +271,7 @@ const DAY_TYPES: Record<DayType, true> = { habiles: true, corridos: true };
 const EXTRA_BASES: Record<ExtraBase, true> = { bruto: true, despues_de_comision: true };
 const EXTRA_KINDS: Record<ExtraCfg["kind"], true> = { opcion: true, internacional: true };
 const ALLOC_BASES: Record<AllocBase, true> = { neto: true, bruto: true };
+const FEES_PAID_BY: Record<FeesPaidBy, true> = { nosotros: true, comprador: true };
 const BENEFICIARY_KINDS: Record<BeneficiaryKind, true> = { persona: true, empresa: true, cartera: true };
 const EVENT_KINDS: Record<EventKind, true> = {
   creado: true,
@@ -481,6 +484,7 @@ export function toLeanTx(row: LeanTxRow): LeanTx {
     estimatedDepositFrom: row.estimated_deposit_from,
     depositedOn: row.deposited_on,
     receiptsCount: row.receipts_count,
+    feesPaidBy: known(FEES_PAID_BY, row.fees_paid_by, "Quién pagó la comisión, desconocido"),
   };
 }
 

@@ -292,7 +292,7 @@ export type SaveItem = {
  */
 export function e1Item(b: Basics, tx: { [column: string]: Json } = {}): SaveItem {
   const currency = (typeof tx.currency === "string" ? tx.currency : "USD") as Currency;
-  const state = { grossOriginal: "100.00", refunded: "0.00", dispute: null, failed: false };
+  const state = { grossOriginal: "100.00", refunded: "0.00", dispute: null, failed: false, feesPaidBy: "nosotros" } as const;
   const breakdown = compute(basicsRules(b), state, currency) as unknown as Json;
   return {
     mode: "insert",

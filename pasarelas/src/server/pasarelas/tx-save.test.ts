@@ -45,6 +45,7 @@ function savedE1(): TxSnapshot {
     estimatedDepositFrom: null,
     depositedOn: null,
     receiptsCount: 0,
+    feesPaidBy: "nosotros",
     occurredAt: "2026-11-13T15:30:00+00:00",
     schemeId: DEMO.schemeId,
     reference: "ch_demo_0001",
@@ -103,6 +104,7 @@ describe("toRpcItem", () => {
       deposited_on: null,
       bank_account_id: DEMO.bankAccountId,
       deleted_at: null,
+      fees_paid_by: "nosotros",
     });
     expect(item.allocations).toEqual([
       { beneficiary_id: DEMO.beneficiaryIds.a, amount: "45.15", base: "neto", pct: "50", is_remainder: false },

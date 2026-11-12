@@ -1,5 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
-import { ZERO, add } from "@/lib/pasarelas";
+import { ZERO, add, type NewTxInput } from "@/lib/pasarelas";
+import { createTx, editTx } from "@/server/pasarelas/ops/transactions";
+import { getSnapshots } from "@/server/pasarelas/queries/transactions";
 import {
   createUser,
   e1Item,
@@ -107,6 +110,77 @@ describe("pay_save_transactions con «comprador»", () => {
       { mode: "update", tx: { id, fees_paid_by: "nosotros" }, event: { kind: "editado", summary: "Quién", data: null } },
     ]);
     expect(await feesPaidByOf(client, id)).toBe("nosotros");
+  });
+});
+
+describe("registrar con «comprador» (el motor y la base juntos)", () => {
+  it("E7: 1040 con un esquema «Sobre el bruto» se guarda con el reparto sobre el neto, 1009,54", async () => {
+    const own = await createUser();
+    const basics = await seedBasics(own.client);
+    const scheme = unwrap(
+      await own.client.rpc("pay_save_scheme", {
+        p: {
+          name: "Reparto sobre el bruto",
+          base: "bruto",
+          lines: [
+            { beneficiary_id: basics.beneficiaryIds.a, pct: "50" },
+            { beneficiary_id: basics.beneficiaryIds.b, pct: "30" },
+            { beneficiary_id: basics.beneficiaryIds.c, pct: "20" },
+          ],
+        },
+      }),
+      "esquema",
+    ) as { scheme_id: string };
+    const id = randomUUID();
+    const input: NewTxInput = {
+      id,
+      companyId: basics.companyId,
+      channelId: null,
+      gatewayId: basics.gatewayId,
+      extraIds: [],
+      schemeId: scheme.scheme_id,
+      occurredAt: "2026-11-13T15:00:00Z",
+      occurredOn: "2026-11-13",
+      currency: "USD",
+      grossOriginal: "1040.00",
+      reference: null,
+      note: null,
+      feesPaidBy: "comprador",
+    };
+    await createTx(own.client, input);
+    const row = unwrap(
+      await own.client
+        .from("pay_transactions")
+        .select("fees_paid_by, fees_total::text, net_amount::text, alloc_base, alloc_base_amount::text, breakdown")
+        .eq("id", id)
+        .single(),
+      "cobro",
+    );
+    expect(row).toMatchObject({
+      fees_paid_by: "comprador",
+      fees_total: "30.46",
+      net_amount: "1009.54",
+      alloc_base: "neto",
+      alloc_base_amount: "1009.54",
+    });
+    expect((row.breakdown as { state: { feesPaidBy: string } }).state.feesPaidBy).toBe("comprador");
+    const shares = unwrap(
+      await own.client.from("pay_allocations").select("amount::text, base").eq("transaction_id", id).order("amount"),
+      "reparto",
+    );
+    expect(shares).toEqual([
+      { amount: "201.91", base: "neto" },
+      { amount: "302.86", base: "neto" },
+      { amount: "504.77", base: "neto" },
+    ]);
+
+    // Al leerlo, el cobro dice quién pagó; editar a «nosotros» lo vuelve a repartir sobre el bruto.
+    const [saved] = await getSnapshots(own.client, [id]);
+    expect(saved?.feesPaidBy).toBe("comprador");
+    await editTx(own.client, id, { feesPaidBy: "nosotros" });
+    const [edited] = await getSnapshots(own.client, [id]);
+    expect(edited).toMatchObject({ feesPaidBy: "nosotros", fees: "30.46", net: "1009.54" });
+    expect(edited?.breakdown.alloc).toMatchObject({ baseKind: "bruto", baseAmount: "1040.00" });
   });
 });
 

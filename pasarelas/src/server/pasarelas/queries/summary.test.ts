@@ -23,6 +23,7 @@ function tx(patch: Partial<LeanTx> = {}): LeanTx {
     estimatedDepositFrom: null,
     depositedOn: null,
     receiptsCount: 0,
+    feesPaidBy: "nosotros",
     ...patch,
   };
 }
