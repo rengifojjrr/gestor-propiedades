@@ -6,11 +6,13 @@ import type { Currency, Money as MoneyText } from "@/lib/pasarelas/types";
 
 /**
  * La aclaración de «Comisiones» (las del negocio): su % del bruto. Si hubo cobros cuya comisión pagó el comprador,
- * el % es del bruto de los cobros en que las pagamos nosotros, y así lo dice. `null` si no hay nada que aclarar.
+ * el % es del bruto de los cobros en que las pagamos nosotros, y así lo dice. Sin ese bruto no hay %: solo se dice
+ * que todas las pagaron los compradores si el negocio no pagó nada (un cobro propio reembolsado del todo deja bruto
+ * 0 y la comisión que retuvo la pasarela, igual que `whyUncosted`). `null` si no hay nada que aclarar.
  */
-export function feesHint(totals: Pick<Totals, "feePct" | "buyerFees">): ReactNode {
+export function feesHint(totals: Pick<Totals, "feePct" | "fees" | "buyerFees">): ReactNode {
   const byBuyers = !isZero(totals.buyerFees);
-  if (totals.feePct === null) return byBuyers ? "Todas las pagaron los compradores" : null;
+  if (totals.feePct === null) return byBuyers && isZero(totals.fees) ? "Todas las pagaron los compradores" : null;
   return (
     <>
       <Percent value={totals.feePct} /> {byBuyers ? "del bruto en que las pagamos" : "del bruto"}
