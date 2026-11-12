@@ -8,10 +8,13 @@ import type { Currency, Money as MoneyText } from "@/lib/pasarelas/types";
  * La aclaración de «Comisiones» (las del negocio): su % de lo facturado, lo que de verdad le costó cobrar. Si nadie
  * pagó comisiones por el comprador, lo facturado es el bruto y se dice como siempre, «del bruto»; si alguien pagó,
  * «de lo facturado», y si las pagaron todas los compradores, ese 0 % lleva su razón. Sin venta (todo reembolsado) no
- * hay %: `null`, nada que aclarar.
+ * hay %, y se dice; sin nada cobrado ni comisiones, `null`: nada que aclarar.
  */
-export function feesHint(totals: Pick<Totals, "feePct" | "fees" | "buyerFees">): ReactNode {
-  if (totals.feePct === null) return null;
+export function feesHint(totals: Pick<Totals, "feePct" | "gross" | "fees" | "buyerFees">): ReactNode {
+  if (totals.feePct === null) {
+    // Con un espacio duro, el «%» no queda solo en la última línea de la tarjeta.
+    return isZero(totals.gross) && isZero(totals.fees) ? null : "Sin venta en el período: no hay %";
+  }
   if (isZero(totals.buyerFees)) {
     return (
       <>

@@ -87,10 +87,16 @@ describe("feesHint", () => {
     expect(hint([reembolsadoPropio, delComprador])).toBe("0,32 % de lo facturado");
   });
 
-  it("sin venta (todo reembolsado) no hay %: nada que aclarar, pague quien pague", () => {
-    expect(hint([reembolsadoPropio])).toBe("");
-    // E8a: los 30,46 son del negocio y los compradores no pagaron nada: ni % ni «los pagaron los compradores».
-    expect(totals([e8a])).toMatchObject({ fees: "30.46", buyerFees: "0.00", feePct: null });
-    expect(hint([e8a])).toBe("");
+  it("sin venta (todo reembolsado) no hay %, y lo dice, pague quien pague", () => {
+    expect(totals([reembolsadoPropio])).toMatchObject({ gross: "0.00", fees: "3.20", feePct: null });
+    expect(hint([reembolsadoPropio])).toBe("Sin venta en el período: no hay %");
+    // E8a: los 30,46 son del negocio y los compradores no pagaron nada: no hay %, y no dice que los pagaron ellos.
+    expect(totals([e8a])).toMatchObject({ gross: "0.00", fees: "30.46", buyerFees: "0.00", feePct: null });
+    expect(hint([e8a])).toBe("Sin venta en el período: no hay %");
+  });
+
+  it("sin nada cobrado ni comisiones no hay nada que aclarar", () => {
+    const nada = { gross: "0.00", fees: "0.00", buyerFees: "0.00", feePct: null } as const;
+    expect(renderToStaticMarkup(createElement(Fragment, null, feesHint(nada)))).toBe("");
   });
 });
