@@ -1,5 +1,5 @@
 import "server-only";
-import { dec, normPct, toMoney } from "@/lib/pasarelas";
+import { businessFigures, dec, normPct, toMoney } from "@/lib/pasarelas";
 import type { Currency, ISODate, Money, Pct } from "@/lib/pasarelas";
 import type { Db } from "../dto";
 import { RECEIPTS_BUCKET } from "../ops/receipts";
@@ -19,7 +19,8 @@ const COMPANY_DETAIL_COLUMNS = `${COMPANY_LIST_COLUMNS}, default_scheme_id, note
 const CHANNEL_DETAIL_COLUMNS = "id, name, url, platform_fee_pct::text, platform_fee_fixed::text, active";
 const COMPANY_GATEWAY_DETAIL_COLUMNS =
   "id, gateway_id, dashboard_url, checkout_url, bank_account_id, payout_days_override, payout_days_override_max, default_extra_ids, active";
-const COMPANY_TOTAL_COLUMNS = "company_id, currency, tx_count, gross::text, fees::text, net::text, first_on, last_on";
+const COMPANY_TOTAL_COLUMNS =
+  "company_id, currency, tx_count, gross::text, fees::text, net::text, first_on, last_on, buyer_fees::text";
 
 /** Lo que dura la URL firmada de un logo: se genera al pintar la pantalla y no se guarda. */
 const LOGO_URL_SECONDS = 60;
@@ -62,18 +63,26 @@ type CompanyTotalRow = {
   net: string | null;
   first_on: string | null;
   last_on: string | null;
+  buyer_fees: string | null;
 };
 
 // ─── Lo que se entrega ──────────────────────────────────────────────────────────────────────────────────────
 
-/** Lo facturado por una empresa en UNA moneda, en toda su historia (sin papelera ni fallidos). */
+/**
+ * Lo cobrado y lo facturado por una empresa en UNA moneda, en toda su historia (sin papelera ni fallidos). Siempre
+ * `gross = sale + buyerFees` y `net = sale − fees`.
+ */
 export type CompanyTotal = {
   currency: Currency;
   count: number;
-  /** Lo facturado: la venta del negocio (de un cobro cuya comisión pagó el comprador, su neto). */
+  /** Todo lo cobrado (el bruto vigente). */
   gross: Money;
-  /** Las comisiones del negocio: sin las que pagaron los compradores. */
+  /** Lo facturado: la venta del negocio, todo lo cobrado menos lo que pagaron los compradores. */
+  sale: Money;
+  /** Las comisiones del negocio: todas menos las que pagaron los compradores. */
   fees: Money;
+  /** Las comisiones que pagaron los compradores. */
+  buyerFees: Money;
   net: Money;
   firstOn: ISODate;
   lastOn: ISODate;
@@ -129,11 +138,12 @@ function toCompanyTotal(row: CompanyTotalRow): CompanyTotal {
   if (row.currency === null || row.first_on === null || row.last_on === null) {
     throw new RangeError("Una fila de pay_company_totals llegó sin moneda o sin fechas");
   }
+  const gross = money(row.gross);
   return {
     currency: row.currency,
     count: row.tx_count ?? 0,
-    gross: money(row.gross),
-    fees: money(row.fees),
+    gross,
+    ...businessFigures({ gross, fees: money(row.fees), buyerFees: money(row.buyer_fees) }),
     net: money(row.net),
     firstOn: row.first_on,
     lastOn: row.last_on,

@@ -1,5 +1,5 @@
 import "server-only";
-import { add, dec, toMoney } from "@/lib/pasarelas";
+import { businessFigures, dec, toMoney } from "@/lib/pasarelas";
 import type { Currency, GatewayCfg, Money } from "@/lib/pasarelas";
 import {
   EXTRA_COLUMNS,
@@ -15,8 +15,8 @@ import {
  * con su nota, y los totales de toda la historia de la vista `pay_gateway_totals` (que no cuenta la papelera ni los
  * fallidos). El dinero y los días se piden con `::text`.
  *
- * En la vista, `gross` es lo facturado (la venta del negocio: el neto de los cobros cuya comisión pagó el comprador)
- * y `fees`, las comisiones del negocio; las de los compradores van en `buyer_fees`.
+ * En la vista, `gross` es todo lo cobrado, `fees` todas las comisiones y `net` el neto, como siempre; `buyer_fees`,
+ * lo que pagaron los compradores. Lo facturado y las comisiones del negocio se derivan aquí (`businessFigures`).
  */
 
 const GATEWAY_DETAIL_COLUMNS = `${GATEWAY_COLUMNS}, notes` as const;
@@ -47,9 +47,9 @@ export type GatewayTotals = {
   txCount: number;
   /** Todo lo cobrado por la pasarela: lo facturado más lo que pagaron los compradores (cuadra con la pasarela). */
   gross: Money;
-  /** Lo facturado: la venta del negocio. */
+  /** Lo facturado: la venta del negocio, todo lo cobrado menos lo que pagaron los compradores. */
   sale: Money;
-  /** Las comisiones del negocio. */
+  /** Las comisiones del negocio: todas menos las que pagaron los compradores. */
   fees: Money;
   /** Las comisiones que pagaron los compradores. */
   buyerFees: Money;
@@ -94,17 +94,18 @@ export async function listGatewayTotals(supabase: Db): Promise<GatewayTotals[]> 
     .order("gateway_id")
     .order("currency")
     .throwOnError();
-  return (data as GatewayTotalsRow[]).map((row) => ({
-    gatewayId: row.gateway_id,
-    currency: row.currency,
-    txCount: row.tx_count ?? 0,
-    gross: add(money(row.gross), money(row.buyer_fees)),
-    sale: money(row.gross),
-    fees: money(row.fees),
-    buyerFees: money(row.buyer_fees),
-    net: money(row.net),
-    depositedCount: row.deposited_count ?? 0,
-    avgDays: row.avg_days,
-    medianDays: row.median_days,
-  }));
+  return (data as GatewayTotalsRow[]).map((row) => {
+    const gross = money(row.gross);
+    return {
+      gatewayId: row.gateway_id,
+      currency: row.currency,
+      txCount: row.tx_count ?? 0,
+      gross,
+      ...businessFigures({ gross, fees: money(row.fees), buyerFees: money(row.buyer_fees) }),
+      net: money(row.net),
+      depositedCount: row.deposited_count ?? 0,
+      avgDays: row.avg_days,
+      medianDays: row.median_days,
+    };
+  });
 }
