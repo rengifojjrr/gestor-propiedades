@@ -359,15 +359,21 @@ test.describe("¿quién paga la comisión?", () => {
       ),
     ).toBeVisible();
     await expect(page.getByText("se le cobró de más para cubrirla")).toHaveCount(0);
+    // El reparto (sobre el neto, porque el cobro se registró así) tampoco dice que la comisión la pagó el comprador.
+    await expect(page.getByText("la comisión la pagó el comprador")).toHaveCount(0);
+    await expect(
+      page.getByText("Se reparte sobre lo que te queda: el cobro se registró con la comisión a cargo del comprador."),
+    ).toBeVisible();
     await checkScreen(page);
     const [saved] = await serverData().getSnapshots(db, [byBuyer.id]);
     expect(saved).toMatchObject({ buyerFees: "0.00", fees: "30.46", net: "-30.46" });
 
-    // El Resumen: los 30,46 son comisión del negocio; no dice que los pagaron los compradores. Sin venta, sin %.
+    // El Resumen: los 30,46 son comisión del negocio; no dice que los pagaron los compradores. Sin venta no hay %,
+    // y lo dice.
     await page.goto("/pasarelas");
     const card = (name: string) => page.getByRole("group", { name, exact: true });
     await expect(card("Bruto")).toContainText("$0,00");
-    await expect(card("Comisiones")).toHaveText("Comisiones$30,46");
+    await expect(card("Comisiones")).toHaveText("Comisiones$30,46Sin venta en el período: no hay %");
     await expect(card("Neto")).toContainText("-$30,46");
     await expect(page.getByText(/pagaron los compradores|pagaron en comisiones/)).toHaveCount(0);
     const cost = page.getByRole("figure", { name: "Costo efectivo por pasarela" });
