@@ -55,6 +55,7 @@ export default async function RegistrarPage() {
           extraIds: tx.breakdown.rules.extras.map((option) => option.id),
           schemeId: tx.schemeId,
           currency: tx.currency,
+          feesPaidBy: tx.feesPaidBy,
         };
 
   return <RegisterForm cfg={cfg} now={instantToLocalInput(new Date().toISOString())} last={last} />;

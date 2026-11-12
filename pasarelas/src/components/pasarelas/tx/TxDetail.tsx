@@ -8,6 +8,7 @@ import type { ISODate, PayConfig, TxSnapshot } from "@/lib/pasarelas/types";
 import type { TxDetail as TxDetailData } from "@/server/pasarelas/dto";
 import { DepositWindowText } from "./DepositWindow";
 import { EventsTimeline } from "./EventsTimeline";
+import { FEES_PAID_BY_LABEL } from "./payer";
 import { ReceiptsCard } from "./ReceiptsCard";
 import { StatusBadge } from "./StatusBadge";
 import { TxActions } from "./TxActions";
@@ -79,6 +80,9 @@ function DataCard({ tx, cfg }: { tx: TxSnapshot; cfg: PayConfig }) {
               {origin}
             </Row>
           )}
+          <Row label="Comisión pagada por" testId="comision-pagada-por">
+            {FEES_PAID_BY_LABEL[tx.feesPaidBy]}
+          </Row>
           <Row label="Fecha del cobro">
             <DateTimeText value={tx.occurredAt} />
           </Row>

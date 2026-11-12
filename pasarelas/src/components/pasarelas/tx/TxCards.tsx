@@ -4,7 +4,7 @@ import { DateText, Money } from "@/components/ui";
 import type { ISODate } from "@/lib/pasarelas/types";
 import { StatusBadge } from "./StatusBadge";
 import { SelectAllCheckbox } from "./TxBulkBar";
-import { DepositDate, TxCheckbox, TxLink, type TxRowView } from "./TxTable";
+import { BuyerPaidMark, DepositDate, TxCheckbox, TxLink, type TxRowView } from "./TxTable";
 
 /** La lista de cobros como tarjetas (en el celular), con una casilla en cada una para elegir. */
 export function TxCards({ rows, today }: { rows: TxRowView[]; today: ISODate }) {
@@ -31,9 +31,12 @@ export function TxCards({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
                 </p>
               </div>
               <div className="flex flex-wrap justify-between gap-2 text-sm">
-                <p>
-                  <span className="text-ink-soft">Comisiones </span>
-                  <Money value={tx.fees} currency={tx.currency} />
+                <p className="flex flex-col">
+                  <span>
+                    <span className="text-ink-soft">Comisiones </span>
+                    <Money value={tx.fees} currency={tx.currency} />
+                  </span>
+                  <BuyerPaidMark tx={tx} />
                 </p>
                 <DepositDate tx={tx} />
               </div>

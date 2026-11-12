@@ -116,6 +116,7 @@ export function ImportScreen({
     gatewayId: firstGateway,
     channelId: "",
     extraIds: choices.defaultExtras[defaultExtrasKey(firstCompany, firstGateway)] ?? [],
+    feesPaidBy: "nosotros",
   });
   const [file, setFile] = useState<CsvFile | null>(null);
   const fileHintId = useId();
@@ -257,6 +258,7 @@ export function ImportScreen({
           channelId: settings.channelId === "" ? null : settings.channelId,
           extraIds: settings.extraIds,
           useReportedFee: useReportedFee && mapping.fee != null,
+          feesPaidBy: settings.feesPaidBy,
           alreadyDeposited,
           rows: batch,
         });

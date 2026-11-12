@@ -75,6 +75,11 @@ export function DepositDate({ tx }: { tx: TxRowView }) {
   return <span className="text-ink-soft">—</span>;
 }
 
+/** La marca discreta de un cobro cuya comisión pagó el comprador; nada si la pagamos nosotros. */
+export function BuyerPaidMark({ tx }: { tx: TxRowView }) {
+  return tx.feesPaidBy === "comprador" ? <span className="text-sm text-ink-soft">la pagó el comprador</span> : null;
+}
+
 /** La lista de cobros como tabla (desde 768 px), con una casilla por fila para elegir. */
 export function TxTable({ rows, today }: { rows: TxRowView[]; today: ISODate }) {
   return (
@@ -117,7 +122,10 @@ export function TxTable({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
               <Money value={tx.gross} currency={tx.currency} />
             </Td>
             <Td numeric>
-              <Money value={tx.fees} currency={tx.currency} />
+              <span className="flex flex-col items-end">
+                <Money value={tx.fees} currency={tx.currency} />
+                <BuyerPaidMark tx={tx} />
+              </span>
             </Td>
             <Td numeric>
               <Money value={tx.net} currency={tx.currency} />

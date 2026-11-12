@@ -11,14 +11,17 @@ import { daysDraft, moneyDraft } from "@/components/pasarelas/gateways/drafts";
 import { payoutText } from "@/components/pasarelas/gateways/days";
 import { Badge, Card, CardBody, CardHeader, CardTitle, Money, PageHeader } from "@/components/ui";
 import { requireSession } from "@/lib/auth/session";
-import { addDays, pickVersion, todayNY } from "@/lib/pasarelas";
+import { addDays, isZero, pickVersion, todayNY } from "@/lib/pasarelas";
 import { createClient } from "@/lib/supabase/server";
 import { zId } from "@/server/pasarelas/zod";
 import { getGateway, listGatewayTotals, type GatewayTotals } from "@/server/pasarelas/queries/gateways";
 
 export const metadata: Metadata = { title: "Pasarela" };
 
-/** Lo que pasó por la pasarela en toda la historia (sin papelera ni fallidos) y cuánto tardó en caer. */
+/**
+ * Lo que pasó por la pasarela en toda la historia (sin papelera ni fallidos) y cuánto tardó en caer. El bruto es todo
+ * lo cobrado por ella; las comisiones, las del negocio; las que pagaron los compradores, aparte.
+ */
 function TotalsCard({ totals, payout }: { totals: GatewayTotals[]; payout: string }) {
   return (
     <Card>
@@ -54,6 +57,14 @@ function TotalsCard({ totals, payout }: { totals: GatewayTotals[]; payout: strin
                     <dd className="text-right">
                       <Money value={row.fees} currency={row.currency} />
                     </dd>
+                    {isZero(row.buyerFees) ? null : (
+                      <>
+                        <dt className="text-ink-soft">Pagadas por los compradores</dt>
+                        <dd className="text-right">
+                          <Money value={row.buyerFees} currency={row.currency} />
+                        </dd>
+                      </>
+                    )}
                     <dt className="text-ink-soft">Neto</dt>
                     <dd className="text-right">
                       <Money value={row.net} currency={row.currency} />

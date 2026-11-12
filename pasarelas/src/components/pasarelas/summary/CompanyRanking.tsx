@@ -11,25 +11,28 @@ export type CompanyRankingProps = {
   nameOf: (id: string) => string;
 };
 
-/** Las empresas de mayor a menor bruto en el período, con lo que se llevaron las comisiones y lo que quedó. */
+/**
+ * Las empresas de mayor a menor lo facturado en el período (su venta: si un comprador pagó la comisión, lo que pagó
+ * de más no cuenta), con lo que se llevaron sus comisiones y lo que quedó.
+ */
 export function CompanyRanking({ summary, currency, nameOf }: CompanyRankingProps) {
   const { byCompany, totals } = summary;
   const [top] = byCompany;
-  const topShare = top === undefined ? null : pctOf(top.gross, totals.gross);
+  const topShare = top === undefined ? null : pctOf(top.sale, totals.sale);
   return (
     <ChartFrame
-      title="Empresas por bruto"
+      title="Empresas por lo facturado"
       summary={
         top === undefined ? null : byCompany.length === 1 ? (
           <>
-            Solo {nameOf(top.companyId)} cobró en el período: <Money value={top.gross} currency={currency} />.
+            Solo {nameOf(top.companyId)} facturó en el período: <Money value={top.sale} currency={currency} />.
           </>
         ) : (
           <>
-            {nameOf(top.companyId)} es la que más facturó: <Money value={top.gross} currency={currency} />
+            {nameOf(top.companyId)} es la que más facturó: <Money value={top.sale} currency={currency} />
             {topShare === null ? null : (
               <>
-                , el <Percent value={topShare} /> del bruto
+                , el <Percent value={topShare} /> de lo facturado
               </>
             )}
             .
@@ -38,16 +41,16 @@ export function CompanyRanking({ summary, currency, nameOf }: CompanyRankingProp
       }
       chart={{
         layout: "bars",
-        rows: byCompany.map((company) => ({ label: nameOf(company.companyId), values: [company.gross] })),
-        series: [{ name: "Bruto", color: "brand" }],
+        rows: byCompany.map((company) => ({ label: nameOf(company.companyId), values: [company.sale] })),
+        series: [{ name: "Facturado", color: "brand" }],
         format: { kind: "money", currency },
       }}
       table={
-        <Table label="Empresas por bruto">
+        <Table label="Empresas por lo facturado">
           <THead>
             <Tr>
               <Th>Empresa</Th>
-              <Th numeric>Bruto</Th>
+              <Th numeric>Facturado</Th>
               <Th numeric>Comisiones</Th>
               <Th numeric>Neto</Th>
               <Th numeric>Cobros</Th>
@@ -58,7 +61,7 @@ export function CompanyRanking({ summary, currency, nameOf }: CompanyRankingProp
               <Tr key={company.companyId}>
                 <Th scope="row">{nameOf(company.companyId)}</Th>
                 <Td numeric>
-                  <Money value={company.gross} currency={currency} />
+                  <Money value={company.sale} currency={currency} />
                 </Td>
                 <Td numeric>
                   <Money value={company.fees} currency={currency} />

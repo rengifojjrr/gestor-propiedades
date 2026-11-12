@@ -21,6 +21,7 @@ import {
 } from "@/components/pasarelas/receipts/check";
 import { downscaleImage } from "@/components/pasarelas/receipts/downscale";
 import { uploadReceipt } from "@/components/pasarelas/receipts/upload";
+import { BUYER_AMOUNT_HINT, FeesPaidByChoice } from "@/components/pasarelas/tx/FeesPaidByChoice";
 import { Alert, Button, Field, Input, Money, MoneyInput, PageHeader, Select, Textarea, notify } from "@/components/ui";
 import { notifyAction } from "@/components/ui/notify";
 import { instantToLocalInput, localInputToInstant } from "@/lib/pasarelas/dates";
@@ -28,7 +29,7 @@ import { parseMoney } from "@/lib/pasarelas/money";
 import { defaultExtraIds } from "@/lib/pasarelas/rules";
 import { LIFECYCLE_LABEL } from "@/lib/pasarelas/status";
 import { PAY_STATE_TEXT } from "@/lib/pasarelas/write";
-import type { Currency, Money as MoneyText, PayConfig } from "@/lib/pasarelas/types";
+import type { Currency, FeesPaidBy, Money as MoneyText, PayConfig } from "@/lib/pasarelas/types";
 import { createTransaction } from "@/server/pasarelas/actions/transactions";
 import { ExtrasToggles } from "./ExtrasToggles";
 import { LivePreview } from "./LivePreview";
@@ -42,6 +43,8 @@ export type RegisterSelection = {
   extraIds: string[];
   schemeId: string | null;
   currency: string;
+  /** Quién pagó la comisión: «Repetir el último» lo repite. */
+  feesPaidBy: FeesPaidBy;
 };
 
 export type RegisterFormProps = {
@@ -129,8 +132,9 @@ async function attachReceipt(file: File, transactionId: string): Promise<Receipt
 }
 
 /**
- * «Registrar cobro» en un solo paso, en el orden del spec: empresa → canal → pasarela (con sus opciones) → monto y
- * moneda → fecha y hora → referencia → comprobante, y lo demás en «Más opciones». La vista previa se calcula al
+ * «Registrar cobro» en un solo paso, en el orden del spec: empresa → canal → pasarela (con sus opciones) → quién
+ * paga la comisión → monto y moneda → fecha y hora → referencia → comprobante, y lo demás en «Más opciones». Si la
+ * comisión la paga el comprador, el monto es lo que pagó él y el reparto va sobre lo que queda. La vista previa se calcula al
  * momento con el mismo motor que el servidor; lo que se guarda lo vuelve a calcular el servidor.
  *
  * El id del cobro viaja con el envío: el mismo envío repetido no registra dos cobros. Nace en el navegador al montar
@@ -165,6 +169,7 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
   // Las opciones elegidas; el recargo internacional va aparte, según de dónde fue el pago (`origin`).
   const [extraIds, setExtraIds] = useState(() => extrasFor(companyId, gatewayId));
   const [origin, setOrigin] = useState<Origin>("nacional");
+  const [feesPaidBy, setFeesPaidBy] = useState<FeesPaidBy>("nosotros");
   const [currency, setCurrency] = useState(() => companyDefaults(companyId).currency);
   const [amount, setAmount] = useState("");
   const [occurredLocal, setOccurredLocal] = useState(now);
@@ -259,6 +264,7 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
         .map((option) => option.id),
     );
     setOrigin(activeInternational(lastGateway) === null ? "nacional" : lastOrigin);
+    setFeesPaidBy(last.feesPaidBy);
     setCurrency(last.currency);
     setSchemeId(activeScheme && last.schemeId !== null ? last.schemeId : "");
   }
@@ -334,6 +340,7 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
         depositedOn: status === "depositado" ? depositedOn : null,
         bankAccountId: bankAccountId === "" ? null : bankAccountId,
         estimatedDepositOn: manualEstimate === "" ? null : manualEstimate,
+        feesPaidBy,
       });
       if (!result.ok) {
         const errors = Object.fromEntries(
@@ -538,8 +545,14 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
             />
           ) : null}
 
+          <FeesPaidByChoice value={feesPaidBy} onChange={setFeesPaidBy} />
+
           <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-start gap-3">
-            <Field label="Monto" error={fieldErrors.grossOriginal}>
+            <Field
+              label="Monto"
+              hint={feesPaidBy === "comprador" ? BUYER_AMOUNT_HINT : undefined}
+              error={fieldErrors.grossOriginal}
+            >
               <MoneyInput value={amount} onChange={(event) => setAmount(event.currentTarget.value)} />
             </Field>
             <Field label="Moneda" error={fieldErrors.currency}>
@@ -664,6 +677,7 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
               currency,
               amount,
               manualEstimate,
+              feesPaidBy,
             }}
           />
           {/* Junto a «Guardar»: en el celular es lo que está a la vista al terminar de guardar. */}

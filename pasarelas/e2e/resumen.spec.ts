@@ -171,7 +171,7 @@ test("cuánto facturó cada empresa, sus comisiones, qué cae y en qué cuenta, 
   await expect(page.getByText("€80,00")).toHaveCount(0);
 
   // Cuánto facturó cada empresa.
-  const companies = await chartTable(page, "Empresas por bruto");
+  const companies = await chartTable(page, "Empresas por lo facturado");
   await expect(companies.getByRole("row", { name: /Escuela Demo/ })).toContainText("$300,00");
   await expect(companies.getByRole("row", { name: /Tienda Demo/ })).toContainText("$50,00");
 

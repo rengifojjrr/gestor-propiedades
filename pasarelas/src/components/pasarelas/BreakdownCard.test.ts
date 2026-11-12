@@ -77,6 +77,17 @@ describe("BreakdownCard", () => {
     expect(byTestId(markup, "reembolsado")).toBeNull();
   });
 
+  it("si la comisión la pagó el comprador: la misma comisión, «Lo que te queda» y por qué", () => {
+    const markup = html(recompute(e1(), { feesPaidBy: "comprador" }));
+    expect(byTestId(markup, "comisiones")).toBe("$9,70");
+    expect(byTestId(markup, "neto")).toBe("$90,30");
+    expect(text(markup)).toContain("Lo que te queda $90,30");
+    expect(text(markup)).toContain("La comisión la pagó el comprador: se le cobró de más para cubrirla.");
+    // Pagando nosotros, el neto es el neto y no hay nota.
+    expect(text(html(e1()))).toContain("Neto $90,30");
+    expect(text(html(e1()))).not.toContain("la pagó el comprador");
+  });
+
   it("un cobro fallido no tiene comisiones y lo dice", () => {
     const markup = html(recompute(e1(), { failed: true }));
     expect(markup).not.toContain("<li");

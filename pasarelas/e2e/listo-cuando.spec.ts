@@ -299,7 +299,7 @@ test.describe.serial("«Listo cuando»", () => {
     await expect(card("Por caer")).toContainText("$138,06");
 
     // Cuánto facturó cada empresa.
-    const companies = page.getByRole("figure", { name: "Empresas por bruto" });
+    const companies = page.getByRole("figure", { name: "Empresas por lo facturado" });
     await companies.getByText("Ver los datos en una tabla").click();
     await expect(companies.getByRole("row", { name: /Escuela Demo/ })).toContainText("$100,00");
     await expect(companies.getByRole("row", { name: /Tienda Demo/ })).toContainText("$50,00");

@@ -2,14 +2,21 @@
 
 import { isOption } from "@/components/pasarelas/gateways/international";
 import { Card, CardBody, CardHeader, CardTitle, Checkbox, Field, Select } from "@/components/ui";
+import type { FeesPaidBy } from "@/lib/pasarelas/types";
 import type { ImportChoices } from "./plan";
 
-export type ImportSettings = { companyId: string; gatewayId: string; channelId: string; extraIds: string[] };
+export type ImportSettings = {
+  companyId: string;
+  gatewayId: string;
+  channelId: string;
+  extraIds: string[];
+  feesPaidBy: FeesPaidBy;
+};
 
 /**
  * Empresa, pasarela, canal y opciones: valen para todos los cobros del archivo. Si la pasarela cobra un recargo a
  * los pagos internacionales, va aparte: el archivo no dice qué cobro fue internacional, así que también vale para
- * todos.
+ * todos. Igual quién pagó la comisión: «Las comisiones las pagaron los compradores» vale para todo el archivo.
  */
 export function SettingsCard({
   choices,
@@ -96,6 +103,13 @@ export function SettingsCard({
             disabled={disabled}
           />
         ) : null}
+        <Checkbox
+          label="Las comisiones las pagaron los compradores"
+          hint="Se les cobró de más para cubrirlas: el monto de cada cobro es lo que pagó el comprador, y se reparte lo que queda. El archivo no lo dice por cobro: si trae de los dos, impórtalos en dos archivos."
+          checked={value.feesPaidBy === "comprador"}
+          onChange={(event) => onChange({ ...value, feesPaidBy: event.currentTarget.checked ? "comprador" : "nosotros" })}
+          disabled={disabled}
+        />
       </CardBody>
     </Card>
   );

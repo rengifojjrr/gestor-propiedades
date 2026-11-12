@@ -48,6 +48,18 @@ describe("AllocationList", () => {
     expect(items(html(lost))).toEqual(["Grupo A 50 % -$1,60", "Grupo B 30 % -$0,96", "Grupo C 20 % -$0,64"]);
   });
 
+  it("si la comisión la pagó el comprador, dice que se reparte lo que queda, aunque el esquema diga bruto", () => {
+    const cfg = cfgDemo();
+    const version = cfg.schemes[0]?.versions[0];
+    if (version === undefined) throw new Error("Falta el esquema de ejemplo");
+    version.base = "bruto";
+    const markup = html(compute(resolveRules(cfg, E1), { ...PAID, feesPaidBy: "comprador" }, "USD"));
+    expect(text(markup)).toContain("Se reparte sobre lo que te queda: la comisión la pagó el comprador.");
+    expect(text(markup)).toContain("Sobre el neto: $90,30");
+    // Pagando nosotros, no hay nada que explicar.
+    expect(text(html(compute(resolveRules(cfg, E1), PAID, "USD")))).not.toContain("la pagó el comprador");
+  });
+
   it("sin esquema dice que el cobro no se reparte", () => {
     const markup = html(compute(resolveRules(cfgDemo(), { ...E1, schemeId: null }), PAID, "USD"));
     expect(markup).not.toContain("<li");

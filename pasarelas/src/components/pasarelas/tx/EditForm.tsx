@@ -10,6 +10,7 @@ import {
 } from "@/components/pasarelas/gateways/international";
 import { InternationalChoice } from "@/components/pasarelas/gateways/InternationalChoice";
 import { ExtrasToggles } from "@/components/pasarelas/registrar/ExtrasToggles";
+import { BUYER_AMOUNT_HINT, FeesPaidByChoice } from "@/components/pasarelas/tx/FeesPaidByChoice";
 import { Alert, Button, ButtonLink, Field, Input, MoneyInput, Select, Textarea, notify } from "@/components/ui";
 import { localInputToInstant } from "@/lib/pasarelas/dates";
 import { formatAmount, parseMoney } from "@/lib/pasarelas/money";
@@ -40,7 +41,8 @@ const sameIds = (a: readonly string[], b: readonly string[]): boolean =>
  * congeladas. Al cambiar de pasarela van también sus opciones; al cambiar de empresa, el canal se vacía (es de
  * otra). La cuenta destino, si no se toca, la vuelve a elegir el motor cuando cambian la empresa o la pasarela; la
  * fecha estimada se cambia aparte, desde el detalle. «¿El pago fue nacional o internacional?» parte de lo guardado
- * (si el desglose trae el recargo internacional) y, como las opciones, viaja solo si cambia.
+ * (si el desglose trae el recargo internacional) y, como las opciones, viaja solo si cambia. «¿Quién paga la
+ * comisión?» también: cambiarla recalcula el reparto, como cambiar una opción.
  *
  * Manda la versión del cobro que se abrió (`expectedUpdatedAt`): si otra pestaña lo cambió entretanto, el servidor
  * da conflicto y no se pisa lo de la otra.
@@ -73,6 +75,7 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
   const [gatewayId, setGatewayId] = useState(tx.gatewayId);
   const [extraIds, setExtraIds] = useState(frozen.optionIds);
   const [origin, setOrigin] = useState(frozen.origin);
+  const [feesPaidBy, setFeesPaidBy] = useState(tx.feesPaidBy);
   const [amount, setAmount] = useState(() => formatAmount(tx.grossOriginal));
   const [currency, setCurrency] = useState(tx.currency);
   const [occurredLocal, setOccurredLocal] = useState(initialLocal);
@@ -122,6 +125,7 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
     if (gatewayId !== tx.gatewayId) out.gatewayId = gatewayId;
     // Con otra pasarela van siempre sus opciones: las de la anterior no son suyas.
     if (gatewayId !== tx.gatewayId || !sameIds(appliedExtraIds, frozenExtras)) out.extraIds = appliedExtraIds;
+    if (feesPaidBy !== tx.feesPaidBy) out.feesPaidBy = feesPaidBy;
     if (parseMoney(amount) !== tx.grossOriginal) out.grossOriginal = amount;
     if (currency !== tx.currency) out.currency = currency;
     if (occurredLocal !== initialLocal) out.occurredAt = localInputToInstant(occurredLocal);
@@ -227,8 +231,18 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
         </Alert>
       ) : null}
 
+      <FeesPaidByChoice value={feesPaidBy} onChange={setFeesPaidBy} />
+
       <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-start gap-3">
-        <Field label="Monto" hint="Lo cobrado, antes de reembolsos." error={fieldErrors.grossOriginal}>
+        <Field
+          label="Monto"
+          hint={
+            feesPaidBy === "comprador"
+              ? `${BUYER_AMOUNT_HINT} Antes de reembolsos.`
+              : "Lo cobrado, antes de reembolsos."
+          }
+          error={fieldErrors.grossOriginal}
+        >
           <MoneyInput value={amount} onChange={(event) => setAmount(event.currentTarget.value)} />
         </Field>
         <Field label="Moneda" error={fieldErrors.currency}>

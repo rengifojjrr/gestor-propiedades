@@ -17,7 +17,7 @@ import {
 import { ZERO } from "@/lib/pasarelas/decimal";
 import { cmp, parseMoney } from "@/lib/pasarelas/money";
 import { PAY_RULE_TEXT, PayRuleError, resolvePayout, resolveRules, type PayRuleCode } from "@/lib/pasarelas/rules";
-import type { Breakdown, ISODate, PayConfig } from "@/lib/pasarelas/types";
+import type { Breakdown, FeesPaidBy, ISODate, PayConfig } from "@/lib/pasarelas/types";
 
 /** Lo que el formulario tiene escrito y elegido, tal cual (los textos todavía sin validar). */
 export type PreviewInput = {
@@ -32,6 +32,8 @@ export type PreviewInput = {
   amount: string;
   /** La fecha estimada puesta a mano, o vacía. */
   manualEstimate: string;
+  /** Quién paga la comisión: con «comprador», el reparto va sobre lo que queda. */
+  feesPaidBy: FeesPaidBy;
 };
 
 type Preview =
@@ -71,7 +73,7 @@ function previewOf(cfg: PayConfig, input: PreviewInput): Preview {
   };
   try {
     const rules = resolveRules(cfg, selection);
-    const state = { grossOriginal: gross, refunded: ZERO, dispute: null, failed: false, feesPaidBy: "nosotros" } as const;
+    const state = { grossOriginal: gross, refunded: ZERO, dispute: null, failed: false, feesPaidBy: input.feesPaidBy };
     const breakdown = compute(rules, state, input.currency);
     if (isISODate(input.manualEstimate)) {
       const day = input.manualEstimate;

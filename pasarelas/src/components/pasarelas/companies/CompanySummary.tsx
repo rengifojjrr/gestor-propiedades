@@ -18,6 +18,7 @@ import {
   Tr,
   UrlPeriod,
 } from "@/components/ui";
+import { BuyerFeesNote, feesHint } from "@/components/pasarelas/summary/fees";
 import { ZERO, monthLabel } from "@/lib/pasarelas";
 import type { Currency, CurrencySummary } from "@/lib/pasarelas";
 import type { CompanyTotal } from "@/server/pasarelas/queries/companies";
@@ -27,7 +28,7 @@ const TITLE_ID = "lo-facturado";
 export type CompanySummaryProps = {
   /** El resumen del período, por moneda (`summarize` sobre los cobros de la empresa en el período). */
   period: Record<Currency, CurrencySummary>;
-  /** Lo facturado en toda la historia, por moneda (`pay_company_totals`). */
+  /** Lo facturado en toda la historia, por moneda (`pay_company_totals`: su `gross` es la venta del negocio). */
   totals: readonly CompanyTotal[];
   /** El nombre de cada pasarela, por id. */
   gatewayNames: ReadonlyMap<string, string>;
@@ -67,7 +68,11 @@ function FigureCards({ label, rows }: { label: string; rows: FigureRow[] }) {
   );
 }
 
-/** Lo de UNA moneda: la frase de lo facturado, las cifras del período y sus tablas por mes y por pasarela. */
+/**
+ * Lo de UNA moneda: la frase de lo facturado (la venta del negocio: si un comprador pagó la comisión, lo que pagó de
+ * más no cuenta), las cifras del período (con las comisiones de los compradores aparte) y sus tablas por mes y por
+ * pasarela.
+ */
 function CurrencyBlock({
   currency,
   summary,
@@ -88,7 +93,7 @@ function CurrencyBlock({
       {labelled ? <h3 className="titulo text-lg">En {currency}</h3> : null}
       <p className="text-lg">
         Esta empresa ha facturado{" "}
-        <Money value={summary?.totals.gross ?? ZERO} currency={currency} className="font-semibold" /> en el período y{" "}
+        <Money value={summary?.totals.sale ?? ZERO} currency={currency} className="font-semibold" /> en el período y{" "}
         <Money value={total?.gross ?? ZERO} currency={currency} className="font-semibold" /> en total.
       </p>
       {summary === undefined ? (
@@ -100,16 +105,11 @@ function CurrencyBlock({
             <Stat
               label="Comisiones"
               value={<Money value={summary.totals.fees} currency={currency} />}
-              hint={
-                summary.totals.feePct === null ? undefined : (
-                  <>
-                    <Percent value={summary.totals.feePct} /> del bruto
-                  </>
-                )
-              }
+              hint={feesHint(summary.totals)}
             />
             <Stat label="Neto" value={<Money value={summary.totals.net} currency={currency} />} total />
           </div>
+          <BuyerFeesNote amount={summary.totals.buyerFees} currency={currency} />
           <div className="flex flex-col gap-2">
             <h3 className="font-semibold">Por mes{suffix}</h3>
             <FigureCards
@@ -118,7 +118,7 @@ function CurrencyBlock({
                 key: month.month,
                 title: monthLabel(month.month),
                 figures: [
-                  { label: "Bruto", value: <Money value={month.gross} currency={currency} /> },
+                  { label: "Facturado", value: <Money value={month.sale} currency={currency} /> },
                   { label: "Comisiones", value: <Money value={month.fees} currency={currency} /> },
                   { label: "Neto", value: <Money value={month.net} currency={currency} /> },
                 ],
@@ -129,7 +129,7 @@ function CurrencyBlock({
                 <THead>
                   <Tr>
                     <Th>Mes</Th>
-                    <Th numeric>Bruto</Th>
+                    <Th numeric>Facturado</Th>
                     <Th numeric>Comisiones</Th>
                     <Th numeric>Neto</Th>
                   </Tr>
@@ -141,7 +141,7 @@ function CurrencyBlock({
                         {monthLabel(month.month)}
                       </Th>
                       <Td numeric>
-                        <Money value={month.gross} currency={currency} />
+                        <Money value={month.sale} currency={currency} />
                       </Td>
                       <Td numeric>
                         <Money value={month.fees} currency={currency} />

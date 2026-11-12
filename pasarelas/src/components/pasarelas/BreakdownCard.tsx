@@ -5,7 +5,7 @@ import type { Breakdown, BreakdownLine } from "@/lib/pasarelas/types";
 
 /*
  * El desglose de un cobro tal como lo calculó el motor: lo cobrado, cada comisión con su cuenta, el total y el
- * neto. Solo pinta lo que trae el desglose (los nombres van dentro): sirve igual para la vista previa de
+ * neto. Si la comisión la pagó el comprador, el neto se lee «Lo que te queda» y una nota dice por qué. Solo pinta lo que trae el desglose (los nombres van dentro): sirve igual para la vista previa de
  * «Registrar cobro» que para el desglose congelado del detalle. Sin estado: se puede usar desde el servidor.
  */
 
@@ -53,6 +53,7 @@ function Row({ label, testId, strong, children }: { label: string; testId: strin
 export function BreakdownCard({ breakdown }: { breakdown: Breakdown }) {
   const { currency, state, lines } = breakdown;
   const refunded = !isZero(state.refunded);
+  const byBuyer = state.feesPaidBy === "comprador";
   return (
     <Card>
       <CardHeader>
@@ -97,10 +98,13 @@ export function BreakdownCard({ breakdown }: { breakdown: Breakdown }) {
           <Row label="Comisiones" testId="comisiones">
             <Money value={breakdown.feesTotal} currency={currency} />
           </Row>
-          <Row label="Neto" testId="neto" strong>
+          <Row label={byBuyer ? "Lo que te queda" : "Neto"} testId="neto" strong>
             <Money value={breakdown.net} currency={currency} />
           </Row>
         </dl>
+        {byBuyer ? (
+          <p className="text-sm text-ink-soft">La comisión la pagó el comprador: se le cobró de más para cubrirla.</p>
+        ) : null}
       </CardBody>
     </Card>
   );

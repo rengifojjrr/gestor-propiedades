@@ -3,6 +3,7 @@ import type { Breakdown } from "@/lib/pasarelas/types";
 
 /*
  * El reparto de un cobro tal como lo calculó el motor: sobre qué se reparte y cuánto le toca a cada beneficiario.
+ * Si la comisión la pagó el comprador, se reparte lo que queda (el neto) y lo dice.
  * Los nombres vienen dentro del desglose. Sin estado: se puede usar desde el servidor (detalle del cobro) o dentro
  * de la vista previa de «Registrar cobro».
  */
@@ -14,6 +15,9 @@ export function AllocationList({ breakdown }: { breakdown: Breakdown }) {
   if (alloc.baseKind === null) return <p className="text-ink-soft">Este cobro no se reparte.</p>;
   return (
     <div className="flex flex-col gap-2">
+      {breakdown.state.feesPaidBy === "comprador" ? (
+        <p className="text-sm">Se reparte sobre lo que te queda: la comisión la pagó el comprador.</p>
+      ) : null}
       <p className="text-sm text-ink-soft">
         {BASE_LABEL[alloc.baseKind]}: <Money value={alloc.baseAmount} currency={currency} />
       </p>
