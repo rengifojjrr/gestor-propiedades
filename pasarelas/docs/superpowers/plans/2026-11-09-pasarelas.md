@@ -1499,6 +1499,17 @@ pasarelas, empresas, registrar, detalle, editar, cobros, Resumen e importar.
    próximos depósitos siguen con una sola fecha.
 2. En las pantallas: «Llega entre el lun 16 y el mié 18 nov».
 
+### Task 44: ¿Quién paga la comisión? «Nosotros» o «el comprador»
+
+Pedido del dueño, con las decisiones tomadas con él:
+- se escribe lo que pagó el comprador y la comisión se calcula con la tarifa real (1040 con Stripe: 30,46, neto
+  1009,54);
+- si la pagó el comprador, se reparte sobre lo que queda, y su comisión sale aparte en los totales, no como costo del
+  negocio.
+
+**Dueña de:** una migración aditiva (`fees_paid_by` en el cobro, `pay_save_transactions`, las vistas de totales), el
+motor, los totales y las pantallas Registrar, Editar, detalle, Cobros, Resumen, empresas, pasarelas e Importar.
+
 ### Task 22: Documentación, revisión y entrega
 
 **Archivos:** `docs/PASARELAS.md`, `README.md`, raíz `README.md`.
