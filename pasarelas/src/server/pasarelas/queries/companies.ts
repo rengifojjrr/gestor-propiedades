@@ -70,7 +70,9 @@ type CompanyTotalRow = {
 export type CompanyTotal = {
   currency: Currency;
   count: number;
+  /** Lo facturado: la venta del negocio (de un cobro cuya comisión pagó el comprador, su neto). */
   gross: Money;
+  /** Las comisiones del negocio: sin las que pagaron los compradores. */
   fees: Money;
   net: Money;
   firstOn: ISODate;
