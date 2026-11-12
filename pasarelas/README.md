@@ -65,12 +65,21 @@ Desde el 10 de noviembre de 2026, en **https://pasarelas-rengifojjrr-6206s-proje
   variables públicas. No vuelve a compilar si un cambio no toca `pasarelas/`. Las vistas previas piden entrar a Vercel.
 - **Supabase**: el proyecto `cotizaciones-interactivas`, compartido con otras apps del dueño (plan gratis, sin
   proyecto libre).
-  - La migración se aplicó tal cual, del commit `0f981a7` (sha256 `a6bb231b…`): queda registrada como
-    `pasarelas_1_las_pasarelas_de_pago`.
+  - Las migraciones se aplican tal cual, cada una bajada del commit indicado y con su sha256 comprobado:
+
+    | Registrada como | Commit | sha256 |
+    |---|---|---|
+    | `pasarelas_1_las_pasarelas_de_pago` | `0f981a7` | `a6bb231b…` |
+    | `pasarelas_2_pagos_internacionales` | `3d380e4` | `288d446c…` |
+    | `pasarelas_3_ventanas_de_deposito` | `3d380e4` | `3397a10e…` |
+    | `pasarelas_4_quien_paga_la_comision` | `ee9befa` | `eb659a8d…` |
+
+    Antes de la 4, todas las tablas `pay_*` se copiaron al esquema `pasarelas_copia_antes_4`, que la API no expone. Se
+    puede borrar cuando ya no haga falta.
   - La huella del esquema coincide con la de una base local recién aplicada. La única diferencia: `service_role`
     también escribe en las 4 vistas, por los permisos por defecto del proyecto alojado.
   - No apareció ningún aviso de seguridad nuevo.
-  - La prueba en vivo usó una cuenta de prueba (entrar, guardar, recargar) y la borró al terminar.
+  - Cada publicación se prueba en vivo con una cuenta de prueba.
 
 **Lo que hay que saber de ese proyecto compartido:**
 - **Se entra con la cuenta de ese proyecto.** Si el correo ya tenía cuenta en otra app, es la misma: cambiar la
