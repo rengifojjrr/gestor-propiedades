@@ -7,7 +7,7 @@
  * configuración, `PayRuleError` (rules.ts). Un monto cobrado o un instante mal escritos los rechazan el cálculo
  * y las fechas con `RangeError`: validar la forma de lo que entra es cosa de quien llama.
  */
-import { compute, diff, recalc, recompute } from "./breakdown";
+import { buyerFeesOf, compute, diff, recalc, recompute } from "./breakdown";
 import { estimateDepositWindow, formatDate, nyDate, type DateWindow } from "./dates";
 import { ZERO, isMoney } from "./decimal";
 import { add, cmp, formatMoney } from "./money";
@@ -136,7 +136,10 @@ export type EditTxInput = Partial<
 
 // ─── Del desglose y del cobro guardado a columnas ───────────────────────────────────────────────────────────
 
-/** Las columnas que salen del desglose: cuando se recalcula, se escriben las que hayan cambiado. */
+/**
+ * Las columnas que salen del desglose: cuando se recalcula, se escriben las que hayan cambiado. Lo que pagaron los
+ * compradores va siempre junto con las comisiones: todo camino que escribe `feesTotal` pasa por aquí.
+ */
 function derived(b: Breakdown) {
   return {
     currency: b.currency,
@@ -153,6 +156,7 @@ function derived(b: Breakdown) {
     schemeVersionId: b.rules.scheme?.versionId ?? null,
     disputeState: b.state.dispute,
     feesPaidBy: b.state.feesPaidBy,
+    buyerFees: buyerFeesOf(b),
   } satisfies Partial<TxFields>;
 }
 
@@ -190,6 +194,7 @@ function columns(tx: TxSnapshot): TxFields {
     bankAccountId: tx.bankAccountId,
     deletedAt: tx.deletedAt,
     feesPaidBy: tx.feesPaidBy,
+    buyerFees: tx.buyerFees,
   };
 }
 

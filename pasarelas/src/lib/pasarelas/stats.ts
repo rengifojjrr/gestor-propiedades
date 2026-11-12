@@ -3,27 +3,29 @@
  * Todo va por moneda (nunca se suman monedas distintas) y los cobros fallidos no cuentan en nada.
  *
  * Quién pagó la comisión cambia lo que es del negocio. Si la pagó el comprador (se le cobró de más para cubrirla),
- * lo que pagó de más no es venta: lo facturado de ese cobro es su neto, y su comisión no es un costo del negocio
- * sino «pagada por los compradores» (`businessFigures`). El bruto sigue siendo todo lo cobrado.
+ * lo que pagó de más no es venta ni costo del negocio: son las comisiones «pagadas por los compradores» de cada cobro
+ * (`buyerFees`, la pasarela, sus opciones y la plataforma de lo que el comprador sigue pagando). Lo facturado es el
+ * bruto menos eso, y las comisiones del negocio, las demás: el costo de un reembolso o de una disputa
+ * (`businessFigures`). El bruto sigue siendo todo lo cobrado.
  */
 import type { Decimal } from "decimal.js";
 import { addDays, daysBetween, monthKey } from "./dates";
 import { D, ZERO, dec, toMoney } from "./decimal";
-import { add, cmp, pctOf } from "./money";
+import { add, cmp, pctOf, sub } from "./money";
 import { isOverdue, isPending } from "./status";
 import type { Currency, ISODate, LeanTx, Money, Pct } from "./types";
 
 /**
- * Las cifras de un grupo de cobros de UNA moneda. Siempre `gross = sale + buyerFees` y `sale = net + fees`; sin
+ * Las cifras de un grupo de cobros de UNA moneda. Siempre `gross = sale + buyerFees` y `net = sale − fees`; sin
  * cobros cuya comisión pagó el comprador, `sale` es el bruto, `fees` son todas las comisiones y `buyerFees` es 0.
  */
 export type Figures = {
   count: number;
   /** Todo lo cobrado (el bruto vigente): lo que pasó por la pasarela. */
   gross: Money;
-  /** Lo facturado, la venta del negocio: el bruto si pagamos nosotros la comisión; el neto si la pagó el comprador. */
+  /** Lo facturado, la venta del negocio: el bruto menos lo que pagaron los compradores. */
   sale: Money;
-  /** Las comisiones del negocio: las de los cobros cuya comisión pagamos nosotros. */
+  /** Las comisiones del negocio: todas menos las que pagaron los compradores. */
   fees: Money;
   /** Las comisiones que pagaron los compradores. */
   buyerFees: Money;
@@ -34,8 +36,8 @@ export type Totals = Figures & {
   /** Bruto ÷ cobros. */
   avgTicket: Money;
   /**
-   * Las comisiones del negocio sobre el bruto de los cobros en que las pagó (sin los del comprador, que no le
-   * costaron nada); `null` si ese bruto es 0.
+   * Las comisiones del negocio sobre lo facturado (`costPct`): lo que de verdad le costó cobrar. Sin cobros del
+   * comprador es el de siempre, sobre el bruto. `null` sin venta.
    */
   feePct: Pct | null;
   /** Por caer (`isPending`): lo que se ve como registrado o en tránsito. */
@@ -52,8 +54,8 @@ export type CurrencySummary = {
   /** De mayor a menor lo facturado (`sale`). */
   byCompany: (Figures & { companyId: string })[];
   /**
-   * De mayor a menor bruto. `sharePct`: su parte del bruto de la moneda. `effectiveCostPct`: las comisiones del
-   * negocio sobre el bruto de sus cobros en que las pagó (`null` si no hay ninguno con bruto).
+   * De mayor a menor bruto. `sharePct`: su parte del bruto de la moneda. `effectiveCostPct`: sus comisiones del
+   * negocio sobre su venta (`costPct`; `null` sin venta). Una cuyas comisiones pagaron todas los compradores cuesta 0 %.
    */
   byGateway: (Figures & { gatewayId: string; sharePct: Pct | null; effectiveCostPct: Pct | null })[];
   /**
@@ -85,8 +87,6 @@ export type DepositGroup = {
   overdue: boolean;
 };
 
-/** Las cifras y, aparte, el bruto de los cobros cuya comisión pagó el negocio: sobre él se mide su %. */
-type Sums = Figures & { feeBase: Money };
 type Lag = { count: number; avgDays: string; medianDays: string };
 
 const NO_LAG = { avgDays: null, medianDays: null };
@@ -112,26 +112,30 @@ function countedByCurrency(rows: readonly LeanTx[]): Map<Currency, LeanTx[]> {
 }
 
 /**
- * Lo que un cobro es para el negocio según quién pagó la comisión. Si la pagamos nosotros: la venta es el bruto y
- * la comisión, del negocio. Si la pagó el comprador: la venta es el neto (lo que pagó de más no es del negocio) y la
- * comisión la pagaron los compradores.
+ * Lo que un cobro es para el negocio: lo que pagaron los compradores (`buyerFees`, 0 si pagamos nosotros), su venta
+ * (el bruto menos eso) y sus comisiones (las demás: con «comprador», el costo del reembolso y el de la disputa).
  */
 export function businessFigures(
-  row: Pick<LeanTx, "gross" | "fees" | "net" | "feesPaidBy">,
+  row: Pick<LeanTx, "gross" | "fees" | "buyerFees">,
 ): Pick<Figures, "sale" | "fees" | "buyerFees"> {
-  return row.feesPaidBy === "comprador"
-    ? { sale: row.net, fees: ZERO, buyerFees: row.fees }
-    : { sale: row.gross, fees: row.fees, buyerFees: ZERO };
+  return { sale: sub(row.gross, row.buyerFees), fees: sub(row.fees, row.buyerFees), buyerFees: row.buyerFees };
+}
+
+/**
+ * Qué parte de lo facturado se llevaron las comisiones del negocio: lo que de verdad le costó cobrar. Sin venta
+ * (todo reembolsado, o lo de los compradores se llevó lo poco que quedó cobrado) no hay porcentaje: `null`.
+ */
+function costPct(fees: Money, sale: Money): Pct | null {
+  return cmp(sale, ZERO) > 0 ? pctOf(fees, sale) : null;
 }
 
 /** Suma de filas de UNA moneda (quien llama ya las separó). */
-function sumRows(rows: readonly LeanTx[]): Sums {
+function sumRows(rows: readonly LeanTx[]): Figures {
   let gross = ZERO;
   let sale = ZERO;
   let fees = ZERO;
   let buyerFees = ZERO;
   let net = ZERO;
-  let feeBase = ZERO;
   for (const row of rows) {
     const own = businessFigures(row);
     gross = add(gross, row.gross);
@@ -139,13 +143,9 @@ function sumRows(rows: readonly LeanTx[]): Sums {
     fees = add(fees, own.fees);
     buyerFees = add(buyerFees, own.buyerFees);
     net = add(net, row.net);
-    if (row.feesPaidBy !== "comprador") feeBase = add(feeBase, row.gross);
   }
-  return { count: rows.length, gross, sale, fees, buyerFees, net, feeBase };
+  return { count: rows.length, gross, sale, fees, buyerFees, net };
 }
-
-/** Las cifras de una suma, sin el bruto con que se mide el % de las comisiones. */
-const figuresOf = ({ feeBase: _base, ...figures }: Sums): Figures => figures;
 
 /** Orden por código de carácter, no por idioma: servidor y navegador dan exactamente lo mismo. */
 const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -192,28 +192,28 @@ function summarizeCurrency(rows: readonly LeanTx[]): CurrencySummary {
   const deposited = sumRows(rows.filter(isDeposited));
   return {
     totals: {
-      ...figuresOf(all),
+      ...all,
       avgTicket: toMoney(dec(all.gross).div(all.count)),
-      feePct: pctOf(all.fees, all.feeBase),
+      feePct: costPct(all.fees, all.sale),
       pendingNet: pending.net,
       pendingCount: pending.count,
       depositedNet: deposited.net,
       depositedCount: deposited.count,
     },
     byMonth: [...groupBy(rows, (row) => monthKey(row.occurredOn))]
-      .map(([month, group]) => ({ month, ...figuresOf(sumRows(group)) }))
+      .map(([month, group]) => ({ month, ...sumRows(group) }))
       .sort((a, b) => byText(a.month, b.month)),
     byCompany: [...groupBy(rows, (row) => row.companyId)]
-      .map(([companyId, group]) => ({ companyId, ...figuresOf(sumRows(group)) }))
+      .map(([companyId, group]) => ({ companyId, ...sumRows(group) }))
       .sort(largestFirst((company) => company.sale, (company) => company.companyId)),
     byGateway: [...groupBy(rows, (row) => row.gatewayId)]
       .map(([gatewayId, group]) => {
         const sums = sumRows(group);
         return {
           gatewayId,
-          ...figuresOf(sums),
+          ...sums,
           sharePct: pctOf(sums.gross, all.gross),
-          effectiveCostPct: pctOf(sums.fees, sums.feeBase),
+          effectiveCostPct: costPct(sums.fees, sums.sale),
         };
       })
       .sort(largestFirst((gateway) => gateway.gross, (gateway) => gateway.gatewayId)),

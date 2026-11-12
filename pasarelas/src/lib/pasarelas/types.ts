@@ -250,6 +250,11 @@ export type LeanTx = {
   depositedOn: ISODate | null;
   receiptsCount: number;
   feesPaidBy: FeesPaidBy;
+  /**
+   * Lo que pagaron los compradores (`buyerFeesOf` de su desglose): 0 si pagamos nosotros. Las comisiones del negocio
+   * son `fees − buyerFees`, y lo facturado, `gross − buyerFees`.
+   */
+  buyerFees: Money;
 };
 
 /** El cobro completo guardado (lo que hace falta para planear un cambio). */
@@ -305,6 +310,8 @@ export type TxFields = {
   bankAccountId: string | null;
   deletedAt: string | null;
   feesPaidBy: FeesPaidBy;
+  /** Lo que pagaron los compradores: sale del desglose y se escribe con `feesTotal`. */
+  buyerFees: Money;
 };
 
 export type AllocWrite = { beneficiaryId: string; amount: Money; base: AllocBase; pct: Pct; isRemainder: boolean };

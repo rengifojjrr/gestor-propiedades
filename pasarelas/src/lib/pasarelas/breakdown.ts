@@ -203,6 +203,31 @@ export function recalc(b: Breakdown, rules: Rules): Breakdown {
   return compute(rules, b.state, b.currency);
 }
 
+// ─── Lo que pagaron los compradores ─────────────────────────────────────────────────────────────────────────
+
+/** Las líneas que se cobran sobre lo que el comprador sigue pagando: si la comisión la pagó él, son suyas. */
+const PAID_BY_BUYER: Record<LineKind, boolean> = {
+  pasarela: true,
+  opcion: true,
+  plataforma: true,
+  reembolso: false,
+  disputa: false,
+};
+
+/**
+ * Lo que pagaron los compradores en un cobro: si la comisión la pagó el comprador, las líneas que se cobran sobre lo
+ * que él sigue pagando (la pasarela, las opciones y la plataforma). El costo de un reembolso y el de una disputa son
+ * del negocio: el comprador que recupera su dinero no paga lo que la pasarela se queda, y la disputa la cobra la
+ * pasarela al negocio. Si pagamos nosotros (o el desglose es de antes y no lo dice), 0.
+ *
+ * Las comisiones del negocio son `feesTotal` menos esto, y su venta (lo facturado), el bruto vigente menos esto.
+ */
+export function buyerFeesOf(b: Breakdown): Money {
+  if (b.state.feesPaidBy !== "comprador") return ZERO;
+  const paid = b.lines.filter((line) => PAID_BY_BUYER[line.kind]);
+  return toMoney(paid.reduce((sum, line) => sum.plus(dec(line.amount)), new D(0)));
+}
+
 // ─── diff ───────────────────────────────────────────────────────────────────────────────────────────────────
 
 const LINE_ORDER: Record<LineKind, number> = { pasarela: 1, reembolso: 2, opcion: 3, plataforma: 4, disputa: 5 };

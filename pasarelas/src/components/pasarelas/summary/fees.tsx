@@ -5,17 +5,24 @@ import type { Totals } from "@/lib/pasarelas/stats";
 import type { Currency, Money as MoneyText } from "@/lib/pasarelas/types";
 
 /**
- * La aclaración de «Comisiones» (las del negocio): su % del bruto. Si hubo cobros cuya comisión pagó el comprador,
- * el % es del bruto de los cobros en que las pagamos nosotros, y así lo dice. Sin ese bruto no hay %: solo se dice
- * que todas las pagaron los compradores si el negocio no pagó nada (un cobro propio reembolsado del todo deja bruto
- * 0 y la comisión que retuvo la pasarela, igual que `whyUncosted`). `null` si no hay nada que aclarar.
+ * La aclaración de «Comisiones» (las del negocio): su % de lo facturado, lo que de verdad le costó cobrar. Si nadie
+ * pagó comisiones por el comprador, lo facturado es el bruto y se dice como siempre, «del bruto»; si alguien pagó,
+ * «de lo facturado», y si las pagaron todas los compradores, ese 0 % lleva su razón. Sin venta (todo reembolsado) no
+ * hay %: `null`, nada que aclarar.
  */
 export function feesHint(totals: Pick<Totals, "feePct" | "fees" | "buyerFees">): ReactNode {
-  const byBuyers = !isZero(totals.buyerFees);
-  if (totals.feePct === null) return byBuyers && isZero(totals.fees) ? "Todas las pagaron los compradores" : null;
+  if (totals.feePct === null) return null;
+  if (isZero(totals.buyerFees)) {
+    return (
+      <>
+        <Percent value={totals.feePct} /> del bruto
+      </>
+    );
+  }
   return (
     <>
-      <Percent value={totals.feePct} /> {byBuyers ? "del bruto en que las pagamos" : "del bruto"}
+      <Percent value={totals.feePct} /> de lo facturado
+      {isZero(totals.fees) ? ": todas las pagaron los compradores" : null}
     </>
   );
 }

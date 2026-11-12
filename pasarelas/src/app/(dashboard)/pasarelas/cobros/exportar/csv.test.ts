@@ -27,6 +27,7 @@ function e1(patch: Partial<TxListItem> = {}): TxListItem {
     depositedOn: null,
     receiptsCount: 0,
     feesPaidBy: "nosotros",
+    buyerFees: "0.00",
     schemeId: DEMO.schemeId,
     reference: "pi_demo_1",
     note: null,
@@ -57,7 +58,7 @@ describe("txCsv", () => {
     expect(csv.startsWith("﻿")).toBe(true);
     expect(lines(csv)).toEqual([
       TX_CSV_HEADER.join(";"),
-      "2026-11-13;Escuela Demo;Escuela de marketing;Stripe;pi_demo_1;USD;100,00;0,00;100,00;9,70;9,7;90,30;Registrado;2026-11-13;;;Cuenta principal;0;;2026-11-13;Nosotros",
+      "2026-11-13;Escuela Demo;Escuela de marketing;Stripe;pi_demo_1;USD;100,00;0,00;100,00;9,70;9,7;90,30;Registrado;2026-11-13;;;Cuenta principal;0;;2026-11-13;Nosotros;0,00",
     ]);
   });
 
@@ -65,7 +66,7 @@ describe("txCsv", () => {
     const csv = txCsv([e1()], cfgDemo(), CSV_STD);
     expect(csv.startsWith("﻿")).toBe(false);
     expect(lines(csv)[1]).toBe(
-      "2026-11-13,Escuela Demo,Escuela de marketing,Stripe,pi_demo_1,USD,100.00,0.00,100.00,9.70,9.7,90.30,Registrado,2026-11-13,,,Cuenta principal,0,,2026-11-13,Nosotros",
+      "2026-11-13,Escuela Demo,Escuela de marketing,Stripe,pi_demo_1,USD,100.00,0.00,100.00,9.70,9.7,90.30,Registrado,2026-11-13,,,Cuenta principal,0,,2026-11-13,Nosotros,0.00",
     );
   });
 
@@ -92,12 +93,27 @@ describe("txCsv", () => {
       "Nota",
       "Fecha estimada (desde)",
       "Comisión pagada por",
+      "Comisiones pagadas por los compradores",
     ]);
   });
 
-  it("quién pagó la comisión, al final: «Nosotros» o «El comprador»", () => {
-    const rows = lines(txCsv([e1(), e1({ id: "tx-c", feesPaidBy: "comprador" })], cfgDemo(), CSV_ES)).slice(1);
-    expect(rows.map((row) => row.split(";")[20])).toEqual(["Nosotros", "El comprador"]);
+  it("quién pagó la comisión y cuánto pagaron los compradores, al final", () => {
+    // E8b: 1040 que pagó el comprador, con 520 reembolsados: el comprador pagó 15,38 de los 30,46 de comisiones.
+    const e8b = e1({
+      id: "tx-c",
+      feesPaidBy: "comprador",
+      grossOriginal: "1040.00",
+      refunded: "520.00",
+      gross: "520.00",
+      fees: "30.46",
+      net: "489.54",
+      buyerFees: "15.38",
+    });
+    const rows = lines(txCsv([e1(), e8b], cfgDemo(), CSV_ES)).slice(1);
+    expect(rows.map((row) => row.split(";").slice(20))).toEqual([
+      ["Nosotros", "0,00"],
+      ["El comprador", "15,38"],
+    ]);
   });
 
   it("una ventana de depósito: «Fecha estimada» es la más tardía y «Fecha estimada (desde)», la más temprana", () => {
@@ -122,6 +138,7 @@ describe("txCsv", () => {
       "",
       "2026-11-13",
       "Nosotros",
+      "0,00",
     ]);
   });
 

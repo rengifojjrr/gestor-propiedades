@@ -58,6 +58,7 @@ function leanRow(patch: Partial<LeanTxRow> = {}): LeanTxRow {
     deposited_on: null,
     receipts_count: 0,
     fees_paid_by: "nosotros",
+    buyer_fees: "0.00",
     ...patch,
   };
 }
@@ -125,6 +126,7 @@ describe("toLeanTx", () => {
       depositedOn: null,
       receiptsCount: 0,
       feesPaidBy: "nosotros",
+      buyerFees: "0.00",
     });
   });
 
@@ -157,6 +159,11 @@ describe("toLeanTx", () => {
       disputeState: "ganada",
       depositedOn: "2026-11-16",
     });
+  });
+
+  test("lo que pagaron los compradores se lee de su columna, como el resto del dinero", () => {
+    expect(toLeanTx(leanRow({ fees_paid_by: "comprador", buyer_fees: "15.38" })).buyerFees).toBe("15.38");
+    expect(toLeanTx(leanRow({ fees_paid_by: "comprador", buyer_fees: "30.5" })).buyerFees).toBe("30.50");
   });
 
   test("quién pagó la comisión: «nosotros» o «comprador»; otra cosa no se cuela", () => {

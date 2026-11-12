@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { compute, diff, parseBreakdown, recalc, recompute } from "./breakdown";
+import { buyerFeesOf, compute, diff, parseBreakdown, recalc, recompute } from "./breakdown";
 import { D, isMoney } from "./decimal";
+import { sub } from "./money";
+import { businessFigures } from "./stats";
 import type { Breakdown, ExtraRule, Rules, SchemeRule, State } from "./types";
 
 // ─── Datos de ejemplo (inventados) ──────────────────────────────────────────────────────────────────────────
@@ -275,6 +277,86 @@ describe("compute: casos que deben salir exactos", () => {
     expect(b.alloc).toMatchObject({ baseKind: "bruto", baseAmount: "1040.00" });
     expect(shares(b)).toEqual(["520.00", "312.00", "208.00"]);
     expect(b.state.feesPaidBy).toBe("nosotros");
+  });
+});
+
+// ─── E8: reembolsos y disputas de un cobro del comprador ─────────────────────────────────────────────────────
+
+/**
+ * Lo que es del negocio en un cobro: lo que pagaron los compradores (`buyerFeesOf`), sus comisiones (las demás) y su
+ * venta (el bruto menos lo de los compradores). Siempre `net = sale − businessFees`.
+ */
+function e8Figures(b: Breakdown) {
+  const buyerFees = buyerFeesOf(b);
+  return { net: b.net, buyerFees, businessFees: sub(b.feesTotal, buyerFees), sale: sub(b.gross, buyerFees) };
+}
+
+/**
+ * E8: Stripe 2,9 % + 0,30 (no devuelve la comisión; disputa 15,00), cobro de 1040 que pagó el comprador y esquema
+ * 50/30/20 «Sobre el bruto» (el reparto va sobre el neto). Lo que pagaron los compradores son las líneas que se
+ * cobran sobre lo que el comprador sigue pagando; el costo del reembolso y el de la disputa son del negocio.
+ */
+describe("E8: reembolsos y disputas de un cobro cuya comisión pagó el comprador", () => {
+  const e7 = compute(rulesE7(), paidByBuyer("1040.00"), "USD");
+
+  test("E8a: reembolso total; el comprador recuperó todo y los 30,46 que se queda la pasarela los pierde el negocio", () => {
+    const b = recompute(e7, { refunded: "1040.00" });
+    expect(kindsAndAmounts(b)).toEqual([
+      ["pasarela", "0.00"],
+      ["reembolso", "30.46"],
+    ]);
+    expect(e8Figures(b)).toEqual({ net: "-30.46", buyerFees: "0.00", businessFees: "30.46", sale: "0.00" });
+    // El reparto de siempre sobre un neto negativo (como E4, «nosotros» con reembolso total): se reparten 30,46 por
+    // mayor resto (15,23 · 9,138 · 6,092 → el centavo al 9,138) y se cambia el signo.
+    expect(b.alloc).toMatchObject({ baseKind: "neto", baseAmount: "-30.46" });
+    expect(shares(b)).toEqual(["-15.23", "-9.14", "-6.09"]);
+  });
+
+  test("E8b: reembolso parcial de 520; el comprador pagó 15,38 y el negocio el costo del reembolso, 15,08", () => {
+    const b = recompute(e7, { refunded: "520.00" });
+    expect(kindsAndAmounts(b)).toEqual([
+      ["pasarela", "15.38"], // 520 × 2,9 % + 0,30
+      ["reembolso", "15.08"], // 30,46 − 15,38
+    ]);
+    expect(e8Figures(b)).toEqual({ net: "489.54", buyerFees: "15.38", businessFees: "15.08", sale: "504.62" });
+    // 244,77 · 146,862 · 97,908: truncados suman 489,53 y el centavo va al de mayor resto (97,908 → 97,91).
+    expect(b.alloc).toMatchObject({ baseKind: "neto", baseAmount: "489.54" });
+    expect(shares(b)).toEqual(["244.77", "146.86", "97.91"]);
+  });
+
+  test("E8c: sin reembolso y con la disputa perdida; su costo (15) lo paga el negocio, nunca el comprador", () => {
+    const b = compute(rulesE7(), { ...paidByBuyer("1040.00"), dispute: "perdida" }, "USD");
+    expect(kindsAndAmounts(b)).toEqual([
+      ["pasarela", "30.46"],
+      ["disputa", "15.00"],
+    ]);
+    const e8c = { net: "994.54", buyerFees: "30.46", businessFees: "15.00", sale: "1009.54" };
+    expect(e8Figures(b)).toEqual(e8c);
+    // Con la disputa abierta, lo mismo.
+    expect(e8Figures(recompute(e7, { dispute: "abierta" }))).toEqual(e8c);
+  });
+});
+
+describe("buyerFeesOf", () => {
+  test("con «comprador»: la pasarela, las opciones y la plataforma (E1: 3,20 + 1,50 + 5,00)", () => {
+    expect(buyerFeesOf(compute(rulesE1(), paidByBuyer("100.00"), "USD"))).toBe("9.70");
+  });
+
+  test("con «nosotros» es 0, también con reembolso y disputa", () => {
+    expect(buyerFeesOf(e1)).toBe("0.00");
+    expect(buyerFeesOf(recompute(e1, { refunded: "40.00", dispute: "abierta" }))).toBe("0.00");
+  });
+
+  test("un desglose guardado antes de saber quién pagó la comisión: 0, la pagó el negocio", () => {
+    const { feesPaidBy: _payer, ...oldState } = e1.state;
+    const old = { ...(JSON.parse(JSON.stringify(e1)) as Record<string, unknown>), state: oldState };
+    expect(buyerFeesOf(parseBreakdown(old))).toBe("0.00");
+    // Aun sin pasar por `parseBreakdown` (la clave no está): 0.
+    expect(buyerFeesOf(old as unknown as Breakdown)).toBe("0.00");
+  });
+
+  test("un cobro fallido no tiene comisiones: 0", () => {
+    expect(buyerFeesOf(compute(rulesE1(), { ...paidByBuyer("100.00"), failed: true }, "USD"))).toBe("0.00");
   });
 });
 
@@ -1065,6 +1147,34 @@ describe("propiedades con 2 000 cobros generados", () => {
         expect(sum(b.alloc.lines.map((l) => l.pct)).eq(100), label(b)).toBe(true);
       }
     }
+  });
+
+  test("lo de los compradores: gross = sale + buyerFees y net = sale − comisiones del negocio, con reembolsos y disputas", () => {
+    let byBuyer = 0;
+    for (const { state, b } of cases) {
+      const buyerFees = buyerFeesOf(b);
+      const own = businessFigures({ gross: b.gross, fees: b.feesTotal, buyerFees });
+      expect(new D(b.gross).eq(new D(own.sale).plus(own.buyerFees)), label(b)).toBe(true);
+      expect(new D(b.net).eq(new D(own.sale).minus(own.fees)), label(b)).toBe(true);
+      // Las del comprador son las que se cobran sobre lo que sigue pagando; el reembolso y la disputa, del negocio.
+      const ofBuyer = b.lines.filter((l) => l.kind !== "reembolso" && l.kind !== "disputa").map((l) => l.amount);
+      const ofBusiness = b.lines.filter((l) => l.kind === "reembolso" || l.kind === "disputa").map((l) => l.amount);
+      if (state.feesPaidBy === "comprador") {
+        byBuyer += 1;
+        expect(sum(ofBuyer).eq(buyerFees), label(b)).toBe(true);
+        expect(sum(ofBusiness).eq(own.fees), label(b)).toBe(true);
+      } else {
+        expect(buyerFees, label(b)).toBe("0.00");
+        expect(own.fees, label(b)).toBe(b.feesTotal);
+      }
+      expect(isMoney(buyerFees) && !new D(buyerFees).isNegative(), label(b)).toBe(true);
+    }
+    expect(byBuyer).toBeGreaterThan(500);
+    const refundedOrDisputed = cases.filter(
+      ({ state, b }) =>
+        state.feesPaidBy === "comprador" && b.lines.some((l) => l.kind === "reembolso" || l.kind === "disputa"),
+    );
+    expect(refundedOrDisputed.length).toBeGreaterThan(200);
   });
 
   test('cada monto cumple isMoney y ninguno es "-0.00"', () => {

@@ -28,6 +28,7 @@ const tx = (id: string, patch: Partial<LeanTx> = {}): LeanTx => ({
   depositedOn: null,
   receiptsCount: 0,
   feesPaidBy: "nosotros",
+  buyerFees: "0.00",
   ...patch,
 });
 
@@ -35,9 +36,22 @@ const tx = (id: string, patch: Partial<LeanTx> = {}): LeanTx => ({
 const monto = (gross: Money, fees: Money, net: Money) => ({ grossOriginal: gross, gross, fees, net });
 
 /** E7: 1040 por algo de 1000, la comisión (30,46) la pagó el comprador. */
-const delComprador = tx("c1", { ...monto("1040.00", "30.46", "1009.54"), feesPaidBy: "comprador" });
+const delComprador = tx("c1", {
+  ...monto("1040.00", "30.46", "1009.54"),
+  feesPaidBy: "comprador",
+  buyerFees: "30.46",
+});
 /** E4: un cobro propio de 100,00 reembolsado del todo; la pasarela se quedó su comisión (3,20). */
 const reembolsadoPropio = tx("n1", { refunded: "100.00", gross: "0.00", fees: "3.20", net: "-3.20" });
+/** E8a: E7 reembolsado del todo. El comprador no pagó nada; los 30,46 que se quedó la pasarela, el negocio. */
+const e8a = tx("e8a", {
+  feesPaidBy: "comprador",
+  grossOriginal: "1040.00",
+  refunded: "1040.00",
+  gross: "0.00",
+  fees: "30.46",
+  net: "-30.46",
+});
 
 /** Los totales en USD de esos cobros, como los arma el Resumen. */
 function totals(rows: readonly LeanTx[]) {
@@ -58,22 +72,25 @@ describe("feesHint", () => {
     expect(hint([tx("n1")])).toBe("3,2 % del bruto");
   });
 
-  it("con cobros del comprador: el % es del bruto en que las pagamos", () => {
-    expect(hint([tx("n1"), delComprador])).toBe("3,2 % del bruto en que las pagamos");
+  it("con cobros del comprador: el % de las comisiones del negocio es de lo facturado", () => {
+    // 3,20 ÷ (100,00 + 1009,54) = 0,288… %
+    expect(hint([tx("n1"), delComprador])).toBe("0,29 % de lo facturado");
   });
 
-  it("todas las comisiones las pagaron los compradores: lo dice", () => {
-    expect(hint([delComprador])).toBe("Todas las pagaron los compradores");
+  it("todas las comisiones las pagaron los compradores: al negocio le costó 0 %, y dice por qué", () => {
+    expect(hint([delComprador])).toBe("0 % de lo facturado: todas las pagaron los compradores");
   });
 
-  it("un reembolso total propio y un cobro del comprador: el negocio sí pagó comisiones, no lo niega", () => {
+  it("un reembolso total propio y un cobro del comprador: lo que retuvo la pasarela cuenta, sobre lo facturado", () => {
     const sums = totals([reembolsadoPropio, delComprador]);
-    // Sin bruto propio no hay %, pero el negocio pagó los 3,20 que retuvo la pasarela.
-    expect(sums).toMatchObject({ fees: "3.20", buyerFees: "30.46", feePct: null });
-    expect(hint([reembolsadoPropio, delComprador])).toBe("");
+    expect(sums).toMatchObject({ fees: "3.20", buyerFees: "30.46", sale: "1009.54", feePct: "0.32" });
+    expect(hint([reembolsadoPropio, delComprador])).toBe("0,32 % de lo facturado");
   });
 
-  it("sin bruto propio y sin compradores: nada que aclarar", () => {
+  it("sin venta (todo reembolsado) no hay %: nada que aclarar, pague quien pague", () => {
     expect(hint([reembolsadoPropio])).toBe("");
+    // E8a: los 30,46 son del negocio y los compradores no pagaron nada: ni % ni «los pagaron los compradores».
+    expect(totals([e8a])).toMatchObject({ fees: "30.46", buyerFees: "0.00", feePct: null });
+    expect(hint([e8a])).toBe("");
   });
 });

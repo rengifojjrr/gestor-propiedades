@@ -267,6 +267,7 @@ describe("una lectura que llega sin el total de filas (`count`) no se da por com
     deposited_on: null,
     receipts_count: 0,
     fees_paid_by: "nosotros",
+    buyer_fees: "0.00",
   };
   /** Una página llena (el tope de la API) que no dice cuántas filas tiene el filtro: puede haber más. */
   const FULL_PAGE_NO_COUNT = { data: Array.from({ length: 1000 }, () => row), count: null, error: null };

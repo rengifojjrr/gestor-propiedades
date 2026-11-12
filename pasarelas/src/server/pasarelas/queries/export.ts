@@ -202,6 +202,7 @@ const EXPORT_COLUMNS = {
     created_at: AS_IS,
     updated_at: AS_IS,
     fees_paid_by: AS_IS,
+    buyer_fees: TEXT,
   },
   pay_allocations: {
     id: AS_IS,

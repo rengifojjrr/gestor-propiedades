@@ -49,6 +49,7 @@ const COLUMN_OF: Record<keyof TxFields, TxColumn> = {
   bankAccountId: "bank_account_id",
   deletedAt: "deleted_at",
   feesPaidBy: "fees_paid_by",
+  buyerFees: "buyer_fees",
 };
 
 /** Un elemento de `p_items`: las columnas con su nombre de la base y el dinero como texto. */

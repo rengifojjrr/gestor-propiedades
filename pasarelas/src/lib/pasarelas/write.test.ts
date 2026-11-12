@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { parseBreakdown } from "./breakdown";
+import { buyerFeesOf, parseBreakdown } from "./breakdown";
 import { DEMO, cfgDemo } from "./demo.fixture";
 import { add, sub } from "./money";
 import { PayRuleError } from "./rules";
@@ -126,6 +126,7 @@ const FIELD_NAMES: (keyof TxFields)[] = [
   "bankAccountId",
   "deletedAt",
   "feesPaidBy",
+  "buyerFees",
 ];
 
 /** Las restricciones y disparadores de `pay_transactions`, más la coherencia entre columnas y desglose. */
@@ -150,6 +151,7 @@ function expectRowIsSound({ fields: f, allocations }: Row): void {
     disputeState: f.disputeState,
     failed: f.status === "fallido",
     feesPaidBy: f.feesPaidBy,
+    buyerFees: f.buyerFees,
   }).toEqual({
     currency: b.currency,
     grossOriginal: b.state.grossOriginal,
@@ -165,6 +167,7 @@ function expectRowIsSound({ fields: f, allocations }: Row): void {
     disputeState: b.state.dispute,
     failed: b.state.failed,
     feesPaidBy: b.state.feesPaidBy,
+    buyerFees: buyerFeesOf(b),
   });
   expect(allocations).toEqual(
     b.alloc.lines.map((line) => ({
@@ -190,6 +193,9 @@ function expectRowIsSound({ fields: f, allocations }: Row): void {
   else expect(f.allocBase).not.toBeNull();
   // pay_transactions_fees_paid_by_alloc_check: si pagó el comprador, el reparto no va sobre el bruto.
   if (f.feesPaidBy === "comprador") expect(f.allocBase).not.toBe("bruto");
+  // pay_transactions_buyer_fees_check: nunca negativa, y solo un cobro de «comprador» tiene algo.
+  expect(sub(f.buyerFees, "0.00").startsWith("-")).toBe(false);
+  if (f.feesPaidBy === "nosotros") expect(f.buyerFees).toBe("0.00");
   // El disparador del reparto: la suma de lo asignado es exactamente la base.
   expect(add(...allocations.map((line) => line.amount))).toBe(f.allocBaseAmount);
   // pay_transactions_estimated_window_check, y además canónica: un solo día se guarda sin «desde».
@@ -273,6 +279,7 @@ function save(write: TxWrite, prev?: TxSnapshot): TxSnapshot {
     depositedOn: f.depositedOn,
     receiptsCount: 0,
     feesPaidBy: f.feesPaidBy,
+    buyerFees: f.buyerFees,
     schemeId: f.schemeId,
     reference: f.reference,
     note: f.note,
@@ -421,6 +428,7 @@ describe("quién paga la comisión", () => {
     const write = planCreate(withSchemeOnGross(), inputE7());
     expect(write.fields).toMatchObject({
       feesPaidBy: "comprador",
+      buyerFees: "30.46",
       grossAmount: "1040.00",
       feesTotal: "30.46",
       netAmount: "1009.54",
@@ -435,7 +443,12 @@ describe("quién paga la comisión", () => {
 
   test("E7b: pagando nosotros, el mismo cobro se reparte sobre el bruto", () => {
     const write = planCreate(withSchemeOnGross(), inputE7({ feesPaidBy: "nosotros" }));
-    expect(write.fields).toMatchObject({ feesPaidBy: "nosotros", allocBase: "bruto", allocBaseAmount: "1040.00" });
+    expect(write.fields).toMatchObject({
+      feesPaidBy: "nosotros",
+      buyerFees: "0.00",
+      allocBase: "bruto",
+      allocBaseAmount: "1040.00",
+    });
     expect(shares(write)).toEqual(["520.00", "312.00", "208.00"]);
     save(write);
   });
@@ -451,8 +464,13 @@ describe("quién paga la comisión", () => {
     const cfg = withSchemeOnGross();
     const tx = save(planCreate(cfg, inputE7({ feesPaidBy: "nosotros" })));
     const write = planEdit(cfg, tx, { feesPaidBy: "comprador" });
-    expect(fieldNames(write)).toEqual(["allocBase", "allocBaseAmount", "breakdown", "feesPaidBy"]);
-    expect(write.fields).toMatchObject({ feesPaidBy: "comprador", allocBase: "neto", allocBaseAmount: "1009.54" });
+    expect(fieldNames(write)).toEqual(["allocBase", "allocBaseAmount", "breakdown", "buyerFees", "feesPaidBy"]);
+    expect(write.fields).toMatchObject({
+      feesPaidBy: "comprador",
+      buyerFees: "30.46",
+      allocBase: "neto",
+      allocBaseAmount: "1009.54",
+    });
     expect(shares(write)).toEqual(["504.77", "302.86", "201.91"]);
     // Las comisiones no cambian: son las mismas, solo cambia quién las pagó.
     expect(write.fields.breakdown?.lines).toEqual(tx.breakdown.lines);
@@ -460,7 +478,12 @@ describe("quién paga la comisión", () => {
     const back = save(write, tx);
 
     const undo = planEdit(cfg, back, { feesPaidBy: "nosotros" });
-    expect(undo.fields).toMatchObject({ feesPaidBy: "nosotros", allocBase: "bruto", allocBaseAmount: "1040.00" });
+    expect(undo.fields).toMatchObject({
+      feesPaidBy: "nosotros",
+      buyerFees: "0.00",
+      allocBase: "bruto",
+      allocBaseAmount: "1040.00",
+    });
     expect(shares(undo)).toEqual(["520.00", "312.00", "208.00"]);
     save(undo, back);
   });
@@ -468,7 +491,8 @@ describe("quién paga la comisión", () => {
   test("con un esquema sobre el neto, cambiar quién pagó no mueve el reparto, pero queda guardado", () => {
     const tx = savedE1();
     const write = planEdit(cfgDemo(), tx, { feesPaidBy: "comprador" });
-    expect(fieldNames(write)).toEqual(["breakdown", "feesPaidBy"]);
+    expect(fieldNames(write)).toEqual(["breakdown", "buyerFees", "feesPaidBy"]);
+    expect(write.fields.buyerFees).toBe("9.70");
     expect(shares(write)).toEqual(["45.15", "27.09", "18.06"]);
     save(write, tx);
   });
@@ -483,7 +507,12 @@ describe("quién paga la comisión", () => {
     const tx = save(planCreate(cfg, inputE7()));
     const write = planEdit(cfg, tx, { grossOriginal: "2080.00" });
     expect(write.fields.feesPaidBy).toBeUndefined();
-    expect(write.fields).toMatchObject({ feesTotal: "60.62", netAmount: "2019.38", allocBaseAmount: "2019.38" });
+    expect(write.fields).toMatchObject({
+      feesTotal: "60.62",
+      buyerFees: "60.62",
+      netAmount: "2019.38",
+      allocBaseAmount: "2019.38",
+    });
     expect(write.fields.breakdown?.state.feesPaidBy).toBe("comprador");
     save(write, tx);
   });
@@ -495,10 +524,51 @@ describe("quién paga la comisión", () => {
     expect(write.fields.feesPaidBy).toBeUndefined();
     // 29,30 de la pasarela sobre lo que queda y 1,16 que se queda de lo reembolsado: las comisiones siguen en 30,46.
     expect(write.fields.feesTotal).toBeUndefined();
-    expect(write.fields).toMatchObject({ grossAmount: "1000.00", netAmount: "969.54", allocBaseAmount: "969.54" });
+    expect(write.fields).toMatchObject({
+      grossAmount: "1000.00",
+      netAmount: "969.54",
+      allocBaseAmount: "969.54",
+      // El comprador pagó la comisión de lo que sigue pagando (29,30); lo retenido del reembolso, el negocio.
+      buyerFees: "29.30",
+    });
     expect(write.fields.breakdown?.state).toMatchObject({ refunded: "40.00", feesPaidBy: "comprador" });
     expect(shares(write)).toEqual(["484.77", "290.86", "193.91"]);
     save(write, tx);
+  });
+
+  test("E8: cada reembolso y cada disputa vuelve a escribir lo de los compradores junto con las comisiones", () => {
+    const cfg = withSchemeOnGross();
+    const created = save(planCreate(cfg, inputE7()));
+    // E8b: reembolso parcial de 520.
+    const partial = planRefund(created, { amount: "520.00", on: "2026-11-16" });
+    expect(partial.fields).toMatchObject({ buyerFees: "15.38", grossAmount: "520.00", netAmount: "489.54" });
+    expect(partial.fields.feesTotal).toBeUndefined(); // sigue en 30,46: 15,38 + 15,08
+    const refunded = save(partial, created);
+    // La disputa abierta cuesta 15,00 al negocio: lo de los compradores no cambia.
+    const opened = planDispute(refunded, { action: "abrir", on: "2026-11-17" });
+    expect(opened.fields).toMatchObject({ feesTotal: "45.46", netAmount: "474.54" });
+    expect(opened.fields.buyerFees).toBeUndefined();
+    const disputed = save(opened, refunded);
+    // Perdida: reembolso total; el comprador no pagó nada.
+    const lost = planDispute(disputed, { action: "perder", on: "2026-11-20" });
+    expect(lost.fields).toMatchObject({ buyerFees: "0.00", grossAmount: "0.00", netAmount: "-45.46" });
+    expect(lost.fields.feesTotal).toBeUndefined(); // sigue en 45,46: 30,46 del reembolso y 15,00 de la disputa
+    save(lost, disputed);
+
+    // E8a: el reembolso total corregido de un golpe.
+    const total = planRefundTotal(created, "1040.00");
+    expect(total.fields).toMatchObject({ buyerFees: "0.00", grossAmount: "0.00", netAmount: "-30.46" });
+    expect(total.fields.feesTotal).toBeUndefined(); // sigue en 30,46, ahora todo del negocio
+    save(total, created);
+  });
+
+  test("fallido: sin comisiones de compradores; al reabrir, vuelven", () => {
+    const cfg = withSchemeOnGross();
+    const created = save(planCreate(cfg, inputE7()));
+    const failed = planFail(created);
+    expect(failed.fields).toMatchObject({ buyerFees: "0.00", feesTotal: "0.00" });
+    const reopened = planReopen(save(failed, created));
+    expect(reopened.fields).toMatchObject({ buyerFees: "30.46", feesTotal: "30.46" });
   });
 
   test("recalcular con la tarifa de hoy conserva quién pagó", () => {
@@ -506,7 +576,12 @@ describe("quién paga la comisión", () => {
     const tx = save(planCreate(cfg, inputE7()));
     only(stripe(cfg).feeVersions).pct = "3.5";
     const { write } = planRecalc(cfg, tx, "hoy", VIERNES);
-    expect(write.fields).toMatchObject({ feesTotal: "36.70", netAmount: "1003.30", allocBaseAmount: "1003.30" });
+    expect(write.fields).toMatchObject({
+      feesTotal: "36.70",
+      buyerFees: "36.70",
+      netAmount: "1003.30",
+      allocBaseAmount: "1003.30",
+    });
     expect(write.fields.breakdown?.state.feesPaidBy).toBe("comprador");
     save(write, tx);
   });
@@ -551,8 +626,9 @@ describe("planCreate", () => {
       depositedOn: null,
       bankAccountId: DEMO.bankAccountId,
       deletedAt: null,
-      // Sin decir quién pagó la comisión, la pagó el negocio: lo de siempre.
+      // Sin decir quién pagó la comisión, la pagó el negocio: lo de siempre, y nada de los compradores.
       feesPaidBy: "nosotros",
+      buyerFees: "0.00",
     });
     expect(write.fields.breakdown?.lines.map((line) => [line.kind, line.amount])).toEqual([
       ["pasarela", "3.20"],

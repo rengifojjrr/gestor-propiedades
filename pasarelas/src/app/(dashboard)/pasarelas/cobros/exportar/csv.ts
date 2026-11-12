@@ -19,7 +19,8 @@ import type { TxListItem } from "@/server/pasarelas/dto";
  *
  * «Fecha estimada» es la más tardía de la ventana de depósito (la de siempre) y «Fecha estimada (desde)», la más
  * temprana (la misma, si es un solo día). «Comisión pagada por» dice si la comisión la pagó el negocio o el
- * comprador. Las dos van al final para no mover las columnas de quien ya usa el archivo.
+ * comprador, y «Comisiones pagadas por los compradores», cuánto de «Comisiones» pagaron ellos (el resto, el negocio:
+ * el costo de un reembolso o de una disputa). Van al final para no mover las columnas de quien ya usa el archivo.
  */
 
 export const TX_CSV_HEADER = [
@@ -44,10 +45,11 @@ export const TX_CSV_HEADER = [
   "Nota",
   "Fecha estimada (desde)",
   "Comisión pagada por",
+  "Comisiones pagadas por los compradores",
 ] as const;
 
 /** Las columnas de dinero: `toCsv` les pone el separador decimal del formato. */
-const MONEY_COLUMNS = [6, 7, 8, 9, 11];
+const MONEY_COLUMNS = [6, 7, 8, 9, 11, 21];
 
 /** El formato que pide la URL (`formato=estandar`); cualquier otro valor, o ninguno, es el español. */
 export function csvFormatOf(value: string | null): CsvFormat {
@@ -95,6 +97,7 @@ export function txCsv(rows: readonly TxListItem[], cfg: PayConfig, fmt: CsvForma
       tx.note,
       depositWindowOf(tx)?.from ?? null,
       FEES_PAID_BY_LABEL[tx.feesPaidBy],
+      tx.buyerFees,
     ];
   });
   return toCsv(TX_CSV_HEADER, body, fmt, MONEY_COLUMNS);

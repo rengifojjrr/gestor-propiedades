@@ -25,6 +25,7 @@ function lean(patch: Partial<LeanTx>): LeanTx {
     depositedOn: null,
     receiptsCount: 0,
     feesPaidBy: "nosotros",
+    buyerFees: "0.00",
     ...patch,
   };
 }

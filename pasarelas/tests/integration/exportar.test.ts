@@ -170,6 +170,8 @@ describe("exportAll", () => {
       fees_total: "9.70",
       net_amount: "90.30",
       alloc_base_amount: "90.30",
+      fees_paid_by: "nosotros",
+      buyer_fees: "0.00",
     });
     const reparto = filas("pay_allocations").map((fila) => `${String(fila.pct)} → ${String(fila.amount)}`);
     expect(reparto.sort()).toEqual(["20.0000 → 18.06", "30.0000 → 27.09", "50.0000 → 45.15"]);
