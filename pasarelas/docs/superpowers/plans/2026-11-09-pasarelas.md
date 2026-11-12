@@ -1510,6 +1510,14 @@ Pedido del dueño, con las decisiones tomadas con él:
 **Dueña de:** una migración aditiva (`fees_paid_by` en el cobro, `pay_save_transactions`, las vistas de totales), el
 motor, los totales y las pantallas Registrar, Editar, detalle, Cobros, Resumen, empresas, pasarelas e Importar.
 
+### Task 45: «Quién paga la comisión», corregido
+
+Correcciones de la tarea 44, antes de llevarla a producción:
+- en un cobro del comprador, el costo de un reembolso o de una disputa lo paga el negocio, no el comprador;
+- las vistas de totales conservan el significado de sus columnas y suman solo `buyer_fees`;
+- el % de las comisiones se mide sobre lo facturado;
+- la tabla por mes cuadra.
+
 ### Task 22: Documentación, revisión y entrega
 
 **Archivos:** `docs/PASARELAS.md`, `README.md`, raíz `README.md`.
