@@ -5,9 +5,9 @@ import type { Pct } from "@/lib/pasarelas/types";
 type Gateway = CurrencySummary["byGateway"][number];
 
 /**
- * Las pasarelas del período de la más cara a la más barata (las comisiones del negocio sobre el bruto en que las
- * pagó) y, aparte, las que no tienen costo efectivo: sin ese bruto no hay porcentaje, y no debe dibujarse como un
- * 0 % (`whyUncosted` dice por qué).
+ * Las pasarelas del período de la más cara a la más barata (sus comisiones del negocio sobre su venta) y, aparte,
+ * las que no tienen costo efectivo: sin venta no hay porcentaje, y no debe dibujarse como un 0 % (`whyUncosted` dice
+ * por qué). Una cuyas comisiones pagaron todas los compradores sí lo tiene: 0 % (`paidByBuyers`).
  */
 export function gatewaysByCost(byGateway: readonly Gateway[]): {
   costed: (Gateway & { effectiveCostPct: Pct })[];
@@ -23,9 +23,15 @@ export function gatewaysByCost(byGateway: readonly Gateway[]): {
 }
 
 /**
- * Por qué una pasarela no tiene costo efectivo: no le quedó bruto en el período (todo se reembolsó), o todas sus
- * comisiones las pagaron los compradores y al negocio no le costó nada.
+ * Por qué una pasarela no tiene costo efectivo: no le quedó bruto en el período (todo se reembolsó), o le quedó pero
+ * no venta (lo que pagaron los compradores se llevó lo poco que quedó cobrado). De una a la que le quedó bruto nunca
+ * se dice que todo se reembolsó.
  */
-export function whyUncosted(gateway: Pick<Gateway, "fees" | "buyerFees">): "sin_bruto" | "compradores" {
-  return isZero(gateway.fees) && !isZero(gateway.buyerFees) ? "compradores" : "sin_bruto";
+export function whyUncosted(gateway: Pick<Gateway, "gross">): "sin_bruto" | "sin_venta" {
+  return isZero(gateway.gross) ? "sin_bruto" : "sin_venta";
+}
+
+/** Todas sus comisiones las pagaron los compradores: al negocio no le costó nada, y su costo efectivo es 0 %. */
+export function paidByBuyers(gateway: Pick<Gateway, "fees" | "buyerFees">): boolean {
+  return isZero(gateway.fees) && !isZero(gateway.buyerFees);
 }

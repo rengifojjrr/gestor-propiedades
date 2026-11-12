@@ -51,8 +51,19 @@ export type BeneficiaryBalance = {
 /** Un beneficiario en la moneda del Resumen: asignado y liquidado en el período; saldo de toda la historia. */
 export type SplitRow = { beneficiaryId: string; assigned: Money; settled: Money; balance: Money };
 
-/** Un mes del período (`AAAA-MM`), con su texto (`nov 2026`). Los meses sin cobros van en cero. */
-export type MonthRow = { month: string; label: string; gross: Money; fees: Money; net: Money; count: number };
+/**
+ * Un mes del período (`AAAA-MM`), con su texto (`nov 2026`). Los meses sin cobros van en cero. `fees` son las
+ * comisiones del negocio y `buyerFees`, las que pagaron los compradores: `gross − fees − buyerFees = net`.
+ */
+export type MonthRow = {
+  month: string;
+  label: string;
+  gross: Money;
+  fees: Money;
+  buyerFees: Money;
+  net: Money;
+  count: number;
+};
 
 /** Cuántos cobros y el enlace a la lista de cobros que muestra exactamente esos. */
 export type Notice = { count: number; href: string };
@@ -208,6 +219,7 @@ export function monthRows(
       label: monthLabel(month),
       gross: row?.gross ?? ZERO,
       fees: row?.fees ?? ZERO,
+      buyerFees: row?.buyerFees ?? ZERO,
       net: row?.net ?? ZERO,
       count: row?.count ?? 0,
     });

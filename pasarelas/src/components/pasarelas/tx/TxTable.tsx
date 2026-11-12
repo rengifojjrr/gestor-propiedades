@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Checkbox, DateText, Money, TBody, THead, Table, Td, Th, Tr } from "@/components/ui";
 import { depositWindowOf, formatDate } from "@/lib/pasarelas/dates";
-import { formatMoney } from "@/lib/pasarelas/money";
+import { cmp, formatMoney, isZero } from "@/lib/pasarelas/money";
 import type { ISODate } from "@/lib/pasarelas/types";
 import type { TxListItem } from "@/server/pasarelas/dto";
 import { DepositWindowShort, isWindow } from "./DepositWindow";
@@ -75,9 +75,24 @@ export function DepositDate({ tx }: { tx: TxRowView }) {
   return <span className="text-ink-soft">—</span>;
 }
 
-/** La marca discreta de un cobro cuya comisión pagó el comprador; nada si la pagamos nosotros. */
+/**
+ * La marca discreta de lo que pagó el comprador de las comisiones de un cobro: «la pagó el comprador» si pagó todas;
+ * si un reembolso o una disputa le dejaron una parte al negocio, cuánto pagó él. Nada si no pagó nada (un reembolso
+ * total: recuperó lo que pagó) o si la comisión la pagamos nosotros.
+ */
 export function BuyerPaidMark({ tx }: { tx: TxRowView }) {
-  return tx.feesPaidBy === "comprador" ? <span className="text-sm text-ink-soft">la pagó el comprador</span> : null;
+  if (isZero(tx.buyerFees)) return null;
+  return (
+    <span className="text-sm text-ink-soft">
+      {cmp(tx.buyerFees, tx.fees) === 0 ? (
+        "la pagó el comprador"
+      ) : (
+        <>
+          el comprador pagó <Money value={tx.buyerFees} currency={tx.currency} />
+        </>
+      )}
+    </span>
+  );
 }
 
 /** La lista de cobros como tabla (desde 768 px), con una casilla por fila para elegir. */

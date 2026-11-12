@@ -1,5 +1,5 @@
 import { Money, TBody, THead, Table, Td, Th, Tr } from "@/components/ui";
-import { cmp } from "@/lib/pasarelas/money";
+import { cmp, isZero } from "@/lib/pasarelas/money";
 import type { Totals } from "@/lib/pasarelas/stats";
 import type { Currency } from "@/lib/pasarelas/types";
 import type { MonthRow } from "@/server/pasarelas/queries/summary";
@@ -7,9 +7,14 @@ import { ChartFrame } from "./ChartFrame";
 
 export type MonthChartProps = { months: MonthRow[]; totals: Totals; currency: Currency };
 
-/** Bruto y neto de cada mes del período (los meses sin cobros, en cero), con su tabla. */
+/**
+ * Bruto y neto de cada mes del período (los meses sin cobros, en cero), con su tabla. Las comisiones de la tabla son
+ * las del negocio; si en el período hubo comisiones que pagaron los compradores, van en su propia columna, para que
+ * se lea Bruto − Comisiones − De los compradores = Neto.
+ */
 export function MonthChart({ months, totals, currency }: MonthChartProps) {
   const best = months.reduce((top, month) => (cmp(month.gross, top.gross) > 0 ? month : top));
+  const byBuyers = !isZero(totals.buyerFees);
   return (
     <ChartFrame
       title="Bruto y neto por mes"
@@ -42,6 +47,7 @@ export function MonthChart({ months, totals, currency }: MonthChartProps) {
               <Th>Mes</Th>
               <Th numeric>Bruto</Th>
               <Th numeric>Comisiones</Th>
+              {byBuyers ? <Th numeric>De los compradores</Th> : null}
               <Th numeric>Neto</Th>
               <Th numeric>Cobros</Th>
             </Tr>
@@ -56,6 +62,11 @@ export function MonthChart({ months, totals, currency }: MonthChartProps) {
                 <Td numeric>
                   <Money value={month.fees} currency={currency} />
                 </Td>
+                {byBuyers ? (
+                  <Td numeric>
+                    <Money value={month.buyerFees} currency={currency} />
+                  </Td>
+                ) : null}
                 <Td numeric>
                   <Money value={month.net} currency={currency} />
                 </Td>

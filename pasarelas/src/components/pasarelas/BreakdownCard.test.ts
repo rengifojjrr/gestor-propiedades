@@ -88,6 +88,57 @@ describe("BreakdownCard", () => {
     expect(text(html(e1()))).not.toContain("la pagó el comprador");
   });
 
+  describe("comprador con reembolso o disputa: qué parte pagó el comprador y qué parte el negocio", () => {
+    /** E7: 1040 por Stripe (2,9 % + 0,30; no devuelve la comisión; disputa 15,00), la comisión del comprador. */
+    function e7() {
+      const rules = resolveRules(cfgDemo(), {
+        companyId: DEMO.companyId,
+        channelId: null,
+        gatewayId: DEMO.gatewayId,
+        extraIds: [],
+        schemeId: DEMO.schemeId,
+        occurredOn: "2026-11-13",
+      });
+      return compute(rules, { ...PAID, grossOriginal: "1040.00", feesPaidBy: "comprador" }, "USD");
+    }
+    const PARTS =
+      "El comprador paga las comisiones de lo que sigue pagando; lo que cuesta un reembolso o una disputa lo paga " +
+      "el negocio.";
+
+    it("E8a, reembolso total: el comprador no pagó nada; los 30,46 que se quedó la pasarela, el negocio", () => {
+      const markup = html(recompute(e7(), { refunded: "1040.00" }));
+      expect(byTestId(markup, "comisiones")).toBe("$30,46");
+      expect(byTestId(markup, "pagado-comprador")).toBe("$0,00");
+      expect(byTestId(markup, "pagado-negocio")).toBe("$30,46");
+      expect(byTestId(markup, "neto")).toBe("-$30,46");
+      expect(text(markup)).toContain(PARTS);
+      // No dice que la comisión la pagó el comprador: recuperó todo lo que pagó.
+      expect(text(markup)).not.toContain("se le cobró de más para cubrirla");
+    });
+
+    it("E8b, reembolso parcial de 520: 15,38 el comprador y 15,08 el negocio", () => {
+      const markup = html(recompute(e7(), { refunded: "520.00" }));
+      expect(byTestId(markup, "pagado-comprador")).toBe("$15,38");
+      expect(byTestId(markup, "pagado-negocio")).toBe("$15,08");
+      expect(byTestId(markup, "neto")).toBe("$489,54");
+    });
+
+    it("con la disputa abierta: la comisión, el comprador; los 15,00 de la disputa, el negocio", () => {
+      const markup = html(recompute(e7(), { dispute: "abierta" }));
+      expect(byTestId(markup, "pagado-comprador")).toBe("$30,46");
+      expect(byTestId(markup, "pagado-negocio")).toBe("$15,00");
+      expect(text(markup)).toContain(PARTS);
+    });
+
+    it("sin reembolso ni disputa no hay partes: todo lo pagó el comprador; pagando nosotros, tampoco", () => {
+      expect(byTestId(html(e7()), "pagado-comprador")).toBeNull();
+      expect(text(html(e7()))).not.toContain(PARTS);
+      const ours = html(recompute(e7(), { feesPaidBy: "nosotros", refunded: "520.00" }));
+      expect(byTestId(ours, "pagado-negocio")).toBeNull();
+      expect(text(ours)).not.toContain(PARTS);
+    });
+  });
+
   it("un cobro fallido no tiene comisiones y lo dice", () => {
     const markup = html(recompute(e1(), { failed: true }));
     expect(markup).not.toContain("<li");

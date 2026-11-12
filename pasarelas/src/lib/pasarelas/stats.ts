@@ -55,7 +55,8 @@ export type CurrencySummary = {
   byCompany: (Figures & { companyId: string })[];
   /**
    * De mayor a menor bruto. `sharePct`: su parte del bruto de la moneda. `effectiveCostPct`: sus comisiones del
-   * negocio sobre su venta (`costPct`; `null` sin venta). Una cuyas comisiones pagaron todas los compradores cuesta 0 %.
+   * negocio sobre su venta (`costPct`; `null` sin venta). Una cuyas comisiones pagaron todas los compradores
+   * cuesta 0 %.
    */
   byGateway: (Figures & { gatewayId: string; sharePct: Pct | null; effectiveCostPct: Pct | null })[];
   /**

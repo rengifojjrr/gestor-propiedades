@@ -65,7 +65,7 @@ export default async function EmpresasPage() {
                         {company.totals.map((total, index) => (
                           <span key={total.currency}>
                             {index > 0 ? " · " : null}
-                            <Money value={total.gross} currency={total.currency} className="text-ink" />
+                            <Money value={total.sale} currency={total.currency} className="text-ink" />
                           </span>
                         ))}
                       </>

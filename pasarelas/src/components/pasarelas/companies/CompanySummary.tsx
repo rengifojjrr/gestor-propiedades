@@ -28,7 +28,7 @@ const TITLE_ID = "lo-facturado";
 export type CompanySummaryProps = {
   /** El resumen del período, por moneda (`summarize` sobre los cobros de la empresa en el período). */
   period: Record<Currency, CurrencySummary>;
-  /** Lo facturado en toda la historia, por moneda (`pay_company_totals`: su `gross` es la venta del negocio). */
+  /** Lo cobrado y lo facturado en toda la historia, por moneda (`pay_company_totals`). */
   totals: readonly CompanyTotal[];
   /** El nombre de cada pasarela, por id. */
   gatewayNames: ReadonlyMap<string, string>;
@@ -94,7 +94,7 @@ function CurrencyBlock({
       <p className="text-lg">
         Esta empresa ha facturado{" "}
         <Money value={summary?.totals.sale ?? ZERO} currency={currency} className="font-semibold" /> en el período y{" "}
-        <Money value={total?.gross ?? ZERO} currency={currency} className="font-semibold" /> en total.
+        <Money value={total?.sale ?? ZERO} currency={currency} className="font-semibold" /> en total.
       </p>
       {summary === undefined ? (
         <p className="text-ink-soft">Sin cobros en este período.</p>

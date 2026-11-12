@@ -15,6 +15,9 @@ import { serverData } from "./server-data";
  * E7: 1040 que pagó el comprador → Stripe se lleva 30,46 (no 40) y quedan 1009,54; lo pagado de más no es venta del
  * negocio, así que el reparto va sobre esos 1009,54: 504,77 · 302,86 · 201,91. Pagando nosotros, sobre 1040:
  * 520,00 · 312,00 · 208,00.
+ *
+ * E8a: si a ese cobro se le reembolsa todo, el comprador recupera lo que pagó y los 30,46 que se queda la pasarela
+ * los pierde el negocio: no los pagaron los compradores.
  */
 
 const QUESTION = "¿Quién paga la comisión?";
@@ -255,23 +258,44 @@ test.describe("¿quién paga la comisión?", () => {
     const byBuyer = await charge(db, user, { gross: "1040.00", feesPaidBy: "comprador", schemeId: user.basics.schemeId });
     await login(page, user);
 
-    // Resumen: el bruto es todo lo cobrado; las comisiones, las nuestras (3,2 % de lo que cobramos pagándolas).
+    // Resumen: el bruto es todo lo cobrado; las comisiones, las del negocio, y su % de lo facturado (3,20 de
+    // 100,00 + 1009,54 = 0,29 %): lo que de verdad le costó cobrar.
     await page.goto("/pasarelas");
     const card = (name: string) => page.getByRole("group", { name, exact: true });
     await expect(card("Bruto")).toContainText("$1.140,00");
     await expect(card("Comisiones")).toContainText("$3,20");
-    await expect(card("Comisiones")).toContainText("3,2 % del bruto en que las pagamos");
+    await expect(card("Comisiones")).toContainText("0,29 % de lo facturado");
     await expect(card("Neto")).toContainText("$1.106,34");
     await expect(page.getByText("Además, los compradores pagaron $30,46 en comisiones.")).toBeVisible();
+    // La tabla por mes cuadra: Bruto − Comisiones − De los compradores = Neto (1140,00 − 3,20 − 30,46 = 1106,34).
+    const months = page.getByRole("figure", { name: "Bruto y neto por mes" });
+    await months.getByText("Ver los datos en una tabla").click();
+    const monthTable = months.getByRole("region", { name: "Bruto y neto por mes" });
+    await expect(monthTable.getByRole("columnheader")).toHaveText([
+      "Mes",
+      "Bruto",
+      "Comisiones",
+      "De los compradores",
+      "Neto",
+      "Cobros",
+    ]);
+    await expect(monthTable.getByRole("row").last().getByRole("cell")).toHaveText([
+      "$1.140,00",
+      "$3,20",
+      "$30,46",
+      "$1.106,34",
+      "2",
+    ]);
     // Lo facturado por la empresa es su venta: 100,00 + 1009,54.
     const companies = page.getByRole("figure", { name: "Empresas por lo facturado" });
     await companies.getByText("Ver los datos en una tabla").click();
     await expect(companies.getByRole("row", { name: /Escuela Demo/ })).toContainText("$1.109,54");
-    // El costo de Stripe es el de lo que pagamos nosotros.
+    // El costo de Stripe: sus comisiones del negocio sobre lo que facturó con ella.
     const cost = page.getByRole("figure", { name: "Costo efectivo por pasarela" });
     await cost.getByText("Ver los datos en una tabla").click();
+    await expect(cost.getByRole("row", { name: /Stripe/ })).toContainText("$1.109,54");
     await expect(cost.getByRole("row", { name: /Stripe/ })).toContainText("$3,20");
-    await expect(cost.getByRole("row", { name: /Stripe/ })).toContainText("3,2 %");
+    await expect(cost.getByRole("row", { name: /Stripe/ })).toContainText("0,29 %");
     await checkScreen(page);
 
     // La lista marca, sin estorbar, el cobro cuya comisión pagó el comprador.
@@ -300,6 +324,61 @@ test.describe("¿quién paga la comisión?", () => {
     await expect(totals).toContainText("Pagadas por los compradores$30,46");
     await expect(totals).toContainText("Neto$1.106,34");
     await checkScreen(page);
+  });
+
+  test("E8a: reembolso total de 1040 que pagó el comprador; los 30,46 que se queda Stripe los perdió el negocio", async ({
+    page,
+    isMobile,
+  }) => {
+    const user = await newUser();
+    const db = await signInAal1(user.email, user.password);
+    const byBuyer = await charge(db, user, { gross: "1040.00", feesPaidBy: "comprador", schemeId: user.basics.schemeId });
+    await login(page, user);
+
+    // El reembolso total, desde el detalle.
+    await page.goto(`/pasarelas/cobros/${byBuyer.id}`);
+    const actions = page.getByRole("region", { name: "Acciones" });
+    const more = actions.getByRole("button", { name: "Más acciones" });
+    await expect(more).toBeEnabled();
+    await more.click();
+    await actions.getByRole("button", { name: "Registrar reembolso", exact: true }).click();
+    const refund = page.getByRole("dialog", { name: "Reembolso" });
+    await refund.getByLabel("Monto del reembolso").fill("1040");
+    await refund.getByRole("button", { name: "Registrar reembolso" }).click();
+    await expect(refund).toBeHidden();
+
+    // El detalle dice quién pagó qué: el comprador, nada (recuperó todo); el negocio, los 30,46.
+    await expect(page.getByTestId("comision-pagada-por")).toHaveText("El comprador");
+    await expect(page.getByTestId("comisiones")).toHaveText("$30,46");
+    await expect(page.getByTestId("pagado-comprador")).toHaveText("$0,00");
+    await expect(page.getByTestId("pagado-negocio")).toHaveText("$30,46");
+    await expect(page.getByTestId("neto")).toHaveText("-$30,46");
+    await expect(
+      page.getByText(
+        "El comprador paga las comisiones de lo que sigue pagando; lo que cuesta un reembolso o una disputa lo paga el negocio.",
+      ),
+    ).toBeVisible();
+    await expect(page.getByText("se le cobró de más para cubrirla")).toHaveCount(0);
+    await checkScreen(page);
+    const [saved] = await serverData().getSnapshots(db, [byBuyer.id]);
+    expect(saved).toMatchObject({ buyerFees: "0.00", fees: "30.46", net: "-30.46" });
+
+    // El Resumen: los 30,46 son comisión del negocio; no dice que los pagaron los compradores. Sin venta, sin %.
+    await page.goto("/pasarelas");
+    const card = (name: string) => page.getByRole("group", { name, exact: true });
+    await expect(card("Bruto")).toContainText("$0,00");
+    await expect(card("Comisiones")).toHaveText("Comisiones$30,46");
+    await expect(card("Neto")).toContainText("-$30,46");
+    await expect(page.getByText(/pagaron los compradores|pagaron en comisiones/)).toHaveCount(0);
+    const cost = page.getByRole("figure", { name: "Costo efectivo por pasarela" });
+    await expect(cost).toContainText("Ninguna pasarela tiene bruto en el período: no hay costo efectivo que comparar.");
+    await checkScreen(page);
+
+    // La lista no lo marca como pagado por el comprador.
+    await page.goto("/pasarelas/cobros");
+    const row = page.getByRole(isMobile ? "listitem" : "row").filter({ hasText: byBuyer.reference });
+    await expect(row).toContainText("$30,46");
+    await expect(row).not.toContainText("la pagó el comprador");
   });
 
   test("importar con «Las comisiones las pagaron los compradores» vale para todo el archivo", async ({ page }) => {

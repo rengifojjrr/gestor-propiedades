@@ -1,12 +1,15 @@
 import type { ReactNode } from "react";
 import { Card, CardBody, CardHeader, CardTitle, Money, Percent, cn } from "@/components/ui";
-import { isZero } from "@/lib/pasarelas/money";
+import { buyerFeesOf } from "@/lib/pasarelas/breakdown";
+import { isZero, sub } from "@/lib/pasarelas/money";
 import type { Breakdown, BreakdownLine } from "@/lib/pasarelas/types";
 
 /*
  * El desglose de un cobro tal como lo calculó el motor: lo cobrado, cada comisión con su cuenta, el total y el
- * neto. Si la comisión la pagó el comprador, el neto se lee «Lo que te queda» y una nota dice por qué. Solo pinta lo que trae el desglose (los nombres van dentro): sirve igual para la vista previa de
- * «Registrar cobro» que para el desglose congelado del detalle. Sin estado: se puede usar desde el servidor.
+ * neto. Si la comisión la pagó el comprador, el neto se lee «Lo que te queda» y una nota dice por qué; con un
+ * reembolso o una disputa, además, qué parte de las comisiones pagó el comprador y qué parte el negocio. Solo pinta
+ * lo que trae el desglose (los nombres van dentro): sirve igual para la vista previa de «Registrar cobro» que para
+ * el desglose congelado del detalle. Sin estado: se puede usar desde el servidor.
  */
 
 /**
@@ -50,10 +53,16 @@ function Row({ label, testId, strong, children }: { label: string; testId: strin
   );
 }
 
+/** Lo que paga el negocio aunque la comisión la pague el comprador: lo que cuesta un reembolso o una disputa. */
+const isBusinessCost = (line: BreakdownLine): boolean => line.kind === "reembolso" || line.kind === "disputa";
+
 export function BreakdownCard({ breakdown }: { breakdown: Breakdown }) {
   const { currency, state, lines } = breakdown;
   const refunded = !isZero(state.refunded);
   const byBuyer = state.feesPaidBy === "comprador";
+  // Con un reembolso o una disputa, el comprador no pagó todas las comisiones: se dice quién pagó qué.
+  const split = byBuyer && lines.some(isBusinessCost);
+  const buyerFees = buyerFeesOf(breakdown);
   return (
     <Card>
       <CardHeader>
@@ -98,11 +107,26 @@ export function BreakdownCard({ breakdown }: { breakdown: Breakdown }) {
           <Row label="Comisiones" testId="comisiones">
             <Money value={breakdown.feesTotal} currency={currency} />
           </Row>
+          {split ? (
+            <>
+              <Row label="Pagadas por el comprador" testId="pagado-comprador">
+                <Money value={buyerFees} currency={currency} />
+              </Row>
+              <Row label="Pagadas por el negocio" testId="pagado-negocio">
+                <Money value={sub(breakdown.feesTotal, buyerFees)} currency={currency} />
+              </Row>
+            </>
+          ) : null}
           <Row label={byBuyer ? "Lo que te queda" : "Neto"} testId="neto" strong>
             <Money value={breakdown.net} currency={currency} />
           </Row>
         </dl>
-        {byBuyer ? (
+        {split ? (
+          <p className="text-sm text-ink-soft">
+            El comprador paga las comisiones de lo que sigue pagando; lo que cuesta un reembolso o una disputa lo paga
+            el negocio.
+          </p>
+        ) : byBuyer ? (
           <p className="text-sm text-ink-soft">La comisión la pagó el comprador: se le cobró de más para cubrirla.</p>
         ) : null}
       </CardBody>

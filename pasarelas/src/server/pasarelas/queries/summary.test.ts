@@ -156,10 +156,10 @@ describe("monthRows", () => {
       "2026-11-10",
     );
     expect(monthRows({ from: "2026-08-15", to: "2026-11-10" }, USD?.byMonth ?? [])).toEqual([
-      { month: "2026-08", label: "ago 2026", gross: "0.00", fees: "0.00", net: "0.00", count: 0 },
-      { month: "2026-09", label: "sep 2026", gross: "100.00", fees: "0.00", net: "100.00", count: 1 },
-      { month: "2026-10", label: "oct 2026", gross: "0.00", fees: "0.00", net: "0.00", count: 0 },
-      { month: "2026-11", label: "nov 2026", gross: "40.00", fees: "2.00", net: "38.00", count: 1 },
+      { month: "2026-08", label: "ago 2026", gross: "0.00", fees: "0.00", buyerFees: "0.00", net: "0.00", count: 0 },
+      { month: "2026-09", label: "sep 2026", gross: "100.00", fees: "0.00", buyerFees: "0.00", net: "100.00", count: 1 },
+      { month: "2026-10", label: "oct 2026", gross: "0.00", fees: "0.00", buyerFees: "0.00", net: "0.00", count: 0 },
+      { month: "2026-11", label: "nov 2026", gross: "40.00", fees: "2.00", buyerFees: "0.00", net: "38.00", count: 1 },
     ]);
   });
 

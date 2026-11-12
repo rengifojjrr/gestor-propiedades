@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CurrencySummary } from "@/lib/pasarelas/stats";
-import { gatewaysByCost, whyUncosted } from "./gateway-cost";
+import { gatewaysByCost, paidByBuyers, whyUncosted } from "./gateway-cost";
 
 type Gateway = CurrencySummary["byGateway"][number];
 
@@ -39,11 +39,20 @@ describe("gatewaysByCost", () => {
 });
 
 describe("whyUncosted", () => {
-  it("sin bruto (todo reembolsado), o porque todas sus comisiones las pagaron los compradores", () => {
+  it("sin bruto (todo reembolsado), o con bruto pero sin venta: lo de los compradores se llevó lo que quedó", () => {
     expect(whyUncosted(gateway("reembolsada", null))).toBe("sin_bruto");
-    const byBuyers = { ...gateway("compradores", null), gross: "1040.00", sale: "1009.54", fees: "0.00", buyerFees: "30.46" };
-    expect(whyUncosted(byBuyers)).toBe("compradores");
-    // Si el negocio pagó algo (lo que la pasarela retuvo de un reembolso), es que no le quedó bruto propio.
-    expect(whyUncosted({ ...byBuyers, fees: "3.20" })).toBe("sin_bruto");
+    // Quedaron 0,10 cobrados y lo del comprador (la cuota fija, 0,30) se los llevó: no se reembolsó todo.
+    const leftover = { ...gateway("casi-todo", null), gross: "0.10", sale: "-0.20", buyerFees: "0.30" };
+    expect(whyUncosted(leftover)).toBe("sin_venta");
+  });
+});
+
+describe("paidByBuyers", () => {
+  it("todas sus comisiones las pagaron los compradores; si el negocio pagó algo, no", () => {
+    const byBuyers = { ...gateway("compradores", "0"), sale: "1009.54", fees: "0.00", buyerFees: "30.46" };
+    expect(paidByBuyers(byBuyers)).toBe(true);
+    // Lo que la pasarela retuvo de un reembolso lo pagó el negocio.
+    expect(paidByBuyers({ ...byBuyers, fees: "3.20" })).toBe(false);
+    expect(paidByBuyers(gateway("propia", "1"))).toBe(false);
   });
 });
