@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { compute, recompute, resolveRules, type Selection } from "@/lib/pasarelas";
+import { buyerFeesOf, compute, recompute, resolveRules, type Selection } from "@/lib/pasarelas";
 import { DEMO, cfgDemo } from "@/lib/pasarelas/demo.fixture";
 import { AllocationList } from "./AllocationList";
 
@@ -58,6 +58,28 @@ describe("AllocationList", () => {
     expect(text(markup)).toContain("Sobre el neto: $90,30");
     // Pagando nosotros, no hay nada que explicar.
     expect(text(html(compute(resolveRules(cfg, E1), PAID, "USD")))).not.toContain("la pagó el comprador");
+  });
+
+  it("E8a: reembolsado del todo, no dice que la pagó el comprador; sí por qué se reparte lo que queda", () => {
+    const cfg = cfgDemo();
+    const version = cfg.schemes[0]?.versions[0];
+    if (version === undefined) throw new Error("Falta el esquema de ejemplo");
+    version.base = "bruto";
+    const byBuyer = compute(resolveRules(cfg, E1), { ...PAID, feesPaidBy: "comprador" }, "USD");
+
+    // Reembolso parcial: el comprador sigue pagando la comisión de lo que no se le devolvió.
+    const partial = text(html(recompute(byBuyer, { refunded: "50.00" })));
+    expect(partial).toContain("Se reparte sobre lo que te queda: la comisión la pagó el comprador.");
+
+    // Reembolso total: lo que retuvo la pasarela lo perdió el negocio.
+    const refunded = recompute(byBuyer, { refunded: "100.00" });
+    expect(buyerFeesOf(refunded)).toBe("0.00");
+    const markup = text(html(refunded));
+    expect(markup).not.toContain("la pagó el comprador");
+    expect(markup).toContain(
+      "Se reparte sobre lo que te queda: el cobro se registró con la comisión a cargo del comprador.",
+    );
+    expect(markup).toContain("Sobre el neto: -$");
   });
 
   it("sin esquema dice que el cobro no se reparte", () => {
