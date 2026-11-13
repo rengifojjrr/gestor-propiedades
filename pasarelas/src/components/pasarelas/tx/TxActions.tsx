@@ -19,10 +19,9 @@ import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { allowedActions, primaryAction, type TxAction } from "./allowed";
 import { DepositDialog } from "./DepositDialog";
 import { DisputeDialog } from "./DisputeDialog";
+import { STALE_TEXT } from "./plural";
 import { RecalcDialog } from "./RecalcDialog";
 import { RefundDialog } from "./RefundDialog";
-
-const STALE_TEXT = "El cobro ya no admitía ese cambio. Vuelve a cargar la página para ver cómo está.";
 
 /** ¿Es la respuesta de una acción de lote que no cambió ningún cobro? */
 const changedNone = (data: unknown): boolean =>

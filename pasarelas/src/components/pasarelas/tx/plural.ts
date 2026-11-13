@@ -44,6 +44,12 @@ export function depositDone({ count, skipped }: DepositOutcome): string {
   return `${head} ${total === 1 ? "Se saltó" : "Se saltaron"} ${total}: ${listed(reasons)}.`;
 }
 
+/**
+ * Lo que se dice cuando el cambio pedido para un solo cobro no cambió nada: el cobro ya no lo admitía (la pantalla
+ * estaba vieja). En el detalle y en el menú de estado de la lista.
+ */
+export const STALE_TEXT = "El cobro ya no admitía ese cambio. Vuelve a cargar la página para ver cómo está.";
+
 /** Lo que se dice si el cambio quedó guardado pero las fechas estimadas no se pudieron volver a calcular. */
 export const REFRESH_FAILED_TEXT =
   "No se pudieron actualizar las fechas estimadas: usa «Recalcular» en Cobros para ponerlas al día.";
