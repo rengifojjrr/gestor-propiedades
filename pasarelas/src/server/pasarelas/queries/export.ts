@@ -164,6 +164,7 @@ const EXPORT_COLUMNS = {
     beneficiary_id: AS_IS,
     pct: TEXT,
     sort: AS_IS,
+    fee_exempt: AS_IS,
     created_at: AS_IS,
   },
   pay_transactions: {

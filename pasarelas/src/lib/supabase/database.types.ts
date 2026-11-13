@@ -201,14 +201,14 @@ isOneToOne: false
                   ]
                 },"pay_scheme_lines": {
                   Row: {
-                    "beneficiary_id": string,"created_at": string,"id": string,"pct": number,"scheme_version_id": string,"sort": number,"user_id": string
+                    "beneficiary_id": string,"created_at": string,"fee_exempt": boolean,"id": string,"pct": number,"scheme_version_id": string,"sort": number,"user_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "beneficiary_id": string,"created_at"?: string,"id"?: string,"pct": number,"scheme_version_id": string,"sort"?: number,"user_id"?: string
+                    "beneficiary_id": string,"created_at"?: string,"fee_exempt"?: boolean,"id"?: string,"pct": number,"scheme_version_id": string,"sort"?: number,"user_id"?: string
                   }
                   Update: {
-                    "beneficiary_id"?: string,"created_at"?: string,"id"?: string,"pct"?: number,"scheme_version_id"?: string,"sort"?: number,"user_id"?: string
+                    "beneficiary_id"?: string,"created_at"?: string,"fee_exempt"?: boolean,"id"?: string,"pct"?: number,"scheme_version_id"?: string,"sort"?: number,"user_id"?: string
                   }
                   Relationships: [
                     {
