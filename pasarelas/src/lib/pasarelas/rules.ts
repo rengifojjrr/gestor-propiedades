@@ -230,9 +230,8 @@ export function feeExemptIdsOf(rules: Rules): string[] {
  *  - `amount`: cambió el monto o la moneda. La comisión informada era la de otro monto (o de otra moneda): se
  *    descarta y vale la tarifa congelada.
  *  - `exempt`: cambió quién no paga comisión (`sel.feeExemptIds`; sin decirlo, quedan las que había): solo las
- *    marcas del esquema congelado. Si además
- *    se vuelve a resolver el esquema (`scheme` o `date`), las marcas de la selección van a la versión nueva; sin
- *    ellas, las de esa versión.
+ *    marcas del esquema congelado. Si además se vuelve a resolver el esquema (`scheme` o `date`), las marcas de la
+ *    selección van a la versión nueva; sin ellas, las de esa versión.
  */
 export function reResolve(
   prev: Rules,
