@@ -12,7 +12,7 @@ import { DialogActionError } from "../ActionError";
 import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { DepositDialog } from "./DepositDialog";
 import { STALE_TEXT } from "./plural";
-import { STATUS_CHANGE_LABEL, statusChanges, statusMenuSubject, type StatusChange } from "./statusChanges";
+import { STATUS_CHANGE_LABEL, statusChanges, txName, type StatusChange } from "./statusChanges";
 
 /** `useSyncExternalStore` sin nada que escuchar: solo distingue el HTML del servidor de la página ya hidratada. */
 const noSubscription = () => () => {};
@@ -48,7 +48,8 @@ export function TxStatusMenu(props: TxStatusMenuProps) {
  * fecha, y «Marcar como fallido» pide confirmación antes, porque deja el cobro en cero.
  */
 function StatusMenu({ tx, today, placement, className, changes }: TxStatusMenuProps & { changes: StatusChange[] }) {
-  const subject = statusMenuSubject(tx);
+  // Como el enlace de la misma fila: «cobro pi_123» o «cobro del jue 12 nov 2026 por $675,00».
+  const subject = `cobro ${txName(tx)}`;
   const [open, setOpen] = useState<Open>(null);
   // Los diálogos se montan la primera vez que se abre el menú: la lista pinta hasta 50 cobros dos veces (tarjetas y
   // tabla), y casi ninguno lo abre.

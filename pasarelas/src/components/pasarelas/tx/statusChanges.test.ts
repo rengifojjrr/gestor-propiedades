@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { allowedActions, type AllowedInput } from "./allowed";
-import { STATUS_CHANGE_LABEL, statusChanges, statusMenuSubject, type StatusChange } from "./statusChanges";
+import { STATUS_CHANGE_LABEL, statusChanges, txName, type StatusChange } from "./statusChanges";
 
 /*
  * El menú de estado de cada cobro de la lista ofrece solo los cambios de estado que el motor admite. La fuente es
@@ -64,14 +64,34 @@ describe("statusChanges: qué opciones salen en cada estado", () => {
   });
 });
 
-describe("statusMenuSubject: de qué cobro es el menú", () => {
-  test("lo cobrado y el día, sin el año", () => {
-    const tx = { grossOriginal: "675.00", currency: "USD", occurredOn: "2026-11-12" } as const;
-    expect(`Cambiar estado del ${statusMenuSubject(tx)}`).toBe("Cambiar estado del cobro de $675,00 del 12 nov");
+describe("txName: cómo se nombra un cobro en la lista (enlace, casilla y menú de estado)", () => {
+  /** Un cobro de 675,00 del 12 nov sin reembolso, como lo trae la lista. */
+  const listed = {
+    reference: null,
+    grossOriginal: "675.00",
+    gross: "675.00",
+    currency: "USD",
+    occurredOn: "2026-11-12",
+  } as const;
+
+  test("con referencia, la referencia: es única en la pasarela y es lo que enseña la fila", () => {
+    expect(txName({ ...listed, reference: "pi_123" })).toBe("pi_123");
+    // Dos cobros del mismo monto y del mismo día se distinguen por su referencia.
+    expect(txName({ ...listed, reference: "pi_124" })).not.toBe(txName({ ...listed, reference: "pi_123" }));
+  });
+
+  test("sin referencia, su fecha y su bruto, como el enlace «Ver cobro»", () => {
+    expect(txName(listed)).toBe("del jue 12 nov 2026 por $675,00");
+    expect(`Cambiar estado del cobro ${txName(listed)}`).toBe("Cambiar estado del cobro del jue 12 nov 2026 por $675,00");
+  });
+
+  test("con un reembolso, el bruto vigente (el de la columna Bruto), no lo cobrado al principio", () => {
+    // Se cobraron 675,00 (`grossOriginal`) y se reembolsaron 400,00.
+    expect(txName({ ...listed, gross: "275.00" })).toBe("del jue 12 nov 2026 por $275,00");
   });
 
   test("en otra moneda, con su código", () => {
-    const tx = { grossOriginal: "1234.50", currency: "MXN", occurredOn: "2027-01-05" } as const;
-    expect(statusMenuSubject(tx)).toBe("cobro de 1.234,50 MXN del 5 ene");
+    const mxn = { ...listed, gross: "1234.50", grossOriginal: "1234.50", currency: "MXN", occurredOn: "2027-01-05" } as const;
+    expect(txName(mxn)).toBe("del mar 5 ene 2027 por 1.234,50 MXN");
   });
 });

@@ -1,4 +1,4 @@
-import { formatWindowShort } from "@/lib/pasarelas/dates";
+import { formatDate } from "@/lib/pasarelas/dates";
 import { formatMoney } from "@/lib/pasarelas/money";
 import type { Currency, ISODate, Money } from "@/lib/pasarelas/types";
 import { allowedActions, type AllowedInput, type TxAction } from "./allowed";
@@ -38,8 +38,12 @@ export function statusChanges(tx: AllowedInput): StatusChange[] {
   );
 }
 
-/** De qué cobro es el menú: «cobro de $675,00 del 12 nov» (lo cobrado y el día del cobro, sin el año). */
-export function statusMenuSubject(tx: { grossOriginal: Money; currency: Currency; occurredOn: ISODate }): string {
-  const day = formatWindowShort({ from: tx.occurredOn, to: tx.occurredOn });
-  return `cobro de ${formatMoney(tx.grossOriginal, tx.currency)} del ${day}`;
+/**
+ * Cómo se nombra un cobro en la lista, igual en el enlace a su detalle, en su casilla y en su menú de estado: con lo
+ * que enseña su fila. Su referencia (única en su pasarela) o, si no tiene, su fecha y su bruto vigente, el de la
+ * columna Bruto: con un reembolso, ya no es lo cobrado al principio.
+ */
+export function txName(tx: { reference: string | null; gross: Money; currency: Currency; occurredOn: ISODate }): string {
+  return tx.reference ?? `del ${formatDate(tx.occurredOn)} por ${formatMoney(tx.gross, tx.currency)}`;
 }
+

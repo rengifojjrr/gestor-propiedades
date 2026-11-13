@@ -2,25 +2,21 @@
 
 import Link from "next/link";
 import { Checkbox, DateText, Money, TBody, THead, Table, Td, Th, Tr } from "@/components/ui";
-import { depositWindowOf, formatDate } from "@/lib/pasarelas/dates";
-import { cmp, formatMoney, isZero } from "@/lib/pasarelas/money";
+import { depositWindowOf } from "@/lib/pasarelas/dates";
+import { cmp, isZero } from "@/lib/pasarelas/money";
 import type { ISODate } from "@/lib/pasarelas/types";
 import type { TxListItem } from "@/server/pasarelas/dto";
 import { DepositWindowShort, isWindow } from "./DepositWindow";
 import { StatusBadge } from "./StatusBadge";
+import { txName } from "./statusChanges";
 import { SelectAllCheckbox, useTxSelection } from "./TxBulkBar";
 import { TxStatusMenu } from "./TxStatusMenu";
 
 /** Un cobro de la lista con los nombres ya resueltos contra la configuración. */
 export type TxRowView = TxListItem & { companyName: string; channelName: string | null; gatewayName: string };
 
-/** Cómo se nombra un cobro en la lista: su referencia o, si no tiene, su fecha y lo cobrado. */
-function describe(tx: TxRowView): string {
-  return tx.reference ?? `del ${formatDate(tx.occurredOn)} por ${formatMoney(tx.grossOriginal, tx.currency)}`;
-}
-
 /** El nombre de la casilla que elige el cobro: «Seleccionar el cobro pi_123». */
-export const selectLabel = (tx: TxRowView): string => `Seleccionar el cobro ${describe(tx)}`;
+export const selectLabel = (tx: TxRowView): string => `Seleccionar el cobro ${txName(tx)}`;
 
 /** El enlace al detalle: la referencia, o «Ver cobro» con su fecha y monto para el lector de pantalla. */
 export function TxLink({ tx, className }: { tx: TxRowView; className?: string }) {
@@ -28,7 +24,7 @@ export function TxLink({ tx, className }: { tx: TxRowView; className?: string })
     <Link href={`/pasarelas/cobros/${tx.id}`} className={className}>
       {tx.reference ?? (
         <>
-          Ver cobro<span className="sr-only"> {describe(tx)}</span>
+          Ver cobro<span className="sr-only"> {txName(tx)}</span>
         </>
       )}
     </Link>
