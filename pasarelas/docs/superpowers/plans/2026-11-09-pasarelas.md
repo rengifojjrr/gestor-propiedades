@@ -1518,6 +1518,44 @@ Correcciones de la tarea 44, antes de llevarla a producción:
 - el % de las comisiones se mide sobre lo facturado;
 - la tabla por mes cuadra.
 
+### Task 46: Cambiar el estado de un cobro desde la lista
+
+Cada cobro de la lista lleva un menú con solo los cambios que el motor permite: en tránsito, depositado (con fecha),
+revertir, fallido (con confirmación) y reabrir. Usa las acciones del servidor que ya existen.
+
+### Task 47: PDF de los cobros elegidos
+
+Elegir cobros en la lista (o todos los del día) y descargar un PDF. Por cada cobro: el monto, el desglose y el
+reparto; al final, los totales. Sirve para enviarlo cada día. Va después de las tareas 48 a 50, para que el PDF las
+muestre.
+
+### Task 48: Partes que no pagan comisión
+
+Una marca «No paga comisión» en cada línea del esquema, que se puede cambiar en cada cobro. Con «Nosotros» y base
+neto:
+- la parte exenta sale del bruto, o sea de lo facturado;
+- las demás se reparten lo que queda del neto, en proporción.
+
+Migración 5.
+
+### Task 49: Retención de la pasarela para ciertas personas
+
+Una pasarela (por ejemplo OTF) retiene un % del bruto durante N días. Al soltarlo, le cae a ciertas personas, como
+los dueños de la cuenta.
+- La retención cuenta como un pago que esas personas ya recibieron de su parte del reparto.
+- A tu banco llega el neto menos la retención.
+
+Migración 6.
+
+### Task 50: Marcar lo que ya se le pagó a cada parte
+
+Cada parte del reparto de un cobro se marca como pagada. Detrás, una liquidación enlazada al cobro, para que el saldo
+siga siendo la única verdad. También:
+- pagar varios cobros de una vez;
+- el indicador «Reparto pagado» y el filtro «Reparto pendiente».
+
+La retención (tarea 49) cuenta como pagado. Migración 7.
+
 ### Task 22: Documentación, revisión y entrega
 
 **Archivos:** `docs/PASARELAS.md`, `README.md`, raíz `README.md`.
