@@ -246,9 +246,9 @@ describe("loadPayConfig", () => {
               remainderBeneficiaryId: null,
               effectiveFrom: "2000-01-01",
               lines: [
-                { beneficiaryId: b.beneficiaryIds.a, pct: "50" },
-                { beneficiaryId: b.beneficiaryIds.b, pct: "30" },
-                { beneficiaryId: b.beneficiaryIds.c, pct: "20" },
+                { beneficiaryId: b.beneficiaryIds.a, pct: "50", feeExempt: false },
+                { beneficiaryId: b.beneficiaryIds.b, pct: "30", feeExempt: false },
+                { beneficiaryId: b.beneficiaryIds.c, pct: "20", feeExempt: false },
               ],
             },
             {
@@ -259,8 +259,8 @@ describe("loadPayConfig", () => {
               effectiveFrom: "2026-12-01",
               // En el orden en que se guardaron las líneas.
               lines: [
-                { beneficiaryId: b.beneficiaryIds.c, pct: "33.3333" },
-                { beneficiaryId: b.beneficiaryIds.a, pct: "10" },
+                { beneficiaryId: b.beneficiaryIds.c, pct: "33.3333", feeExempt: false },
+                { beneficiaryId: b.beneficiaryIds.a, pct: "10", feeExempt: false },
               ],
             },
           ],
