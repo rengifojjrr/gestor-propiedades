@@ -4,6 +4,7 @@ import { ZONE, todayNY, wallTimeToInstant } from "../src/lib/pasarelas/dates";
 import type { FeesPaidBy } from "../src/lib/pasarelas/types";
 import { signInAal1, unwrap, type Db } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
+import { waitForStillToasts } from "./avisos";
 import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
 import { serverData } from "./server-data";
 
@@ -28,13 +29,7 @@ const toastWith = (page: Page, text: string) =>
   page.getByRole("region", { name: /Avisos/ }).getByRole("listitem").filter({ hasText: text });
 
 async function checkScreen(page: Page): Promise<void> {
-  // Un aviso a medio entrar tiene el texto translúcido y axe lo mide como falta de contraste.
-  await page.waitForFunction(() =>
-    document.getAnimations().every((animation) => {
-      const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
-      return animation.playState !== "running" || !(target instanceof Element && target.closest("[data-sonner-toaster]"));
-    }),
-  );
+  await waitForStillToasts(page);
   await expectNoHorizontalOverflow(page);
   await expectNoSeriousAxe(page);
 }

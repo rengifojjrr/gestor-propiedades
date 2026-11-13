@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { todayNY } from "../src/lib/pasarelas/dates";
 import { createUser, enrollTotp, signInAal1, unwrap, type Db } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow, expectNoSeriousAxe } from "./axe";
+import { waitForStillToasts } from "./avisos";
 import { login } from "./helpers";
 import { demoData, serverData } from "./server-data";
 
@@ -126,16 +127,6 @@ test.beforeAll(async () => {
   await enrollTotp(await signInAal1(other.email, other.password));
   withFactor = other;
 });
-
-/** Espera a que los avisos pasajeros queden quietos: a medio animar, axe mide su texto translúcido como contraste. */
-async function waitForStillToasts(page: Page): Promise<void> {
-  await page.waitForFunction(() =>
-    document.getAnimations().every((animation) => {
-      const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
-      return animation.playState !== "running" || !(target instanceof Element && target.closest("[data-sonner-toaster]"));
-    }),
-  );
-}
 
 /** Los controles visibles que miden menos de 44 px de alto o de ancho (la misma medida que la galería del kit). */
 async function smallTargets(page: Page): Promise<string[]> {

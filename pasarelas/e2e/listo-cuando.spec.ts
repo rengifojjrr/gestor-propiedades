@@ -5,6 +5,7 @@ import { ZONE, addDays, formatDate, todayNY, wallTimeToInstant } from "../src/li
 import type { ISODate } from "../src/lib/pasarelas/types";
 import { enrollTotp, signInAal1, unwrap, type Db } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
+import { waitForStillToasts } from "./avisos";
 import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
 import { serverData } from "./server-data";
 
@@ -49,14 +50,7 @@ function png(width: number, height: number): Buffer {
 }
 
 async function expectCleanScreen(page: Page): Promise<void> {
-  // Un aviso a medio entrar, a medio pasar detrás del siguiente o a medio irse tiene el texto translúcido y axe lo
-  // mide como falta de contraste: se espera a que los avisos queden quietos.
-  await page.waitForFunction(() =>
-    document.getAnimations().every((animation) => {
-      const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
-      return animation.playState !== "running" || !(target instanceof Element && target.closest("[data-sonner-toaster]"));
-    }),
-  );
+  await waitForStillToasts(page);
   await expectNoHorizontalOverflow(page);
   await expectNoSeriousAxe(page);
 }

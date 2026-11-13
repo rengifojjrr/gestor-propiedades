@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import { e1Item, saveTransactions, signInAal1 } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
+import { waitForStillToasts } from "./avisos";
 import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
 
 /**
@@ -32,11 +33,7 @@ test.beforeEach(async ({ page }) => {
 
 /** axe sin violaciones serias y nada que se desborde, ya terminadas las transiciones (un aviso pasajero). */
 async function expectCleanScreen(page: Page): Promise<void> {
-  await page.waitForFunction(() =>
-    document
-      .getAnimations()
-      .every((animation) => animation.playState !== "running" || animation.effect?.getTiming().iterations === Infinity),
-  );
+  await waitForStillToasts(page);
   await expectNoSeriousAxe(page);
   await expectNoHorizontalOverflow(page);
 }

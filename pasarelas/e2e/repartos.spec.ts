@@ -7,6 +7,7 @@ import { SETTLEMENT_ALREADY_SAVED_TEXT } from "../src/components/pasarelas/split
 import { SCHEME_ISSUE_TEXT } from "../src/lib/pasarelas/schemes";
 import { adminClient, createUser, e1Item, saveTransactions, signInAal1 } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
+import { waitForStillToasts } from "./avisos";
 import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
 import { serverData } from "./server-data";
 
@@ -97,11 +98,7 @@ function png(width: number, height: number): Buffer {
  * un aviso pasajero): a medio aparecer, su texto todavía es translúcido y axe lo mide sin el contraste final.
  */
 async function expectCleanScreen(page: Page): Promise<void> {
-  await page.waitForFunction(() =>
-    document
-      .getAnimations()
-      .every((animation) => animation.playState !== "running" || animation.effect?.getTiming().iterations === Infinity),
-  );
+  await waitForStillToasts(page);
   await expectNoSeriousAxe(page);
   await expectNoHorizontalOverflow(page);
 }

@@ -2,6 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { addDays, formatDate, todayNY } from "../src/lib/pasarelas";
 import { e1Item, saveTransactions, signInAal1, unwrap, type Db } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
+import { waitForStillToasts } from "./avisos";
 import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
 import { serverData } from "./server-data";
 
@@ -68,14 +69,7 @@ async function stored(id: string): Promise<{ status: string; deposited_on: strin
 }
 
 async function expectCleanScreen(page: Page): Promise<void> {
-  // Un aviso a medio entrar, a medio pasar detrás del siguiente o a medio irse tiene el texto translúcido y axe lo
-  // mide como falta de contraste: se espera a que los avisos queden quietos.
-  await page.waitForFunction(() =>
-    document.getAnimations().every((animation) => {
-      const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
-      return animation.playState !== "running" || !(target instanceof Element && target.closest("[data-sonner-toaster]"));
-    }),
-  );
+  await waitForStillToasts(page);
   await expectNoHorizontalOverflow(page);
   await expectNoSeriousAxe(page);
 }

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { ZONE, todayNY, wallTimeToInstant } from "../src/lib/pasarelas/dates";
 import { adminClient, e1Item, saveTransactions, signInAal1 } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
+import { waitForStillToasts } from "./avisos";
 import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
 import { serverData } from "./server-data";
 
@@ -31,11 +32,7 @@ test.beforeEach(async ({ page }) => {
  * un aviso pasajero): a medio aparecer, su texto todavía es translúcido y axe lo mide sin el contraste final.
  */
 async function expectCleanScreen(page: Page): Promise<void> {
-  await page.waitForFunction(() =>
-    document
-      .getAnimations()
-      .every((animation) => animation.playState !== "running" || animation.effect?.getTiming().iterations === Infinity),
-  );
+  await waitForStillToasts(page);
   await expectNoSeriousAxe(page);
   await expectNoHorizontalOverflow(page);
 }
