@@ -9,6 +9,7 @@ import type { TxListItem } from "@/server/pasarelas/dto";
 import { DepositWindowShort, isWindow } from "./DepositWindow";
 import { StatusBadge } from "./StatusBadge";
 import { SelectAllCheckbox, useTxSelection } from "./TxBulkBar";
+import { TxStatusMenu } from "./TxStatusMenu";
 
 /** Un cobro de la lista con los nombres ya resueltos contra la configuración. */
 export type TxRowView = TxListItem & { companyName: string; channelName: string | null; gatewayName: string };
@@ -95,7 +96,10 @@ export function BuyerPaidMark({ tx }: { tx: TxRowView }) {
   );
 }
 
-/** La lista de cobros como tabla (desde 768 px), con una casilla por fila para elegir. */
+/**
+ * La lista de cobros como tabla (desde 768 px), con una casilla por fila para elegir y, bajo el estado, «Cambiar
+ * estado».
+ */
 export function TxTable({ rows, today }: { rows: TxRowView[]; today: ISODate }) {
   return (
     <Table label="Cobros">
@@ -131,7 +135,10 @@ export function TxTable({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
               </span>
             </Td>
             <Td>
-              <StatusBadge tx={tx} today={today} />
+              <span className="flex flex-col items-start gap-1">
+                <StatusBadge tx={tx} today={today} />
+                <TxStatusMenu tx={tx} today={today} placement="center" className="-my-2" />
+              </span>
             </Td>
             <Td numeric>
               <Money value={tx.gross} currency={tx.currency} />

@@ -5,8 +5,12 @@ import type { ISODate } from "@/lib/pasarelas/types";
 import { StatusBadge } from "./StatusBadge";
 import { SelectAllCheckbox } from "./TxBulkBar";
 import { BuyerPaidMark, DepositDate, TxCheckbox, TxLink, type TxRowView } from "./TxTable";
+import { TxStatusMenu } from "./TxStatusMenu";
 
-/** La lista de cobros como tarjetas (en el celular), con una casilla en cada una para elegir. */
+/**
+ * La lista de cobros como tarjetas (en el celular), con una casilla en cada una para elegir y, junto al estado,
+ * «Cambiar estado».
+ */
 export function TxCards({ rows, today }: { rows: TxRowView[]; today: ISODate }) {
   return (
     <div className="flex flex-col gap-2">
@@ -23,9 +27,12 @@ export function TxCards({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
               <p className="text-sm text-ink-soft">
                 <DateText value={tx.occurredOn} /> · {tx.companyName} · {tx.gatewayName}
               </p>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <StatusBadge tx={tx} today={today} />
-                <p className="text-sm">
+              <div className="flex items-start justify-between gap-2">
+                <span className="flex min-w-0 flex-col items-start gap-1">
+                  <StatusBadge tx={tx} today={today} />
+                  <TxStatusMenu tx={tx} today={today} placement="bottom" className="-my-2" />
+                </span>
+                <p className="shrink-0 text-sm">
                   <span className="text-ink-soft">Neto </span>
                   <Money value={tx.net} currency={tx.currency} />
                 </p>
