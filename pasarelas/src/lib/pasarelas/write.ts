@@ -131,6 +131,7 @@ export type EditTxInput = Partial<
     | "note"
     | "bankAccountId"
     | "feesPaidBy"
+    | "feeExemptIds"
   >
 >;
 
@@ -198,17 +199,31 @@ function columns(tx: TxSnapshot): TxFields {
   };
 }
 
-/** El reparto del desglose, como filas de `pay_allocations`. Sin esquema, ninguna. */
+/**
+ * El reparto del desglose, como filas de `pay_allocations`. Sin esquema, ninguna. La fila de una parte que no pagó
+ * comisión va sobre el bruto (su parte salió de ahí); las demás, sobre la base del reparto. La suma sigue siendo la
+ * base del reparto (el neto).
+ */
 function allocationsOf(b: Breakdown): AllocWrite[] {
   const { baseKind, lines } = b.alloc;
   if (baseKind === null) return [];
   return lines.map((line) => ({
     beneficiaryId: line.beneficiaryId,
     amount: line.amount,
-    base: baseKind,
+    base: line.feeExempt ? "bruto" : baseKind,
     pct: line.pct,
     isRemainder: line.isRemainder,
   }));
+}
+
+/**
+ * ¿Dicen esas marcas lo mismo que las congeladas en el cobro? Cada línea de su esquema marcada si y solo si su
+ * beneficiario está en `ids`; lo que no es una línea no cuenta (no se marca). Sin `ids` no se dijo nada: lo mismo.
+ */
+function sameFeeExempt(tx: TxSnapshot, ids: readonly string[] | undefined): boolean {
+  if (ids === undefined) return true;
+  const lines = tx.breakdown.rules.scheme?.lines ?? [];
+  return lines.every((line) => line.feeExempt === ids.includes(line.beneficiaryId));
 }
 
 type Photo = {
@@ -386,9 +401,10 @@ export function planCreate(cfg: PayConfig, input: NewTxInput, kind: "creado" | "
 /**
  * Un alta que llega con el id de un cobro ya guardado es el mismo envío repetido (una respuesta que se perdió) solo
  * si trae lo mismo que se guardó: monto, moneda, instante, empresa, pasarela, canal, opciones, quién pagó la
- * comisión, esquema y referencia, y también lo de «Más opciones» (estado inicial y fecha del depósito, cuenta destino, fecha estimada a
- * mano y nota). Si algo difiere, la persona cambió datos creyendo que no se había guardado: `ya_registrado`, para
- * que no se dé por guardado lo que no se guardó. Sin cuenta destino elegida vale la que haya puesto la app.
+ * comisión, quién no la paga (si lo dice), esquema y referencia, y también lo de «Más opciones» (estado inicial y
+ * fecha del depósito, cuenta destino, fecha estimada a mano y nota). Si algo difiere, la persona cambió datos
+ * creyendo que no se había guardado: `ya_registrado`, para que no se dé por guardado lo que no se guardó. Sin cuenta
+ * destino elegida vale la que haya puesto la app.
  */
 export function requireSameRegistration(tx: TxSnapshot, input: NewTxInput): void {
   const status = input.status ?? "registrado";
@@ -402,6 +418,7 @@ export function requireSameRegistration(tx: TxSnapshot, input: NewTxInput): void
     tx.channelId === input.channelId &&
     sameIds(selectionOf(tx).extraIds, input.extraIds) &&
     tx.feesPaidBy === (input.feesPaidBy ?? "nosotros") &&
+    sameFeeExempt(tx, input.feeExemptIds) &&
     tx.schemeId === input.schemeId &&
     tx.reference === input.reference &&
     tx.status === status &&
@@ -427,7 +444,9 @@ function sameIds(a: readonly string[], b: readonly string[]): boolean {
  * esquema o fecha); lo demás conserva lo congelado, igual que el reembolso, la disputa y el «fallido». La fecha
  * estimada se recalcula si cambió la fecha, la empresa, la pasarela o las opciones, salvo que esté puesta a mano.
  * Cambiar quién pagó la comisión vuelve a calcular el desglose como cambiar una opción: las comisiones son las
- * mismas, pero el reparto pasa al neto (si la pagó el comprador) o vuelve a la base del esquema.
+ * mismas, pero el reparto pasa al neto (si la pagó el comprador) o vuelve a la base del esquema. Cambiar quién no
+ * paga comisión (`feeExemptIds`) cambia solo las marcas congeladas de ese cobro y su reparto; con otro esquema (o
+ * con otra versión por la fecha), lo que se diga va a sus líneas.
  *
  * La cuenta destino es la que diga la edición (`bankAccountId`). Si no dice ninguna y cambia la empresa o la
  * pasarela, vuelve a ser la de la cuenta de esa pasarela en esa empresa (o ninguna): la de antes era de otra. Ese
@@ -450,6 +469,7 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
     extraIds: pick(input.extraIds, before.extraIds),
     schemeId: pick(input.schemeId, before.schemeId),
     occurredOn: input.occurredAt === undefined ? before.occurredOn : nyDate(input.occurredAt),
+    feeExemptIds: input.feeExemptIds,
   };
   const currency = pick(input.currency, tx.currency);
   const grossOriginal = pick(input.grossOriginal, tx.grossOriginal);
@@ -462,6 +482,8 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
     scheme: sel.schemeId !== before.schemeId,
     date: sel.occurredOn !== before.occurredOn,
   };
+  // Quién no paga comisión, dentro del mismo esquema: con otro esquema, lo que se diga es de sus líneas.
+  const exempt = !changed.scheme && !sameFeeExempt(tx, input.feeExemptIds);
 
   // Lo que cambió, en el orden en que lo lista el historial.
   const labels = [
@@ -473,6 +495,7 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
     { label: "pasarela", did: changed.gateway },
     { label: "opciones", did: changed.extras },
     { label: "quién paga la comisión", did: feesPaidBy !== prev.state.feesPaidBy },
+    { label: "quién no paga comisión", did: exempt },
     { label: "esquema", did: changed.scheme },
     { label: "referencia", did: pick(input.reference, tx.reference) !== tx.reference },
     { label: "nota", did: pick(input.note, tx.note) !== tx.note },
@@ -490,8 +513,9 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
     ...changed,
     channel: changed.channel || changed.company,
     amount: grossOriginal !== tx.grossOriginal || currency !== tx.currency,
+    exempt,
   };
-  const anyRule = again.gateway || again.channel || again.extras || again.scheme || again.date;
+  const anyRule = again.gateway || again.channel || again.extras || again.scheme || again.date || again.exempt;
   const state = { ...prev.state, grossOriginal, refunded: lost ? grossOriginal : prev.state.refunded, feesPaidBy };
   // Lo congelado solo se vuelve a calcular si cambió algo que entra en el cálculo.
   const b =

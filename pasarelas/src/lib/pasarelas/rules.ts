@@ -6,6 +6,7 @@
  * configuración: `compute` exige montos canónicos y el desglose se guarda tal cual.
  */
 import { dec, normPct, toMoney } from "./decimal";
+import { NO_FEE_PAYER_TEXT } from "./schemes";
 import type {
   DayType,
   ExtraCfg,
@@ -24,7 +25,15 @@ import { pickVersion } from "./versions";
 
 // ─── Errores ────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type PayRuleCode = "empresa" | "pasarela" | "canal" | "opcion" | "esquema" | "sin_tarifa" | "sin_version";
+export type PayRuleCode =
+  | "empresa"
+  | "pasarela"
+  | "canal"
+  | "opcion"
+  | "esquema"
+  | "sin_tarifa"
+  | "sin_version"
+  | "nadie_paga_comision";
 
 /** El mensaje de cada error de reglas, para mostrarlo tal cual. */
 export const PAY_RULE_TEXT: Record<PayRuleCode, string> = {
@@ -35,6 +44,8 @@ export const PAY_RULE_TEXT: Record<PayRuleCode, string> = {
   esquema: "El esquema de reparto no existe o le falta un beneficiario.",
   sin_tarifa: "La pasarela no tiene ninguna tarifa.",
   sin_version: "El esquema de reparto no tiene ninguna versión.",
+  // Lo lanza el reparto (`compute`): todas las partes marcadas «No paga comisión» y sin «Resto» que la pague.
+  nadie_paga_comision: NO_FEE_PAYER_TEXT,
 };
 
 /** Lo elegido no se puede resolver con la configuración: falta algo o no corresponde. */
@@ -125,8 +136,16 @@ function platformRule(cfg: PayConfig, sel: Selection): PlatformRule | null {
   };
 }
 
-/** La versión del esquema que rige en la fecha `on`, con el nombre de cada beneficiario. */
-function schemeRule(cfg: PayConfig, schemeId: string | null, on: ISODate): SchemeRule | null {
+/**
+ * La versión del esquema que rige en la fecha `on`, con el nombre de cada beneficiario y la marca «No paga
+ * comisión» de cada línea: la del esquema o, si el cobro dice otra cosa (`exemptIds`), la de ese cobro.
+ */
+function schemeRule(
+  cfg: PayConfig,
+  schemeId: string | null,
+  on: ISODate,
+  exemptIds: readonly string[] | undefined,
+): SchemeRule | null {
   if (schemeId === null) return null;
   const scheme = cfg.schemes.find((candidate) => candidate.id === schemeId);
   if (scheme === undefined) throw new PayRuleError("esquema");
@@ -138,13 +157,30 @@ function schemeRule(cfg: PayConfig, schemeId: string | null, on: ISODate): Schem
     if (beneficiary === undefined) throw new PayRuleError("esquema");
     return { beneficiaryId, name: beneficiary.name };
   };
-  return {
+  const rule: SchemeRule = {
     schemeId: scheme.id,
     versionId: version.id,
     name: scheme.name,
     base: version.base,
-    lines: version.lines.map((line) => ({ ...named(line.beneficiaryId), pct: normPct(line.pct) })),
+    lines: version.lines.map((line) => ({
+      ...named(line.beneficiaryId),
+      pct: normPct(line.pct),
+      feeExempt: line.feeExempt,
+    })),
     remainder: version.remainderBeneficiaryId === null ? null : named(version.remainderBeneficiaryId),
+  };
+  return exemptIds === undefined ? rule : markFeeExempt(rule, exemptIds);
+}
+
+/**
+ * El esquema congelado con otras marcas «No paga comisión»: las líneas de esos beneficiarios, y ninguna más. Lo que
+ * no es una línea no cuenta (el «Resto» no se marca). Sin esquema no hay nada que marcar.
+ */
+function markFeeExempt(scheme: SchemeRule | null, exemptIds: readonly string[]): SchemeRule | null {
+  if (scheme === null) return null;
+  return {
+    ...scheme,
+    lines: scheme.lines.map((line) => ({ ...line, feeExempt: exemptIds.includes(line.beneficiaryId) })),
   };
 }
 
@@ -175,8 +211,13 @@ export function resolveRules(cfg: PayConfig, sel: Selection, versionsOn: ISODate
     gateway: gatewayRule(cfg, sel, versionsOn),
     extras: extraRules(cfg, sel),
     platform,
-    scheme: schemeRule(cfg, sel.schemeId, versionsOn),
+    scheme: schemeRule(cfg, sel.schemeId, versionsOn, sel.feeExemptIds),
   };
+}
+
+/** Quiénes no pagan comisión según unas reglas congeladas: los beneficiarios de las líneas marcadas, en su orden. */
+export function feeExemptIdsOf(rules: Rules): string[] {
+  return (rules.scheme?.lines ?? []).filter((line) => line.feeExempt).map((line) => line.beneficiaryId);
 }
 
 /**
@@ -188,23 +229,38 @@ export function resolveRules(cfg: PayConfig, sel: Selection, versionsOn: ISODate
  *  - `extras`: las opciones. `channel`: la plataforma. `scheme`: el esquema.
  *  - `amount`: cambió el monto o la moneda. La comisión informada era la de otro monto (o de otra moneda): se
  *    descarta y vale la tarifa congelada.
+ *  - `exempt`: cambió quién no paga comisión (`sel.feeExemptIds`; sin decirlo, quedan las que había): solo las
+ *    marcas del esquema congelado. Si además
+ *    se vuelve a resolver el esquema (`scheme` o `date`), las marcas de la selección van a la versión nueva; sin
+ *    ellas, las de esa versión.
  */
 export function reResolve(
   prev: Rules,
   cfg: PayConfig,
   sel: Selection,
-  changed: { gateway: boolean; channel: boolean; extras: boolean; scheme: boolean; date: boolean; amount?: boolean },
+  changed: {
+    gateway: boolean;
+    channel: boolean;
+    extras: boolean;
+    scheme: boolean;
+    date: boolean;
+    amount?: boolean;
+    exempt?: boolean;
+  },
 ): Rules {
   const on = sel.occurredOn;
   let { gateway } = prev;
   if (changed.amount === true) gateway = withoutOverride(gateway);
   if (changed.gateway) gateway = gatewayRule(cfg, sel, on);
   else if (changed.date) gateway = { ...gateway, ...feeRule(gatewayOf(cfg, sel.gatewayId), on) };
+  let { scheme } = prev;
+  if (changed.scheme || changed.date) scheme = schemeRule(cfg, sel.schemeId, on, sel.feeExemptIds);
+  else if (changed.exempt === true) scheme = markFeeExempt(scheme, sel.feeExemptIds ?? feeExemptIdsOf(prev));
   return {
     gateway,
     extras: changed.gateway || changed.extras ? extraRules(cfg, sel) : prev.extras,
     platform: changed.channel ? platformRule(cfg, sel) : prev.platform,
-    scheme: changed.scheme || changed.date ? schemeRule(cfg, sel.schemeId, on) : prev.scheme,
+    scheme,
   };
 }
 

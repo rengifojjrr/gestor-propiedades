@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { SCHEME_ISSUE_TEXT, schemeTotal, validateScheme, type SchemeIssue } from "./schemes";
+import { SCHEME_ISSUE_TEXT, schemeTotal, someonePaysFees, validateScheme, type SchemeIssue } from "./schemes";
 
 const line = (beneficiaryId: string, pct: string) => ({ beneficiaryId, pct });
 
@@ -69,6 +69,19 @@ describe("validateScheme", () => {
     expect(validateScheme([line("a", "50"), line("b", "30")], "b")).toEqual(["resto_en_lineas"]);
   });
 
+  test("E9c: si todas las líneas están marcadas «No paga comisión» y no hay «Resto» que la pague, no se guarda", () => {
+    const spared = (beneficiaryId: string, pct: string) => ({ ...line(beneficiaryId, pct), feeExempt: true });
+    expect(validateScheme([spared("a", "50"), spared("b", "30"), spared("c", "20")], null)).toEqual([
+      "nadie_paga_comision",
+    ]);
+    // El «Resto» con algo la paga; con las líneas en 100 % no recibe nada, así que no.
+    expect(validateScheme([spared("a", "50"), spared("b", "30")], "c")).toEqual([]);
+    expect(validateScheme([spared("a", "50"), spared("b", "50")], "c")).toEqual(["nadie_paga_comision"]);
+    // Una sola sin marcar basta (sin la marca, la paga).
+    expect(validateScheme([spared("a", "50"), spared("b", "30"), line("c", "20")], null)).toEqual([]);
+    expect(validateScheme([spared("a", "50"), { ...line("b", "50"), feeExempt: false }], null)).toEqual([]);
+  });
+
   test("devuelve todos los problemas a la vez, siempre en el mismo orden", () => {
     expect(validateScheme([line("a", "60"), line("a", "60")], "a")).toEqual([
       "suma_mayor_100",
@@ -96,6 +109,7 @@ describe("SCHEME_ISSUE_TEXT", () => {
       "suma_menor_sin_resto",
       "beneficiario_repetido",
       "resto_en_lineas",
+      "nadie_paga_comision",
     ];
     expect(Object.keys(SCHEME_ISSUE_TEXT).sort()).toEqual([...issues].sort());
     for (const issue of issues) {
@@ -103,5 +117,21 @@ describe("SCHEME_ISSUE_TEXT", () => {
     }
     expect(SCHEME_ISSUE_TEXT.suma_menor_sin_resto).toContain("Resto");
     expect(SCHEME_ISSUE_TEXT.suma_mayor_100).toContain("100");
+    expect(SCHEME_ISSUE_TEXT.nadie_paga_comision).toBe(
+      "Alguien tiene que pagar la comisión: deja al menos una parte sin marcar.",
+    );
+  });
+});
+
+describe("someonePaysFees", () => {
+  test("una línea sin marcar con algo de porcentaje, o el «Resto» con algo, pagan la comisión", () => {
+    expect(someonePaysFees([{ pct: "50", feeExempt: true }, { pct: "50" }], false)).toBe(true);
+    expect(someonePaysFees([{ pct: "50", feeExempt: true }, { pct: "30", feeExempt: true }], true)).toBe(true);
+  });
+
+  test("todas marcadas, una sin marcar en 0 % o un «Resto» que no recibe nada: nadie la paga", () => {
+    expect(someonePaysFees([{ pct: "100", feeExempt: true }], false)).toBe(false);
+    expect(someonePaysFees([{ pct: "100", feeExempt: true }, { pct: "0", feeExempt: false }], true)).toBe(false);
+    expect(someonePaysFees([{ pct: "50", feeExempt: true }, { pct: "30", feeExempt: true }], false)).toBe(false);
   });
 });

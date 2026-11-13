@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { allocate } from "./allocate";
+import { allocate, allocateInProportion } from "./allocate";
 import { D, isMoney } from "./decimal";
 
 /** Generador determinista (mulberry32): la misma semilla da siempre los mismos casos. */
@@ -134,6 +134,75 @@ describe("allocate: propiedades con 2 000 casos generados", () => {
   test("es determinista: los mismos datos dan el mismo reparto", () => {
     for (const { base, pcts } of cases.slice(0, 200)) {
       expect(allocate(base, pcts)).toEqual(allocate(base, pcts));
+    }
+  });
+});
+
+describe("allocateInProportion (mayor resto, con pesos que no suman 100)", () => {
+  test("E9: 770,70 en proporción 50:30 → 481,6875 y 289,0125; el centavo va al de mayor resto", () => {
+    expect(allocateInProportion("770.70", ["50", "30"])).toEqual(["481.69", "289.01"]);
+  });
+
+  test("E9b: una pérdida se reparte con signo, como E4: −29,30 en 50:30", () => {
+    // 2930 centavos × 5/8 = 1831,25 y × 3/8 = 1098,75: el centavo que sobra va al de mayor resto (el segundo).
+    expect(allocateInProportion("-29.30", ["50", "30"])).toEqual(["-18.31", "-10.99"]);
+  });
+
+  test("una proporción que no da decimales exactos (3/7 y 4/7) sigue sumando la base", () => {
+    expect(allocateInProportion("1.00", ["30", "40"])).toEqual(["0.43", "0.57"]);
+  });
+
+  test("en empate de resto gana la primera, aunque la división no sea exacta", () => {
+    // 2 centavos en 4:1:1 → 1⅓, ⅓ y ⅓: los tres con el mismo resto (⅓). El centavo que sobra es del primero.
+    expect(allocateInProportion("0.02", ["4", "1", "1"])).toEqual(["0.02", "0.00", "0.00"]);
+  });
+
+  test("un peso de 0 no recibe nada", () => {
+    expect(allocateInProportion("0.01", ["0", "30"])).toEqual(["0.00", "0.01"]);
+  });
+
+  test("con pesos que suman 100 da lo mismo que allocate", () => {
+    expect(allocateInProportion("32.06", ["33.3333", "33.3333", "33.3334"])).toEqual(
+      allocate("32.06", ["33.3333", "33.3333", "33.3334"]),
+    );
+  });
+
+  test("sin ningún peso mayor que cero no hay a quién repartir: RangeError", () => {
+    expect(() => allocateInProportion("10.00", [])).toThrow(RangeError);
+    expect(() => allocateInProportion("10.00", ["0", "0"])).toThrow(RangeError);
+  });
+
+  test("un peso negativo, una base o un peso mal escritos: RangeError", () => {
+    expect(() => allocateInProportion("10.00", ["80", "-30"])).toThrow(RangeError);
+    expect(() => allocateInProportion("10", ["50", "30"])).toThrow(RangeError);
+    expect(() => allocateInProportion("10.00", ["50", "treinta"])).toThrow(RangeError);
+  });
+});
+
+describe("allocateInProportion: propiedades con 2 000 casos generados", () => {
+  const rnd = mulberry32(20261114);
+  const int = (min: number, max: number) => min + Math.floor(rnd() * (max - min + 1));
+
+  // Entre 1 y 6 pesos (porcentajes de un esquema, en diezmilésimas) con una suma cualquiera mayor que cero.
+  const cases = Array.from({ length: 2000 }, () => {
+    const weights = Array.from({ length: int(1, 6) }, () => pctText(int(0, 1_000_000)));
+    if (weights.every((weight) => new D(weight).isZero())) weights[0] = "1.0000";
+    return { base: moneyText(int(0, 9) === 0 ? int(-200, 200) : int(-50_000_000, 50_000_000)), weights };
+  });
+
+  test("la suma es exactamente la base; cada parte, a menos de un centavo de la exacta y con su signo", () => {
+    for (const { base, weights } of cases) {
+      const parts = allocateInProportion(base, weights);
+      const label = `${base} en ${weights.join(":")}`;
+      expect(parts).toHaveLength(weights.length);
+      expect(parts.every(isMoney) && !parts.includes("-0.00"), label).toBe(true);
+      expect(parts.reduce((acc, amount) => acc.plus(amount), new D(0)).eq(base), label).toBe(true);
+      const total = weights.reduce((acc, weight) => acc.plus(weight), new D(0));
+      parts.forEach((amount, i) => {
+        const exact = new D(base).times(weights[i] as string).div(total);
+        expect(new D(amount).minus(exact).abs().lt("0.01"), label).toBe(true);
+        expect(new D(base).isNegative() ? new D(amount).lte(0) : new D(amount).gte(0), label).toBe(true);
+      });
     }
   });
 });

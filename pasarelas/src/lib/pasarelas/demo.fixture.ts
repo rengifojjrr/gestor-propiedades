@@ -98,9 +98,9 @@ export function cfgDemo(): PayConfig {
             remainderBeneficiaryId: null,
             effectiveFrom: "2000-01-01",
             lines: [
-              { beneficiaryId: DEMO.beneficiaryIds.a, pct: "50" },
-              { beneficiaryId: DEMO.beneficiaryIds.b, pct: "30" },
-              { beneficiaryId: DEMO.beneficiaryIds.c, pct: "20" },
+              { beneficiaryId: DEMO.beneficiaryIds.a, pct: "50", feeExempt: false },
+              { beneficiaryId: DEMO.beneficiaryIds.b, pct: "30", feeExempt: false },
+              { beneficiaryId: DEMO.beneficiaryIds.c, pct: "20", feeExempt: false },
             ],
           },
         ],

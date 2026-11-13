@@ -84,6 +84,14 @@ const asJson = (b: Breakdown): Json => JSON.parse(JSON.stringify(b)) as Json;
 
 const txRow = (patch: Partial<TxRow> = {}): TxRow => ({ ...listRow(), breakdown: asJson(breakdownE1()), ...patch });
 
+/** Una línea de esquema como la devuelve la base, sin su marca. */
+const line = (scheme_version_id: string, beneficiary_id: string, pct: string, sort: number) => ({
+  scheme_version_id,
+  beneficiary_id,
+  pct,
+  sort,
+});
+
 describe("las listas de columnas", () => {
   test("todo numeric de dinero o de porcentaje se pide como texto", () => {
     const lists = Object.entries(dto).flatMap(([name, value]): [string, string][] =>
@@ -499,10 +507,11 @@ describe("toPayConfig", () => {
         },
       ],
       schemeLines: [
-        { scheme_version_id: DEMO.schemeVersionId, beneficiary_id: DEMO.beneficiaryIds.a, pct: "50.0000", sort: 0 },
-        { scheme_version_id: DEMO.schemeVersionId, beneficiary_id: DEMO.beneficiaryIds.b, pct: "30.0000", sort: 1 },
-        { scheme_version_id: "sv-socios-2", beneficiary_id: DEMO.beneficiaryIds.a, pct: "33.3333", sort: 0 },
-        { scheme_version_id: DEMO.schemeVersionId, beneficiary_id: DEMO.beneficiaryIds.c, pct: "20.0000", sort: 2 },
+        { ...line(DEMO.schemeVersionId, DEMO.beneficiaryIds.a, "50.0000", 0), fee_exempt: false },
+        { ...line(DEMO.schemeVersionId, DEMO.beneficiaryIds.b, "30.0000", 1), fee_exempt: false },
+        // La marca «No paga comisión» pasa tal cual.
+        { ...line("sv-socios-2", DEMO.beneficiaryIds.a, "33.3333", 0), fee_exempt: true },
+        { ...line(DEMO.schemeVersionId, DEMO.beneficiaryIds.c, "20.0000", 2), fee_exempt: false },
       ],
       holidays: [{ day: "2026-11-26" }, { day: "2026-12-25" }],
     };
@@ -623,9 +632,9 @@ describe("toPayConfig", () => {
               remainderBeneficiaryId: null,
               effectiveFrom: "2000-01-01",
               lines: [
-                { beneficiaryId: DEMO.beneficiaryIds.a, pct: "50" },
-                { beneficiaryId: DEMO.beneficiaryIds.b, pct: "30" },
-                { beneficiaryId: DEMO.beneficiaryIds.c, pct: "20" },
+                { beneficiaryId: DEMO.beneficiaryIds.a, pct: "50", feeExempt: false },
+                { beneficiaryId: DEMO.beneficiaryIds.b, pct: "30", feeExempt: false },
+                { beneficiaryId: DEMO.beneficiaryIds.c, pct: "20", feeExempt: false },
               ],
             },
             {
@@ -634,7 +643,7 @@ describe("toPayConfig", () => {
               base: "bruto",
               remainderBeneficiaryId: DEMO.beneficiaryIds.c,
               effectiveFrom: "2026-12-01",
-              lines: [{ beneficiaryId: DEMO.beneficiaryIds.a, pct: "33.3333" }],
+              lines: [{ beneficiaryId: DEMO.beneficiaryIds.a, pct: "33.3333", feeExempt: true }],
             },
           ],
         },

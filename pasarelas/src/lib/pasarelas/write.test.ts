@@ -169,15 +169,17 @@ function expectRowIsSound({ fields: f, allocations }: Row): void {
     feesPaidBy: b.state.feesPaidBy,
     buyerFees: buyerFeesOf(b),
   });
+  // Cada fila con su base: la de una parte que no pagó comisión, el bruto; las demás, la del reparto.
   expect(allocations).toEqual(
     b.alloc.lines.map((line) => ({
       beneficiaryId: line.beneficiaryId,
       amount: line.amount,
-      base: b.alloc.baseKind,
+      base: line.feeExempt ? "bruto" : b.alloc.baseKind,
       pct: line.pct,
       isRemainder: line.isRemainder,
     })),
   );
+  if (b.alloc.lines.some((line) => line.feeExempt)) expect(f.allocBase).toBe("neto");
 
   // pay_transactions_net_check, _gross_check, _refund_range, _deposit_check y _scheme_check.
   expect(f.netAmount).toBe(sub(f.grossAmount, f.feesTotal));
@@ -584,6 +586,144 @@ describe("quién paga la comisión", () => {
     });
     expect(write.fields.breakdown?.state.feesPaidBy).toBe("comprador");
     save(write, tx);
+  });
+});
+
+// ─── Partes que no pagan comisión ───────────────────────────────────────────────────────────────────────────
+
+/** La configuración de ejemplo con el Grupo C marcado «No paga comisión» en el esquema 50/30/20 (sobre el neto). */
+function withExemptC(cfg: PayConfig = cfgDemo()): PayConfig {
+  const version = only(only(cfg.schemes).versions);
+  version.lines = version.lines.map((line) => ({ ...line, feeExempt: line.beneficiaryId === DEMO.beneficiaryIds.c }));
+  return cfg;
+}
+
+/** E9: 1000,00 por Stripe, sin opciones ni canal: comisión 29,30 y neto 970,70. */
+const inputE9 = (patch: Partial<NewTxInput> = {}): NewTxInput =>
+  inputE1({ channelId: null, extraIds: [], grossOriginal: "1000.00", ...patch });
+
+const { a: GROUP_A, b: GROUP_B, c: GROUP_C } = DEMO.beneficiaryIds;
+
+describe("partes que no pagan comisión", () => {
+  test("E9 al registrar: la fila de C va sobre el bruto y las de A y B sobre el neto; suman el neto", () => {
+    const write = planCreate(withExemptC(), inputE9());
+    expect(write.fields).toMatchObject({
+      feesTotal: "29.30",
+      netAmount: "970.70",
+      allocBase: "neto",
+      allocBaseAmount: "970.70",
+    });
+    expect(write.allocations).toEqual([
+      { beneficiaryId: GROUP_A, amount: "481.69", base: "neto", pct: "50", isRemainder: false },
+      { beneficiaryId: GROUP_B, amount: "289.01", base: "neto", pct: "30", isRemainder: false },
+      { beneficiaryId: GROUP_C, amount: "200.00", base: "bruto", pct: "20", isRemainder: false },
+    ]);
+    save(write);
+  });
+
+  test("E9b: el reembolso total deja C en 0,00 y la pérdida en A y B; cada fila conserva su base", () => {
+    const tx = save(planCreate(withExemptC(), inputE9()));
+    const write = planRefundTotal(tx, "1000.00");
+    expect(write.fields).toMatchObject({ grossAmount: "0.00", netAmount: "-29.30", allocBaseAmount: "-29.30" });
+    expect(write.allocations).toEqual([
+      { beneficiaryId: GROUP_A, amount: "-18.31", base: "neto", pct: "50", isRemainder: false },
+      { beneficiaryId: GROUP_B, amount: "-10.99", base: "neto", pct: "30", isRemainder: false },
+      { beneficiaryId: GROUP_C, amount: "0.00", base: "bruto", pct: "20", isRemainder: false },
+    ]);
+    save(write, tx);
+  });
+
+  test("al registrar se puede cambiar para ese cobro: queda en sus reglas congeladas y el esquema no cambia", () => {
+    const cfg = withExemptC();
+    const none = planCreate(cfg, inputE9({ feeExemptIds: [] }));
+    expect(shares(none)).toEqual(["485.35", "291.21", "194.14"]);
+    expect(none.allocations?.every((line) => line.base === "neto")).toBe(true);
+    save(none);
+    // A no paga comisión: recibe 500,00, y B y C se reparten 470,70 en proporción 30:20.
+    const onlyA = planCreate(cfg, inputE9({ id: "tx-solo-a", feeExemptIds: [GROUP_A] }));
+    expect(onlyA.fields.breakdown?.rules.scheme?.lines.map((line) => line.feeExempt)).toEqual([true, false, false]);
+    expect(shares(onlyA)).toEqual(["500.00", "282.42", "188.28"]);
+    save(onlyA);
+    expect(only(only(cfg.schemes).versions).lines.map((line) => line.feeExempt)).toEqual([false, false, true]);
+  });
+
+  test("importar (sin decir nada) usa las marcas del esquema", () => {
+    const write = planCreate(withExemptC(), inputE9(), "importado");
+    expect(shares(write)).toEqual(["481.69", "289.01", "200.00"]);
+    save(write);
+  });
+
+  test("E9c: si al registrar todas quedan marcadas, nadie paga la comisión: se rechaza con su mensaje", () => {
+    const all = inputE9({ feeExemptIds: [GROUP_A, GROUP_B, GROUP_C] });
+    expectRuleError(() => planCreate(withExemptC(), all), "nadie_paga_comision");
+    // Con el comprador la marca no cuenta: entra, y el reparto es el de siempre.
+    const byBuyer = planCreate(withExemptC(), { ...all, feesPaidBy: "comprador" });
+    expect(shares(byBuyer)).toEqual(["485.35", "291.21", "194.14"]);
+    save(byBuyer);
+  });
+
+  test("el mismo envío otra vez pasa solo si dice lo mismo de quién no paga comisión", () => {
+    const tx = save(planCreate(withExemptC(), inputE9({ feeExemptIds: [GROUP_C] })));
+    expect(() => requireSameRegistration(tx, inputE9({ feeExemptIds: [GROUP_C] }))).not.toThrow();
+    // Sin decirlo, el formulario no preguntó (lo deciden quién pagó y el esquema, que ya se comparan).
+    expect(() => requireSameRegistration(tx, inputE9())).not.toThrow();
+    // Lo que no es una línea no se marca: tampoco cuenta aquí.
+    expect(() => requireSameRegistration(tx, inputE9({ feeExemptIds: [GROUP_C, "ben-fantasma"] }))).not.toThrow();
+    expectStateError(() => requireSameRegistration(tx, inputE9({ feeExemptIds: [] })), "ya_registrado");
+    expectStateError(() => requireSameRegistration(tx, inputE9({ feeExemptIds: [GROUP_A] })), "ya_registrado");
+  });
+
+  test("editar quién no paga comisión recalcula solo el reparto y lo dice en el historial", () => {
+    const cfg = withExemptC();
+    const tx = save(planCreate(cfg, inputE9()));
+    const write = planEdit(cfg, tx, { feeExemptIds: [] });
+    expect(fieldNames(write)).toEqual(["breakdown"]);
+    expect(write.allocations).toEqual([
+      { beneficiaryId: GROUP_A, amount: "485.35", base: "neto", pct: "50", isRemainder: false },
+      { beneficiaryId: GROUP_B, amount: "291.21", base: "neto", pct: "30", isRemainder: false },
+      { beneficiaryId: GROUP_C, amount: "194.14", base: "neto", pct: "20", isRemainder: false },
+    ]);
+    expect(write.event.summary).toBe("Editado: quién no paga comisión");
+    const plain = save(write, tx);
+
+    // Y de vuelta: el cambio es solo de este cobro; el esquema sigue diciendo C.
+    const back = planEdit(cfg, plain, { feeExemptIds: [GROUP_C] });
+    expect(shares(back)).toEqual(["481.69", "289.01", "200.00"]);
+    save(back, plain);
+  });
+
+  test("decir las mismas marcas no es un cambio", () => {
+    const cfg = withExemptC();
+    const tx = save(planCreate(cfg, inputE9()));
+    expectStateError(() => planEdit(cfg, tx, { feeExemptIds: [GROUP_C] }), "sin_cambios");
+    // Un cobro sin reparto no tiene a quién marcar: lo que se diga no cambia nada.
+    const bare = save(planCreate(cfg, inputE9({ id: "tx-sin-reparto", schemeId: null })));
+    expectStateError(() => planEdit(cfg, bare, { feeExemptIds: [GROUP_A] }), "sin_cambios");
+    const again = inputE9({ id: "tx-sin-reparto", schemeId: null, feeExemptIds: [GROUP_A] });
+    expect(() => requireSameRegistration(bare, again)).not.toThrow();
+  });
+
+  test("pasar a «nosotros» un cobro con todas las partes marcadas se rechaza, salvo que se desmarque alguna", () => {
+    const cfg = withExemptC();
+    const all = [GROUP_A, GROUP_B, GROUP_C];
+    const tx = save(planCreate(cfg, inputE9({ feesPaidBy: "comprador", feeExemptIds: all })));
+    expectRuleError(() => planEdit(cfg, tx, { feesPaidBy: "nosotros" }), "nadie_paga_comision");
+    const write = planEdit(cfg, tx, { feesPaidBy: "nosotros", feeExemptIds: [GROUP_C] });
+    expect(write.event.summary).toBe("Editado: quién paga la comisión, quién no paga comisión");
+    expect(shares(write)).toEqual(["481.69", "289.01", "200.00"]);
+    save(write, tx);
+  });
+
+  test("al cambiar de esquema, las marcas que se dicen van al esquema nuevo; sin decirlas, las del esquema", () => {
+    const cfg = withExemptC();
+    const tx = save(planCreate(cfg, inputE9({ schemeId: null })));
+    const withScheme = planEdit(cfg, tx, { schemeId: DEMO.schemeId });
+    expect(withScheme.event.summary).toBe("Editado: esquema");
+    expect(shares(withScheme)).toEqual(["481.69", "289.01", "200.00"]);
+    const chosen = planEdit(cfg, tx, { schemeId: DEMO.schemeId, feeExemptIds: [] });
+    expect(chosen.event.summary).toBe("Editado: esquema");
+    expect(shares(chosen)).toEqual(["485.35", "291.21", "194.14"]);
+    save(chosen, tx);
   });
 });
 
@@ -2116,7 +2256,7 @@ describe("planRecalc", () => {
       base: "neto",
       remainderBeneficiaryId: DEMO.beneficiaryIds.c,
       effectiveFrom: SABADO,
-      lines: [{ beneficiaryId: DEMO.beneficiaryIds.a, pct: "60" }],
+      lines: [{ beneficiaryId: DEMO.beneficiaryIds.a, pct: "60", feeExempt: false }],
     });
     const { write } = planRecalc(cfg, tx, "hoy", "2026-11-20");
     expect(write.fields.schemeVersionId).toBe("sv-socios-2");

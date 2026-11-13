@@ -89,9 +89,14 @@ function previewOf(cfg: PayConfig, input: PreviewInput): Preview {
   }
 }
 
-/** A dónde se va a arreglar cada cosa que falta en la configuración. */
-function fixFor(code: PayRuleCode, companyId: string): { href: string; label: string } {
+/**
+ * A dónde se va a arreglar cada cosa que falta en la configuración. `null`: se arregla aquí mismo (si nadie queda
+ * pagando la comisión, desmarcando a alguien en «¿Alguien no paga comisión?»).
+ */
+function fixFor(code: PayRuleCode, companyId: string): { href: string; label: string } | null {
   switch (code) {
+    case "nadie_paga_comision":
+      return null;
     case "empresa":
       return { href: "/pasarelas/empresas", label: "Revisar las empresas" };
     case "canal":
@@ -110,6 +115,7 @@ function fixFor(code: PayRuleCode, companyId: string): { href: string; label: st
 export function LivePreview({ cfg, input }: { cfg: PayConfig; input: PreviewInput }) {
   const titleId = useId();
   const preview = previewOf(cfg, input);
+  const fix = preview.kind === "falta" ? fixFor(preview.code, input.companyId) : null;
 
   return (
     <section aria-labelledby={titleId} className="flex min-w-0 flex-col gap-3">
@@ -123,12 +129,11 @@ export function LivePreview({ cfg, input }: { cfg: PayConfig; input: PreviewInpu
 
       {preview.kind === "falta" ? (
         <Alert tone="warning" title={PAY_RULE_TEXT[preview.code]}>
-          <Link
-            href={fixFor(preview.code, input.companyId).href}
-            className="inline-flex min-h-11 items-center font-semibold text-ink underline"
-          >
-            {fixFor(preview.code, input.companyId).label}
-          </Link>
+          {fix === null ? null : (
+            <Link href={fix.href} className="inline-flex min-h-11 items-center font-semibold text-ink underline">
+              {fix.label}
+            </Link>
+          )}
         </Alert>
       ) : null}
 

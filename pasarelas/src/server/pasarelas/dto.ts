@@ -56,7 +56,7 @@ export const BANK_ACCOUNT_COLUMNS = "id, alias, last4, currency, active";
 export const BENEFICIARY_COLUMNS = "id, name, kind, active";
 export const SCHEME_COLUMNS = "id, name, active";
 export const SCHEME_VERSION_COLUMNS = "id, scheme_id, version, base, remainder_beneficiary_id, effective_from";
-export const SCHEME_LINE_COLUMNS = "scheme_version_id, beneficiary_id, pct::text, sort";
+export const SCHEME_LINE_COLUMNS = "scheme_version_id, beneficiary_id, pct::text, sort, fee_exempt";
 export const HOLIDAY_COLUMNS = "day";
 export const SETTLEMENT_COLUMNS =
   "id, beneficiary_id, paid_on, currency, amount::text, method, receipt_path, receipt_mime, receipt_size, note";
@@ -144,7 +144,13 @@ export type SchemeVersionRow = {
   remainder_beneficiary_id: string | null;
   effective_from: string;
 };
-export type SchemeLineRow = { scheme_version_id: string; beneficiary_id: string; pct: string; sort: number };
+export type SchemeLineRow = {
+  scheme_version_id: string;
+  beneficiary_id: string;
+  pct: string;
+  sort: number;
+  fee_exempt: boolean;
+};
 export type HolidayRow = { day: string };
 export type SettlementRow = {
   id: string;
@@ -411,7 +417,7 @@ export function toSchemeVersionCfg(row: SchemeVersionRow, lines: readonly Scheme
     base: known(ALLOC_BASES, row.base, "Base del reparto desconocida"),
     remainderBeneficiaryId: row.remainder_beneficiary_id,
     effectiveFrom: row.effective_from,
-    lines: lines.map((line) => ({ beneficiaryId: line.beneficiary_id, pct: pct(line.pct) })),
+    lines: lines.map((line) => ({ beneficiaryId: line.beneficiary_id, pct: pct(line.pct), feeExempt: line.fee_exempt })),
   };
 }
 

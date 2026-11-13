@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest";
+import { allocate } from "./allocate";
 import { buyerFeesOf, compute, diff, parseBreakdown, recalc, recompute } from "./breakdown";
 import { D, isMoney } from "./decimal";
 import { sub } from "./money";
+import { PayRuleError } from "./rules";
 import { businessFigures } from "./stats";
 import type { Breakdown, ExtraRule, Rules, SchemeRule, State } from "./types";
 
@@ -29,9 +31,9 @@ function rulesE1(): Rules {
       name: "Socios",
       base: "neto",
       lines: [
-        { beneficiaryId: "ben-a", name: "Grupo A", pct: "50" },
-        { beneficiaryId: "ben-b", name: "Grupo B", pct: "30" },
-        { beneficiaryId: "ben-c", name: "Grupo C", pct: "20" },
+        { beneficiaryId: "ben-a", name: "Grupo A", pct: "50", feeExempt: false },
+        { beneficiaryId: "ben-b", name: "Grupo B", pct: "30", feeExempt: false },
+        { beneficiaryId: "ben-c", name: "Grupo C", pct: "20", feeExempt: false },
       ],
       remainder: null,
     },
@@ -65,6 +67,17 @@ function rulesWithGateway(patch: Partial<Rules["gateway"]>): Rules {
 function rulesE7(): Rules {
   const rules = rulesE1();
   return { ...rules, extras: [], platform: null, scheme: { ...schemeOf(rules), base: "bruto" } };
+}
+
+/**
+ * E9: solo Stripe (2,9 % + 0,30), sin opciones ni plataforma, y el esquema 50/30/20 «Sobre el neto» con las partes
+ * de `exempt` marcadas «No paga comisión» (por defecto, el Grupo C).
+ */
+function rulesE9(exempt: readonly string[] = ["ben-c"], base: SchemeRule["base"] = "neto"): Rules {
+  const rules = rulesE1();
+  const scheme = schemeOf(rules);
+  const lines = scheme.lines.map((line) => ({ ...line, feeExempt: exempt.includes(line.beneficiaryId) }));
+  return { ...rules, extras: [], platform: null, scheme: { ...scheme, base, lines } };
 }
 
 /** E3: solo Stripe y el pago rápido calculado sobre el bruto menos la comisión; sin plataforma. */
@@ -144,9 +157,9 @@ describe("compute: casos que deben salir exactos", () => {
         baseKind: "neto",
         baseAmount: "90.30",
         lines: [
-          { beneficiaryId: "ben-a", name: "Grupo A", pct: "50", amount: "45.15", isRemainder: false },
-          { beneficiaryId: "ben-b", name: "Grupo B", pct: "30", amount: "27.09", isRemainder: false },
-          { beneficiaryId: "ben-c", name: "Grupo C", pct: "20", amount: "18.06", isRemainder: false },
+          { beneficiaryId: "ben-a", name: "Grupo A", pct: "50", amount: "45.15", isRemainder: false, feeExempt: false },
+          { beneficiaryId: "ben-b", name: "Grupo B", pct: "30", amount: "27.09", isRemainder: false, feeExempt: false },
+          { beneficiaryId: "ben-c", name: "Grupo C", pct: "20", amount: "18.06", isRemainder: false, feeExempt: false },
         ],
       },
     });
@@ -161,9 +174,9 @@ describe("compute: casos que deben salir exactos", () => {
       scheme: {
         ...schemeOf(base),
         lines: [
-          { beneficiaryId: "ben-a", name: "Grupo A", pct: "33.3333" },
-          { beneficiaryId: "ben-b", name: "Grupo B", pct: "33.3333" },
-          { beneficiaryId: "ben-c", name: "Grupo C", pct: "33.3334" },
+          { beneficiaryId: "ben-a", name: "Grupo A", pct: "33.3333", feeExempt: false },
+          { beneficiaryId: "ben-b", name: "Grupo B", pct: "33.3333", feeExempt: false },
+          { beneficiaryId: "ben-c", name: "Grupo C", pct: "33.3334", feeExempt: false },
         ],
       },
     };
@@ -418,6 +431,117 @@ describe("compute: quién paga la comisión", () => {
   });
 });
 
+// ─── Partes que no pagan comisión ───────────────────────────────────────────────────────────────────────────
+
+describe("compute: partes que no pagan comisión", () => {
+  const e9 = compute(rulesE9(), paid("1000.00"), "USD");
+  const allocRows = (b: Breakdown) => b.alloc.lines.map((l) => [l.name, l.pct, l.amount, l.feeExempt]);
+  const NO_PAYER = "Alguien tiene que pagar la comisión: deja al menos una parte sin marcar.";
+
+  test("E9: C no paga comisión: recibe el 20 % del bruto y A y B se reparten lo que queda del neto, 50:30", () => {
+    expect([e9.gross, e9.feesTotal, e9.net]).toEqual(["1000.00", "29.30", "970.70"]);
+    // La base del reparto sigue siendo el neto, y la suma, exactamente el neto.
+    expect(e9.alloc).toMatchObject({ baseKind: "neto", baseAmount: "970.70" });
+    // 770,70 × 50/80 = 481,6875 y × 30/80 = 289,0125: truncados suman 770,69 y el centavo va al de mayor resto.
+    expect(allocRows(e9)).toEqual([
+      ["Grupo A", "50", "481.69", false],
+      ["Grupo B", "30", "289.01", false],
+      ["Grupo C", "20", "200.00", true],
+    ]);
+  });
+
+  test("E9b: reembolso total (la pasarela no devuelve la comisión): C recibe 0 y A y B cargan la pérdida", () => {
+    const r = recompute(e9, { refunded: "1000.00" });
+    expect([r.gross, r.feesTotal, r.net]).toEqual(["0.00", "29.30", "-29.30"]);
+    expect(r.alloc).toMatchObject({ baseKind: "neto", baseAmount: "-29.30" });
+    // Como E4: se reparte el valor absoluto (2930 × 5/8 = 1831,25 y × 3/8 = 1098,75) y se cambia el signo.
+    expect(allocRows(r)).toEqual([
+      ["Grupo A", "50", "-18.31", false],
+      ["Grupo B", "30", "-10.99", false],
+      ["Grupo C", "20", "0.00", true],
+    ]);
+  });
+
+  test("E9c: si las tres partes están marcadas nadie paga la comisión: se rechaza", () => {
+    const all = rulesE9(["ben-a", "ben-b", "ben-c"]);
+    expect(() => compute(all, paid("1000.00"), "USD")).toThrow(NO_PAYER);
+    expect(() => compute(all, paid("1000.00"), "USD")).toThrow(PayRuleError);
+    // Igual al recalcular un cobro (cambiar quién pagó la comisión, por ejemplo).
+    const byBuyer = compute(all, paidByBuyer("1000.00"), "USD");
+    expect(() => recompute(byBuyer, { feesPaidBy: "nosotros" })).toThrow(NO_PAYER);
+  });
+
+  test("con «Resto», el «Resto» paga la comisión aunque todas las líneas estén marcadas; él no se marca", () => {
+    const rules = rulesE9(["ben-a", "ben-b"]);
+    const scheme = schemeOf(rules);
+    const withRest = {
+      ...rules,
+      scheme: { ...scheme, lines: scheme.lines.slice(0, 2), remainder: { beneficiaryId: "ben-c", name: "Grupo C" } },
+    };
+    const b = compute(withRest, paid("1000.00"), "USD");
+    expect(allocRows(b)).toEqual([
+      ["Grupo A", "50", "500.00", true],
+      ["Grupo B", "30", "300.00", true],
+      ["Grupo C", "20", "170.70", false],
+    ]);
+    expect(b.alloc.lines.at(-1)?.isRemainder).toBe(true);
+  });
+
+  test("una línea sin marcar de 0 % no paga nada: no cuenta como quien paga", () => {
+    const rules = rulesE9(["ben-a", "ben-b", "ben-c"]);
+    const scheme = schemeOf(rules);
+    const zero = { beneficiaryId: "ben-d", name: "Grupo D", pct: "0", feeExempt: false };
+    expect(() => compute({ ...rules, scheme: { ...scheme, lines: [...scheme.lines, zero] } }, paid("1000.00"), "USD")).toThrow(
+      NO_PAYER,
+    );
+  });
+
+  test("dos partes sin comisión: cada una su parte de la venta, como si no hubiera comisión (mayor resto)", () => {
+    // 33,33 en 33,3333/33,3333/33,3334 sin comisión daría 11,11 · 11,11 · 11,11 (E2 con otro monto).
+    const rules = rulesE9(["ben-a", "ben-b"]);
+    const scheme = schemeOf(rules);
+    const pcts = ["33.3333", "33.3333", "33.3334"];
+    const lines = scheme.lines.map((line, i) => ({ ...line, pct: pcts[i] as string }));
+    const b = compute({ ...rules, scheme: { ...scheme, lines } }, paid("33.33"), "USD");
+    expect([b.feesTotal, b.net]).toEqual(["1.27", "32.06"]);
+    expect(shares(b)).toEqual(["11.11", "11.11", "9.84"]);
+    expect(b.alloc.lines.map((l) => l.feeExempt)).toEqual([true, true, false]);
+  });
+
+  test("con el comprador la marca no cambia nada: ni se aplica ni se rechaza", () => {
+    const marked = compute(rulesE9(), paidByBuyer("1000.00"), "USD");
+    const unmarked = compute(rulesE9([]), paidByBuyer("1000.00"), "USD");
+    expect(marked.alloc).toEqual(unmarked.alloc);
+    expect(shares(marked)).toEqual(["485.35", "291.21", "194.14"]);
+    expect(marked.alloc.lines.every((l) => !l.feeExempt)).toBe(true);
+    expect(() => compute(rulesE9(["ben-a", "ben-b", "ben-c"]), paidByBuyer("1000.00"), "USD")).not.toThrow();
+  });
+
+  test("sobre el bruto la marca no cambia nada: ni se aplica ni se rechaza", () => {
+    const marked = compute(rulesE9(["ben-c"], "bruto"), paid("1000.00"), "USD");
+    const unmarked = compute(rulesE9([], "bruto"), paid("1000.00"), "USD");
+    expect(marked.alloc).toEqual(unmarked.alloc);
+    expect(marked.alloc).toMatchObject({ baseKind: "bruto", baseAmount: "1000.00" });
+    expect(shares(marked)).toEqual(["500.00", "300.00", "200.00"]);
+    expect(() => compute(rulesE9(["ben-a", "ben-b", "ben-c"], "bruto"), paid("1000.00"), "USD")).not.toThrow();
+  });
+
+  test("lo que ya existe (todo sin marcar) da exactamente lo de hoy: E1 y su reembolso total (E4)", () => {
+    expect(allocRows(e1)).toEqual([
+      ["Grupo A", "50", "45.15", false],
+      ["Grupo B", "30", "27.09", false],
+      ["Grupo C", "20", "18.06", false],
+    ]);
+    expect(shares(recompute(e1, { refunded: "100.00" }))).toEqual(["-1.60", "-0.96", "-0.64"]);
+    expect(shares(compute(rulesE9([]), paid("1000.00"), "USD"))).toEqual(allocate("970.70", ["50", "30", "20"]));
+  });
+
+  test("la marca congelada viaja en las reglas del desglose y se conserva al recalcular", () => {
+    expect(schemeOf(e9.rules).lines.map((l) => l.feeExempt)).toEqual([false, false, true]);
+    expect(recompute(e9, { dispute: "abierta" }).alloc.lines.map((l) => l.feeExempt)).toEqual([false, false, true]);
+  });
+});
+
 // ─── Reembolsos ─────────────────────────────────────────────────────────────────────────────────────────────
 
 describe("compute: reembolsos", () => {
@@ -604,9 +728,9 @@ describe("compute: reparto", () => {
     };
     const b = compute(rules, paid("100.00"), "USD");
     expect(b.alloc.lines).toEqual([
-      { beneficiaryId: "ben-a", name: "Grupo A", pct: "50", amount: "45.15", isRemainder: false },
-      { beneficiaryId: "ben-b", name: "Grupo B", pct: "30", amount: "27.09", isRemainder: false },
-      { beneficiaryId: "ben-c", name: "Grupo C", pct: "20", amount: "18.06", isRemainder: true },
+      { beneficiaryId: "ben-a", name: "Grupo A", pct: "50", amount: "45.15", isRemainder: false, feeExempt: false },
+      { beneficiaryId: "ben-b", name: "Grupo B", pct: "30", amount: "27.09", isRemainder: false, feeExempt: false },
+      { beneficiaryId: "ben-c", name: "Grupo C", pct: "20", amount: "18.06", isRemainder: true, feeExempt: false },
     ]);
   });
 
@@ -617,8 +741,8 @@ describe("compute: reparto", () => {
       scheme: {
         ...schemeOf(base),
         lines: [
-          { beneficiaryId: "ben-a", name: "Grupo A", pct: "33.3333" },
-          { beneficiaryId: "ben-b", name: "Grupo B", pct: "33.3333" },
+          { beneficiaryId: "ben-a", name: "Grupo A", pct: "33.3333", feeExempt: false },
+          { beneficiaryId: "ben-b", name: "Grupo B", pct: "33.3333", feeExempt: false },
         ],
         remainder: { beneficiaryId: "ben-c", name: "Grupo C" },
       },
@@ -651,7 +775,7 @@ describe("compute: reparto", () => {
 
   test("esquema que suma más de 100 %: RangeError, con o sin «Resto»", () => {
     const base = rulesE1();
-    const lines = [...schemeOf(base).lines, { beneficiaryId: "ben-d", name: "Grupo D", pct: "0.0001" }];
+    const lines = [...schemeOf(base).lines, { beneficiaryId: "ben-d", name: "Grupo D", pct: "0.0001", feeExempt: false }];
     const rules: Rules = { ...base, scheme: { ...schemeOf(base), lines } };
     expect(() => compute(rules, paid("100.00"), "USD")).toThrow(RangeError);
     const withRemainder: Rules = {
@@ -687,9 +811,9 @@ describe("compute: cobro fallido", () => {
         baseKind: "neto",
         baseAmount: "0.00",
         lines: [
-          { beneficiaryId: "ben-a", name: "Grupo A", pct: "50", amount: "0.00", isRemainder: false },
-          { beneficiaryId: "ben-b", name: "Grupo B", pct: "30", amount: "0.00", isRemainder: false },
-          { beneficiaryId: "ben-c", name: "Grupo C", pct: "20", amount: "0.00", isRemainder: false },
+          { beneficiaryId: "ben-a", name: "Grupo A", pct: "50", amount: "0.00", isRemainder: false, feeExempt: false },
+          { beneficiaryId: "ben-b", name: "Grupo B", pct: "30", amount: "0.00", isRemainder: false, feeExempt: false },
+          { beneficiaryId: "ben-c", name: "Grupo C", pct: "20", amount: "0.00", isRemainder: false, feeExempt: false },
         ],
       },
     });
@@ -721,8 +845,8 @@ describe("compute: porcentajes normalizados y entradas inválidas", () => {
       scheme: {
         ...schemeOf(base),
         lines: [
-          { beneficiaryId: "ben-a", name: "Grupo A", pct: "50.0000" },
-          { beneficiaryId: "ben-b", name: "Grupo B", pct: "30.0000" },
+          { beneficiaryId: "ben-a", name: "Grupo A", pct: "50.0000", feeExempt: false },
+          { beneficiaryId: "ben-b", name: "Grupo B", pct: "30.0000", feeExempt: false },
         ],
         remainder: { beneficiaryId: "ben-c", name: "Grupo C" },
       },
@@ -886,8 +1010,8 @@ describe("diff", () => {
         ...schemeOf(base),
         versionId: "sv-2",
         lines: [
-          { beneficiaryId: "ben-a", name: "Grupo A", pct: "60" },
-          { beneficiaryId: "ben-d", name: "Grupo D", pct: "40" },
+          { beneficiaryId: "ben-a", name: "Grupo A", pct: "60", feeExempt: false },
+          { beneficiaryId: "ben-d", name: "Grupo D", pct: "40", feeExempt: false },
         ],
       },
     };
@@ -976,6 +1100,24 @@ describe("parseBreakdown", () => {
     expect(parseBreakdown(old).state.feesPaidBy).toBe("nosotros");
   });
 
+  test("un desglose guardado antes de las partes sin comisión se lee sin marcas y da exactamente lo mismo", () => {
+    const old = stored(e1) as { rules: { scheme: { lines: Record<string, unknown>[] } }; alloc: { lines: Record<string, unknown>[] } };
+    // Sin la clave en las líneas del esquema ni en las del reparto, como se guardaban antes.
+    old.rules.scheme.lines = old.rules.scheme.lines.map(({ feeExempt: _mark, ...line }) => line);
+    old.alloc.lines = old.alloc.lines.map(({ feeExempt: _mark, ...line }) => line);
+    expect(JSON.stringify(old)).not.toContain("feeExempt");
+    const parsed = parseBreakdown(old);
+    expect(parsed).toEqual(e1);
+    expect(schemeOf(parsed.rules).lines.map((l) => l.feeExempt)).toEqual([false, false, false]);
+    expect(recompute(parsed, {})).toEqual(e1);
+    // Con la marca, se lee tal cual; y tiene que ser un booleano.
+    const e9 = compute(rulesE9(), paid("1000.00"), "USD");
+    expect(parseBreakdown(stored(e9))).toEqual(e9);
+    const scheme = schemeOf(e1.rules);
+    const badLine = { ...scheme.lines[0], feeExempt: "true" };
+    expect(() => parseBreakdown({ ...stored(e1), rules: { ...e1.rules, scheme: { ...scheme, lines: [badLine] } } })).toThrow();
+  });
+
   test("quién pagó la comisión es «nosotros» o «comprador»; nada más", () => {
     for (const bad of ["cliente", "Comprador", null, true]) {
       expect(() => parseBreakdown({ ...stored(e1), state: { ...e1.state, feesPaidBy: bad } })).toThrow();
@@ -1058,13 +1200,23 @@ describe("propiedades con 2 000 cobros generados", () => {
     const edges = [0, ...cuts, 1_000_000];
     const parts = edges.slice(1).map((edge, i) => edge - (edges[i] as number));
     const withRemainder = chance(3);
-    const lineParts = withRemainder && parts.length > 1 ? parts.slice(0, -1) : parts;
+    const restGetsSome = withRemainder && parts.length > 1;
+    const lineParts = restGetsSome ? parts.slice(0, -1) : parts;
+    // Algunas partes no pagan comisión; si quedaran todas marcadas y el «Resto» sin nada, la última sí la paga (si
+    // no, se rechaza: lo prueba E9c).
+    const marks = lineParts.map(() => chance(3));
+    if (!restGetsSome && marks.every(Boolean)) marks[marks.length - 1] = false;
     return {
       schemeId: "sch",
       versionId: "sv",
       name: "Esquema Demo",
       base: chance(4) ? "bruto" : "neto",
-      lines: lineParts.map((part, i) => ({ beneficiaryId: `ben-${i}`, name: `Grupo ${i}`, pct: pctText(part) })),
+      lines: lineParts.map((part, i) => ({
+        beneficiaryId: `ben-${i}`,
+        name: `Grupo ${i}`,
+        pct: pctText(part),
+        feeExempt: marks[i] as boolean,
+      })),
       remainder: withRemainder ? { beneficiaryId: "ben-resto", name: "Grupo Resto" } : null,
     };
   }
@@ -1147,6 +1299,32 @@ describe("propiedades con 2 000 cobros generados", () => {
         expect(sum(b.alloc.lines.map((l) => l.pct)).eq(100), label(b)).toBe(true);
       }
     }
+  });
+
+  test("partes sin comisión: cada una recibe pct × venta al centavo (salvo el centavo del mayor resto); suman el neto", () => {
+    let applied = 0;
+    for (const { rules, state, b } of cases) {
+      const scheme = rules.scheme;
+      if (scheme === null) continue;
+      const applies = state.feesPaidBy === "nosotros" && scheme.base === "neto" && scheme.lines.some((l) => l.feeExempt);
+      if (!applies) {
+        // La marca no se aplica (comprador, sobre el bruto o sin marcas): el reparto de siempre, sobre su base.
+        expect(b.alloc.lines.every((l) => !l.feeExempt), label(b)).toBe(true);
+        expect(shares(b), label(b)).toEqual(allocate(b.alloc.baseAmount, b.alloc.lines.map((l) => l.pct)));
+        continue;
+      }
+      applied += 1;
+      expect(b.alloc.baseKind).toBe("neto");
+      expect(sum(shares(b)).eq(b.net), label(b)).toBe(true);
+      const marked = new Set(scheme.lines.filter((l) => l.feeExempt).map((l) => l.beneficiaryId));
+      for (const line of b.alloc.lines) {
+        expect(line.feeExempt, label(b)).toBe(marked.has(line.beneficiaryId));
+        // Pagando nosotros, la venta es el bruto vigente: la parte exenta es su porcentaje de él.
+        const exact = new D(b.gross).times(line.pct).div(100);
+        if (line.feeExempt) expect(new D(line.amount).minus(exact).abs().lt("0.01"), label(b)).toBe(true);
+      }
+    }
+    expect(applied).toBeGreaterThan(300);
   });
 
   test("lo de los compradores: gross = sale + buyerFees y net = sale − comisiones del negocio, con reembolsos y disputas", () => {

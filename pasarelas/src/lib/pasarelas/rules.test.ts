@@ -1,7 +1,15 @@
 import { describe, expect, test } from "vitest";
 import { compute } from "./breakdown";
 import { DEMO, cfgDemo } from "./demo.fixture";
-import { PAY_RULE_TEXT, PayRuleError, defaultExtraIds, reResolve, resolvePayout, resolveRules } from "./rules";
+import {
+  PAY_RULE_TEXT,
+  PayRuleError,
+  defaultExtraIds,
+  feeExemptIdsOf,
+  reResolve,
+  resolvePayout,
+  resolveRules,
+} from "./rules";
 import type { PayRuleCode } from "./rules";
 import type { ExtraCfg, ExtraRule, GatewayCfg, PayConfig, Rules, Selection } from "./types";
 
@@ -44,9 +52,9 @@ function rulesE1(): Rules {
       name: "Reparto 50/30/20",
       base: "neto",
       lines: [
-        { beneficiaryId: DEMO.beneficiaryIds.a, name: "Grupo A", pct: "50" },
-        { beneficiaryId: DEMO.beneficiaryIds.b, name: "Grupo B", pct: "30" },
-        { beneficiaryId: DEMO.beneficiaryIds.c, name: "Grupo C", pct: "20" },
+        { beneficiaryId: DEMO.beneficiaryIds.a, name: "Grupo A", pct: "50", feeExempt: false },
+        { beneficiaryId: DEMO.beneficiaryIds.b, name: "Grupo B", pct: "30", feeExempt: false },
+        { beneficiaryId: DEMO.beneficiaryIds.c, name: "Grupo C", pct: "20", feeExempt: false },
       ],
       remainder: null,
     },
@@ -115,7 +123,7 @@ function withTomorrowScheme(cfg: PayConfig): PayConfig {
     base: "bruto",
     remainderBeneficiaryId: DEMO.beneficiaryIds.c,
     effectiveFrom: "2026-11-14",
-    lines: [{ beneficiaryId: DEMO.beneficiaryIds.a, pct: "60" }],
+    lines: [{ beneficiaryId: DEMO.beneficiaryIds.a, pct: "60", feeExempt: false }],
   });
   return cfg;
 }
@@ -146,11 +154,26 @@ describe("PayRuleError", () => {
   });
 
   test("cada código tiene su texto, y ninguno se repite", () => {
-    const codes: PayRuleCode[] = ["empresa", "pasarela", "canal", "opcion", "esquema", "sin_tarifa", "sin_version"];
+    const codes: PayRuleCode[] = [
+      "empresa",
+      "pasarela",
+      "canal",
+      "opcion",
+      "esquema",
+      "sin_tarifa",
+      "sin_version",
+      "nadie_paga_comision",
+    ];
     expect(Object.keys(PAY_RULE_TEXT).sort()).toEqual([...codes].sort());
     const texts = codes.map((code) => PAY_RULE_TEXT[code]);
     expect(texts.every((text) => text.length > 10)).toBe(true);
     expect(new Set(texts).size).toBe(codes.length);
+  });
+
+  test("si nadie queda pagando la comisión, el mismo texto que el editor de esquemas", () => {
+    expect(PAY_RULE_TEXT.nadie_paga_comision).toBe(
+      "Alguien tiene que pagar la comisión: deja al menos una parte sin marcar.",
+    );
   });
 });
 
@@ -234,9 +257,9 @@ describe("resolveRules", () => {
     only(cfg.channels).platformFeePct = "5.0000";
     only(cfg.channels).platformFeeFixed = "0";
     only(only(cfg.schemes).versions).lines = [
-      { beneficiaryId: DEMO.beneficiaryIds.a, pct: "50.0000" },
-      { beneficiaryId: DEMO.beneficiaryIds.b, pct: "30.00" },
-      { beneficiaryId: DEMO.beneficiaryIds.c, pct: "20.0" },
+      { beneficiaryId: DEMO.beneficiaryIds.a, pct: "50.0000", feeExempt: false },
+      { beneficiaryId: DEMO.beneficiaryIds.b, pct: "30.00", feeExempt: false },
+      { beneficiaryId: DEMO.beneficiaryIds.c, pct: "20.0", feeExempt: false },
     ];
 
     const rules = resolveRules(cfg, selE1({ feeOverride: "3.2" }));
@@ -333,9 +356,66 @@ describe("resolveRules", () => {
         versionId: "sv-socios-2",
         name: "Reparto 50/30/20",
         base: "bruto",
-        lines: [{ beneficiaryId: DEMO.beneficiaryIds.a, name: "Grupo A", pct: "60" }],
+        lines: [{ beneficiaryId: DEMO.beneficiaryIds.a, name: "Grupo A", pct: "60", feeExempt: false }],
         remainder: { beneficiaryId: DEMO.beneficiaryIds.c, name: "Grupo C" },
       });
+    });
+  });
+
+  describe("partes que no pagan comisión", () => {
+    const marks = (rules: Rules) => rules.scheme?.lines.map((line) => [line.name, line.feeExempt]);
+
+    /** El 50/30/20 de ejemplo con el Grupo C marcado «No paga comisión». */
+    function withExemptC(cfg: PayConfig = cfgDemo()): PayConfig {
+      const version = only(only(cfg.schemes).versions);
+      version.lines = version.lines.map((line) => ({
+        ...line,
+        feeExempt: line.beneficiaryId === DEMO.beneficiaryIds.c,
+      }));
+      return cfg;
+    }
+
+    test("la marca de cada línea del esquema se congela con el cobro", () => {
+      expect(marks(resolveRules(withExemptC(), selE1()))).toEqual([
+        ["Grupo A", false],
+        ["Grupo B", false],
+        ["Grupo C", true],
+      ]);
+      expect(marks(resolveRules(cfgDemo(), selE1()))).toEqual([
+        ["Grupo A", false],
+        ["Grupo B", false],
+        ["Grupo C", false],
+      ]);
+    });
+
+    test("la selección puede cambiarla para ese cobro: manda sobre las marcas del esquema", () => {
+      const cfg = withExemptC();
+      expect(marks(resolveRules(cfg, selE1({ feeExemptIds: [DEMO.beneficiaryIds.a] })))).toEqual([
+        ["Grupo A", true],
+        ["Grupo B", false],
+        ["Grupo C", false],
+      ]);
+      expect(marks(resolveRules(cfg, selE1({ feeExemptIds: [] })))).toEqual([
+        ["Grupo A", false],
+        ["Grupo B", false],
+        ["Grupo C", false],
+      ]);
+      // El esquema no cambia: el siguiente cobro vuelve a sus marcas.
+      expect(marks(resolveRules(cfg, selE1()))?.at(-1)).toEqual(["Grupo C", true]);
+    });
+
+    test("lo que no es una línea del esquema no se marca: tampoco el «Resto»", () => {
+      const cfg = withTomorrowScheme(cfgDemo());
+      const sel = selE1({ occurredOn: "2026-11-14", feeExemptIds: [DEMO.beneficiaryIds.c, "ben-fantasma"] });
+      const rules = resolveRules(cfg, sel);
+      expect(marks(rules)).toEqual([["Grupo A", false]]);
+      expect(rules.scheme?.remainder).toEqual({ beneficiaryId: DEMO.beneficiaryIds.c, name: "Grupo C" });
+    });
+
+    test("feeExemptIdsOf: quiénes no pagan comisión según unas reglas congeladas; sin esquema, nadie", () => {
+      expect(feeExemptIdsOf(resolveRules(withExemptC(), selE1()))).toEqual([DEMO.beneficiaryIds.c]);
+      expect(feeExemptIdsOf(resolveRules(cfgDemo(), selE1()))).toEqual([]);
+      expect(feeExemptIdsOf(resolveRules(cfgDemo(), selE1({ schemeId: null })))).toEqual([]);
     });
   });
 
@@ -513,6 +593,37 @@ describe("reResolve", () => {
       scheme: rulesE1().scheme,
     });
     expect(reResolve(prev, cfgDemo(), selE1({ schemeId: null }), { ...NOTHING, scheme: true }).scheme).toBeNull();
+  });
+
+  test("partes sin comisión: solo cambian las marcas del esquema congelado, aunque el esquema ya sea otro", () => {
+    const prev = frozen();
+    const scheme = prev.scheme as NonNullable<Rules["scheme"]>;
+    const sel = selE1({ feeExemptIds: [DEMO.beneficiaryIds.b] });
+    const empty: PayConfig = { ...cfgDemo(), schemes: [], beneficiaries: [] };
+    expect(reResolve(prev, empty, sel, { ...NOTHING, exempt: true })).toEqual({
+      ...prev,
+      scheme: {
+        ...scheme,
+        lines: scheme.lines.map((line) => ({ ...line, feeExempt: line.beneficiaryId === DEMO.beneficiaryIds.b })),
+      },
+    });
+    // Sin esquema no hay a quién marcar.
+    const bare: Rules = { ...prev, scheme: null };
+    expect(reResolve(bare, empty, sel, { ...NOTHING, exempt: true }).scheme).toBeNull();
+    // Sin decir quiénes, quedan las marcas que ya tenía.
+    const marked = reResolve(prev, empty, sel, { ...NOTHING, exempt: true });
+    expect(reResolve(marked, empty, selE1(), { ...NOTHING, exempt: true })).toEqual(marked);
+  });
+
+  test("partes sin comisión con la fecha o el esquema: las marcas de la selección van a la versión nueva", () => {
+    const cfg = withTomorrowScheme(cfgDemo());
+    const sel = selE1({ occurredOn: "2026-11-14", feeExemptIds: [DEMO.beneficiaryIds.a] });
+    const moved = reResolve(frozen(), cfg, sel, { ...NOTHING, date: true });
+    expect(moved.scheme?.lines).toEqual([
+      { beneficiaryId: DEMO.beneficiaryIds.a, name: "Grupo A", pct: "60", feeExempt: true },
+    ]);
+    const other = reResolve(frozen(), cfgDemo(), selE1({ feeExemptIds: [] }), { ...NOTHING, scheme: true });
+    expect(other.scheme?.lines.every((line) => !line.feeExempt)).toBe(true);
   });
 
   test("todo cambió: lo mismo que resolver desde cero", () => {

@@ -264,9 +264,9 @@ export function basicsRules(b: Basics): Rules {
       name: "Reparto 50/30/20",
       base: "neto",
       lines: [
-        { beneficiaryId: b.beneficiaryIds.a, name: "Grupo A", pct: "50" },
-        { beneficiaryId: b.beneficiaryIds.b, name: "Grupo B", pct: "30" },
-        { beneficiaryId: b.beneficiaryIds.c, name: "Grupo C", pct: "20" },
+        { beneficiaryId: b.beneficiaryIds.a, name: "Grupo A", pct: "50", feeExempt: false },
+        { beneficiaryId: b.beneficiaryIds.b, name: "Grupo B", pct: "30", feeExempt: false },
+        { beneficiaryId: b.beneficiaryIds.c, name: "Grupo C", pct: "20", feeExempt: false },
       ],
       remainder: null,
     },

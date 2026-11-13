@@ -61,7 +61,12 @@ export type SchemeRule = {
   versionId: string;
   name: string;
   base: AllocBase;
-  lines: { beneficiaryId: string; name: string; pct: Pct }[];
+  /**
+   * `feeExempt`: esa parte no paga comisión. Vale si la pagamos nosotros y el esquema va sobre el neto: su parte sale
+   * del bruto y la comisión la cargan las demás. Se congela con el cobro (puede ser otra que la del esquema). Un
+   * desglose guardado antes de existir la clave se lee `false`. El «Resto» no se marca.
+   */
+  lines: { beneficiaryId: string; name: string; pct: Pct; feeExempt: boolean }[];
   remainder: { beneficiaryId: string; name: string } | null;
 };
 
@@ -107,6 +112,11 @@ export type AllocLine = {
   pct: Pct;
   amount: Money;
   isRemainder: boolean;
+  /**
+   * No pagó comisión: su parte salió del bruto (`pct` de la venta) y no del neto. Solo si la marca de su línea se
+   * aplicó (pagamos nosotros y el esquema va sobre el neto). Un desglose de antes, sin la clave, se lee `false`.
+   */
+  feeExempt: boolean;
 };
 
 export type Breakdown = {
@@ -197,7 +207,8 @@ export type SchemeVersionCfg = {
   base: AllocBase;
   remainderBeneficiaryId: string | null;
   effectiveFrom: ISODate;
-  lines: { beneficiaryId: string; pct: Pct }[];
+  /** `feeExempt`: la marca «No paga comisión» de la línea (`pay_scheme_lines.fee_exempt`). */
+  lines: { beneficiaryId: string; pct: Pct; feeExempt: boolean }[];
 };
 
 export type SchemeCfg = { id: string; name: string; active: boolean; versions: SchemeVersionCfg[] };
@@ -223,6 +234,11 @@ export type Selection = {
   schemeId: string | null;
   occurredOn: ISODate;
   feeOverride?: Money;
+  /**
+   * Los beneficiarios de las líneas del esquema que en ESTE cobro no pagan comisión, en vez de las marcas del
+   * esquema (`undefined` = las del esquema). Los que no son una línea del esquema no cuentan: el «Resto» no se marca.
+   */
+  feeExemptIds?: string[];
 };
 
 // ─── El cobro tal como lo ve el motor ───────────────────────────────────────────────────────────────────────

@@ -5,8 +5,10 @@
  */
 import type { Decimal } from "decimal.js";
 import { z } from "zod";
-import { allocate } from "./allocate";
+import { allocate, allocateInProportion } from "./allocate";
 import { D, ZERO, dec, isMoney, normPct, r2, toMoney } from "./decimal";
+import { PayRuleError } from "./rules";
+import { someonePaysFees } from "./schemes";
 import type {
   AllocBase,
   AllocLine,
@@ -134,10 +136,38 @@ function feeLines(rules: Rules, state: State, g0: Decimal, g: Decimal): Breakdow
   return lines;
 }
 
+type Share = { pct: Pct; feeExempt: boolean };
+
+/**
+ * El reparto cuando alguna parte no paga comisión (la pagamos nosotros y se reparte el neto). Cada parte que no la
+ * paga recibe lo que le tocaría si no hubiera comisión: su parte de la venta, por mayor resto entre todas las partes
+ * (como en un esquema sobre el bruto). Pagando nosotros, la venta es el bruto vigente: no hay nada de los compradores
+ * que descontar (`buyerFeesOf` da 0). Las demás, «Resto» incluido, se reparten lo que queda del neto en proporción a
+ * sus porcentajes, también por mayor resto. Suma exactamente el neto. Si nadie queda pagando la comisión, lanza
+ * `PayRuleError("nadie_paga_comision")`.
+ */
+function sparedAmounts(shares: readonly Share[], sale: Money, net: Money): Money[] {
+  if (!someonePaysFees(shares, false)) throw new PayRuleError("nadie_paga_comision");
+  const asIfNoFees = allocate(
+    sale,
+    shares.map((share) => share.pct),
+  );
+  const spared = shares.reduce((sum, share, i) => (share.feeExempt ? sum.plus(dec(asIfNoFees[i] as Money)) : sum), new D(0));
+  // Las que no pagan comisión pesan 0 en lo que queda: no reciben nada de ahí (ni un centavo del mayor resto).
+  const paying = allocateInProportion(
+    toMoney(dec(net).minus(spared)),
+    shares.map((share) => (share.feeExempt ? "0" : share.pct)),
+  );
+  return shares.map((share, i) => (share.feeExempt ? asIfNoFees[i] : paying[i]) as Money);
+}
+
 /**
  * El reparto por mayor resto. Si las líneas suman menos de 100 %, lo que falta va al «Resto», al final. La base es
  * la del esquema, salvo que la comisión la pagó el comprador: entonces el neto, porque lo que pagó de más para
  * cubrirla no es venta del negocio (el desglose lo dice en `state.feesPaidBy`).
+ *
+ * Una línea marcada «No paga comisión» solo cuenta si la pagamos nosotros y se reparte el neto (ver `sparedAmounts`);
+ * con el comprador o sobre el bruto la marca no cambia nada.
  */
 function allocation(scheme: SchemeRule | null, gross: Decimal, net: Decimal, payer: FeesPaidBy): Breakdown["alloc"] {
   if (scheme === null) return { baseKind: null, baseAmount: ZERO, lines: [] };
@@ -145,22 +175,26 @@ function allocation(scheme: SchemeRule | null, gross: Decimal, net: Decimal, pay
   const shares = scheme.lines.map((line) => ({ ...line, pct: normPct(line.pct), isRemainder: false }));
   const total = shares.reduce((sum, share) => sum.plus(dec(share.pct)), new D(0));
   if (total.lt(100) && scheme.remainder !== null) {
-    shares.push({ ...scheme.remainder, pct: normPct(new D(100).minus(total)), isRemainder: true });
+    shares.push({ ...scheme.remainder, pct: normPct(new D(100).minus(total)), isRemainder: true, feeExempt: false });
   }
 
   // Un esquema que aun así no suma 100 % (se pasa, o le falta y no hay «Resto») es inválido: allocate lanza RangeError.
   const baseKind: AllocBase = payer === "comprador" ? "neto" : scheme.base;
   const baseAmount = toMoney(baseKind === "bruto" ? gross : net);
-  const amounts = allocate(
-    baseAmount,
-    shares.map((share) => share.pct),
-  );
+  const spared = payer === "nosotros" && baseKind === "neto" && shares.some((share) => share.feeExempt);
+  const amounts = spared
+    ? sparedAmounts(shares, toMoney(gross), baseAmount)
+    : allocate(
+        baseAmount,
+        shares.map((share) => share.pct),
+      );
   const lines: AllocLine[] = shares.map((share, i) => ({
     beneficiaryId: share.beneficiaryId,
     name: share.name,
     pct: share.pct,
     amount: amounts[i] as Money, // allocate devuelve un monto por porcentaje
     isRemainder: share.isRemainder,
+    feeExempt: spared && share.feeExempt,
   }));
   return { baseKind, baseAmount, lines };
 }
@@ -312,7 +346,15 @@ const zBreakdown = z.strictObject({
         versionId: z.string(),
         name: z.string(),
         base: z.enum(["neto", "bruto"]),
-        lines: z.array(z.strictObject({ beneficiaryId: z.string(), name: z.string(), pct: zPct })),
+        lines: z.array(
+          z.strictObject({
+            beneficiaryId: z.string(),
+            name: z.string(),
+            pct: zPct,
+            // Los desgloses guardados antes de las partes sin comisión no la traen: todas la pagaban.
+            feeExempt: z.boolean().default(false),
+          }),
+        ),
         remainder: z.strictObject({ beneficiaryId: z.string(), name: z.string() }).nullable(),
       })
       .nullable(),
@@ -350,6 +392,8 @@ const zBreakdown = z.strictObject({
         pct: zPct,
         amount: zMoney,
         isRemainder: z.boolean(),
+        // Ídem: un reparto de antes no tiene partes sin comisión.
+        feeExempt: z.boolean().default(false),
       }),
     ),
   }),
