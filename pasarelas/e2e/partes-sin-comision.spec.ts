@@ -228,6 +228,10 @@ test.describe("partes que no pagan comisión", () => {
       ["291.21", "neto"],
       ["194.14", "neto"],
     ]);
+    // El cambio valía solo para ese cobro: el siguiente, sin recargar, vuelve a venir como dice el esquema.
+    await expect(exemptBox(page, "Grupo C")).toBeChecked();
+    await expect(exemptBox(page, "Grupo A")).not.toBeChecked();
+    await expect(exemptBox(page, "Grupo B")).not.toBeChecked();
 
     // El esquema no cambió: al volver, la casilla sale como dice él. «Repetir el último» repite la del último cobro.
     await page.reload();

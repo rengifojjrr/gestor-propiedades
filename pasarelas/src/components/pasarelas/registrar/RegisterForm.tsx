@@ -187,7 +187,8 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
 
   const [moreOpen, setMoreOpen] = useState(false);
   const [schemeId, setSchemeId] = useState(() => companyDefaults(companyId).schemeId);
-  // Lo que se marcó en «¿Alguien no paga comisión?», con el esquema para el que se marcó (con otro, no cuenta).
+  // Lo que se marcó en «¿Alguien no paga comisión?» para este cobro, con el esquema para el que se marcó (con otro,
+  // no cuenta). `null`: como dice el esquema. Se vacía al guardar (`resetForNext`).
   const [exemptChoice, setExemptChoice] = useState<{ schemeId: string; ids: string[] } | null>(null);
   const [bankAccountId, setBankAccountId] = useState("");
   const [manualEstimate, setManualEstimate] = useState("");
@@ -313,9 +314,14 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
     return errors;
   }
 
-  /** Deja el formulario listo para el siguiente cobro: misma selección, lo demás vacío y la hora de ahora. */
+  /**
+   * Deja el formulario listo para el siguiente cobro: misma selección, lo demás vacío y la hora de ahora. Lo marcado
+   * en «¿Alguien no paga comisión?» valía solo para el cobro guardado: el siguiente vuelve a venir como dice el
+   * esquema («Repetir el último» es lo que repite las marcas del anterior).
+   */
   function resetForNext() {
     setId(crypto.randomUUID());
+    setExemptChoice(null);
     setAmount("");
     setReference("");
     setOccurredLocal(instantToLocalInput(new Date().toISOString()));
