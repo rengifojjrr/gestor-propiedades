@@ -158,3 +158,6 @@ export function refineDaysWindow<Min extends string, Max extends string>(minKey:
 export const zFeesPaidBy: z.ZodType<FeesPaidBy> = z.enum(["nosotros", "comprador"], {
   error: "Elige quién pagó la comisión",
 });
+
+/** Lo más de líneas que lleva un esquema de reparto: más no caben en un reparto que se pueda leer. */
+export const MAX_SCHEME_LINES = 50;

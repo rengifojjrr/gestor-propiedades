@@ -26,7 +26,17 @@ import {
 } from "../ops/transactions";
 import type { DepositOutcome } from "../ops/transactions";
 import type { ActionResult } from "../result";
-import { zCurrency, zDate, zFeesPaidBy, zId, zMoney, zOptionalText, zPositiveMoney, zReference } from "../zod";
+import {
+  MAX_SCHEME_LINES,
+  zCurrency,
+  zDate,
+  zFeesPaidBy,
+  zId,
+  zMoney,
+  zOptionalText,
+  zPositiveMoney,
+  zReference,
+} from "../zod";
 
 /**
  * Las Server Actions de los cobros: delgadas. Cada una recibe `input: unknown` (un POST público), y `runAction`
@@ -59,7 +69,7 @@ const ONE_WITH_VERSION = {
 const oneIfSeen = ({ ids, expectedUpdatedAt }: { ids: string[]; expectedUpdatedAt?: string }): boolean =>
   expectedUpdatedAt === undefined || ids.length === 1;
 /** Las partes de un reparto que no pagan comisión: ids, a lo más tantas como líneas caben en un esquema. */
-const zFeeExemptIds = z.array(zId).max(50, { error: "Demasiadas partes" });
+const zFeeExemptIds = z.array(zId).max(MAX_SCHEME_LINES, { error: "Demasiadas partes" });
 
 const zNewTx = z.object({
   id: zId,

@@ -7,7 +7,7 @@ import { hasLongDigitRun } from "@/lib/pasarelas";
 import { runAction } from "../action";
 import * as ops from "../ops/splits";
 import type { ActionResult } from "../result";
-import { zDate, zId, zOptionalText, zPct, zText } from "../zod";
+import { MAX_SCHEME_LINES, zDate, zId, zOptionalText, zPct, zText } from "../zod";
 
 /**
  * Las Server Actions de Repartos: beneficiarios y esquemas. Delgadas: `runAction` exige la sesión, valida con Zod,
@@ -17,8 +17,6 @@ import { zDate, zId, zOptionalText, zPct, zText } from "../zod";
 
 const NAME_MAX = 80;
 const ALIAS_TEXT = "No escribas números de cuenta: un alias no lleva 7 o más dígitos seguidos";
-/** Más líneas que esto no caben en un reparto que se pueda leer. */
-const MAX_LINES = 50;
 
 const zOptionalId = zId.nullish().transform((id) => id ?? null);
 
@@ -63,7 +61,7 @@ const zScheme = z.object({
   effectiveFrom: zDate,
   lines: z
     .array(z.object({ beneficiaryId: zId, pct: zPct, feeExempt: z.boolean().default(false) }))
-    .max(MAX_LINES, { error: "Demasiadas líneas" }),
+    .max(MAX_SCHEME_LINES, { error: "Demasiadas líneas" }),
 });
 
 /**
