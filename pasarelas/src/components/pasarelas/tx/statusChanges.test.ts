@@ -36,7 +36,7 @@ describe("statusChanges: qué opciones salen en cada estado", () => {
     // Ya depositado, «Marcar depositado» solo cambiaría la fecha: eso no es un cambio de estado (va en el detalle).
     ["depositado", ["revertir_deposito"]],
     ["fallido", ["reabrir"]],
-    // Con la disputa abierta o reembolsado del todo no se marca fallido: deja el cobro en cero y ya movió dinero.
+    // Con una disputa o un reembolso, el motor no lo deja marcar fallido (`planFail`); depositarlo, sí.
     ["con la disputa abierta", ["en_transito", "depositado"]],
     ["reembolsado del todo", ["en_transito", "depositado"]],
     // En la papelera solo se restaura: no hay menú.
