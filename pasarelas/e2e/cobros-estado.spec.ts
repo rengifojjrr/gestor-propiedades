@@ -68,6 +68,14 @@ async function stored(id: string): Promise<{ status: string; deposited_on: strin
 }
 
 async function expectCleanScreen(page: Page): Promise<void> {
+  // Un aviso a medio entrar, a medio pasar detrás del siguiente o a medio irse tiene el texto translúcido y axe lo
+  // mide como falta de contraste: se espera a que los avisos queden quietos.
+  await page.waitForFunction(() =>
+    document.getAnimations().every((animation) => {
+      const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
+      return animation.playState !== "running" || !(target instanceof Element && target.closest("[data-sonner-toaster]"));
+    }),
+  );
   await expectNoHorizontalOverflow(page);
   await expectNoSeriousAxe(page);
 }
