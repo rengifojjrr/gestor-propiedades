@@ -304,4 +304,45 @@ test.describe("partes que no pagan comisión", () => {
     await expect(page.getByRole("button", { name: "Guardar cambios" })).toBeEnabled();
     await expect(exemptGroup(page)).toHaveCount(0);
   });
+
+  test("Registrar no guarda si nadie paga la comisión: al pulsar «Guardar» lo dice junto a la pregunta", async ({
+    page,
+  }) => {
+    const user = await newUser();
+    const db = await signInAal1(user.email, user.password);
+    await schemeWithC(user, db);
+    await login(page, user);
+    let actionCalls = 0;
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.headers()["next-action"] !== undefined) actionCalls += 1;
+    });
+
+    await page.goto("/pasarelas/registrar");
+    await page.getByLabel("Empresa").selectOption({ label: "Escuela Demo" });
+    await page.getByLabel("Pasarela").selectOption({ label: "Stripe" });
+    await page.getByLabel("Monto").fill("1000");
+    const reference = `E9-${randomUUID().slice(0, 8)}`;
+    await page.getByLabel("Referencia").fill(reference);
+    await exemptBox(page, "Grupo A").check();
+    await exemptBox(page, "Grupo B").check();
+    await expect(exemptGroup(page).getByText(NO_PAYER)).toBeVisible();
+
+    // Como lo demás que falta en Registrar, «Guardar» sigue a mano: al pulsarlo dice qué revisar, sin ir al servidor.
+    const save = page.getByRole("button", { name: "Guardar" });
+    await expect(save).toBeEnabled();
+    await save.click();
+    await expect(page.getByRole("alert").filter({ hasText: "Revisa los campos marcados." })).toBeVisible();
+    await expect(exemptGroup(page)).toHaveAccessibleDescription(new RegExp(`${NO_PAYER}$`));
+    expect(actionCalls).toBe(0);
+    await checkScreen(page);
+    expect(unwrap(await db.from("pay_transactions").select("id").eq("reference", reference), "cobros")).toEqual([]);
+
+    // Con una parte que pague, el error se va de la pregunta y se guarda.
+    await exemptBox(page, "Grupo A").uncheck();
+    await expect(exemptGroup(page).getByText(NO_PAYER)).toHaveCount(0);
+    await save.click();
+    await expect(toastWith(page, "Cobro guardado")).toBeVisible();
+    expect(actionCalls).toBe(1);
+    expect(unwrap(await db.from("pay_transactions").select("id").eq("reference", reference), "cobros")).toHaveLength(1);
+  });
 });

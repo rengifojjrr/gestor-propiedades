@@ -22,13 +22,14 @@ import {
 import { downscaleImage } from "@/components/pasarelas/receipts/downscale";
 import { uploadReceipt } from "@/components/pasarelas/receipts/upload";
 import { FeeExemptChoice } from "@/components/pasarelas/tx/FeeExemptChoice";
-import { exemptIdsOf, exemptQuestion } from "@/components/pasarelas/tx/feeExempt";
+import { exemptIdsOf, exemptQuestion, someonePays } from "@/components/pasarelas/tx/feeExempt";
 import { BUYER_AMOUNT_HINT, FeesPaidByChoice } from "@/components/pasarelas/tx/FeesPaidByChoice";
 import { Alert, Button, Field, Input, Money, MoneyInput, PageHeader, Select, Textarea, notify } from "@/components/ui";
 import { notifyAction } from "@/components/ui/notify";
 import { instantToLocalInput, isISODate, localInputToInstant } from "@/lib/pasarelas/dates";
 import { parseMoney } from "@/lib/pasarelas/money";
 import { defaultExtraIds } from "@/lib/pasarelas/rules";
+import { NO_FEE_PAYER_TEXT } from "@/lib/pasarelas/schemes";
 import { LIFECYCLE_LABEL } from "@/lib/pasarelas/status";
 import { PAY_STATE_TEXT } from "@/lib/pasarelas/write";
 import type { Currency, FeesPaidBy, Money as MoneyText, PayConfig } from "@/lib/pasarelas/types";
@@ -295,11 +296,17 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
     if (MORE_FIELDS.some((name) => errors[name] !== undefined)) setMoreOpen(true);
   }
 
-  /** Lo que se puede decir sin ir al servidor: lo que falta elegir o escribir. */
+  /**
+   * Lo que se puede decir sin ir al servidor: lo que falta elegir o escribir, y que alguien pague la comisión (con
+   * todas las partes marcadas el cobro no se puede guardar; lo dice la pregunta, como cualquier campo).
+   */
   function missing(): FieldErrors {
     const errors: FieldErrors = {};
     if (companyId === "") errors.companyId = "Elige la empresa.";
     if (gatewayId === "") errors.gatewayId = "Elige la pasarela.";
+    if (exempt !== null && exemptIds !== undefined && !someonePays(exempt, exemptIds)) {
+      errors.feeExemptIds = NO_FEE_PAYER_TEXT;
+    }
     if (amount.trim() === "") errors.grossOriginal = "Escribe el monto.";
     try {
       localInputToInstant(occurredLocal);
@@ -572,6 +579,7 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
               question={exempt}
               value={exemptIds}
               onChange={(ids) => setExemptChoice({ schemeId, ids })}
+              error={fieldErrors.feeExemptIds}
             />
           ) : null}
 
