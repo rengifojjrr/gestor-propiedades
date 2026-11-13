@@ -1,6 +1,6 @@
 import "server-only";
 import { usBankHolidays } from "@/lib/pasarelas";
-import type { PayConfig } from "@/lib/pasarelas";
+import type { ISODate, PayConfig } from "@/lib/pasarelas";
 import {
   BANK_ACCOUNT_COLUMNS,
   BENEFICIARY_COLUMNS,
@@ -175,16 +175,29 @@ export async function loadPayConfig(supabase: Db): Promise<PayConfig> {
 }
 
 /**
- * Siembra los feriados bancarios de EE. UU. de 2026 y 2027 si el usuario todavía no tiene ninguno. Si ya tiene
- * alguno (los sembrados, o los que haya puesto o dejado al editar la lista) no hace nada.
+ * Siembra los feriados bancarios de EE. UU. de 2026 y 2027 y devuelve esos días, por fecha. Un día que ya estaba
+ * (con su nombre) no se duplica ni se pisa: al volver, todos los días devueltos están en la base. Así quien siembra
+ * no tiene que volver a leerlos (ver `getPayConfig`).
  */
-export async function ensureHolidays(supabase: Db): Promise<void> {
-  const existing = await supabase.from("pay_holidays").select("id").limit(1).throwOnError();
-  if (existing.data.length > 0) return;
+export async function seedHolidays(supabase: Db): Promise<ISODate[]> {
   const holidays = SEEDED_YEARS.flatMap((year) => usBankHolidays(year));
   // Dos peticiones a la vez pueden llegar aquí las dos: la segunda no duplica ni falla.
   await supabase
     .from("pay_holidays")
     .upsert(holidays, { onConflict: "user_id,day", ignoreDuplicates: true })
     .throwOnError();
+  return holidays.map((holiday) => holiday.day);
+}
+
+/**
+ * Siembra los feriados bancarios de EE. UU. de 2026 y 2027 si el usuario todavía no tiene ninguno. Si ya tiene
+ * alguno (los sembrados, o los que haya puesto o dejado al editar la lista) no hace nada.
+ *
+ * Quien lea los feriados después, en el mismo render, no puede repetir una lectura que ya hizo antes de sembrar:
+ * Next memoiza los GET iguales durante un render y le devolvería la respuesta vieja (ver `getPayConfig`).
+ */
+export async function ensureHolidays(supabase: Db): Promise<void> {
+  const existing = await supabase.from("pay_holidays").select("id").limit(1).throwOnError();
+  if (existing.data.length > 0) return;
+  await seedHolidays(supabase);
 }

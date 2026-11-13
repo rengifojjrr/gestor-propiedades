@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { addDays, usBankHolidays } from "@/lib/pasarelas";
-import { ensureHolidays, loadPayConfig } from "@/server/pasarelas/queries/config";
+import { ensureHolidays, loadPayConfig, seedHolidays } from "@/server/pasarelas/queries/config";
 import { adminClient, createUser, seedBasics, unwrap, type Basics, type TestUser } from "./helpers";
 
 /**
@@ -369,5 +369,47 @@ describe("ensureHolidays", () => {
     await Promise.all([ensureHolidays(fresh.client), ensureHolidays(fresh.client)]);
 
     expect((await loadPayConfig(fresh.client)).holidays).toEqual(seeded.map((holiday) => holiday.day));
+  });
+});
+
+describe("seedHolidays", () => {
+  const days = [...usBankHolidays(2026), ...usBankHolidays(2027)].map((holiday) => holiday.day);
+
+  /** Los feriados del usuario como los guarda la base, por fecha. */
+  const holidaysOf = async (id: string) =>
+    unwrap(await adminClient().from("pay_holidays").select("day, name").eq("user_id", id).order("day"), "feriados");
+
+  it("siembra los feriados de 2026 y 2027 y devuelve esos días, los mismos que se leerían después", async () => {
+    const fresh = await createUser();
+
+    const returned = await seedHolidays(fresh.client);
+
+    expect(returned).toEqual(days);
+    expect((await loadPayConfig(fresh.client)).holidays).toEqual(returned);
+  });
+
+  it("los días que ya estaban no se duplican ni se pisan, y se devuelven igual: todos quedan en la base", async () => {
+    const fresh = await createUser();
+    unwrap(
+      await fresh.client.from("pay_holidays").insert({ day: "2026-11-11", name: "Feriado Demo" }).select("id"),
+      "un feriado propio",
+    );
+
+    const returned = await seedHolidays(fresh.client);
+
+    expect(returned).toEqual(days);
+    const rows = await holidaysOf(fresh.id);
+    expect(rows.map((row) => row.day)).toEqual(days);
+    expect(rows.find((row) => row.day === "2026-11-11")?.name).toBe("Feriado Demo");
+  });
+
+  it("dos a la vez (dos pantallas que se abren juntas) devuelven los mismos días y siembran una sola vez", async () => {
+    const fresh = await createUser();
+
+    const [first, second] = await Promise.all([seedHolidays(fresh.client), seedHolidays(fresh.client)]);
+
+    expect(first).toEqual(days);
+    expect(second).toEqual(days);
+    expect(await holidaysOf(fresh.id)).toHaveLength(days.length);
   });
 });
