@@ -68,11 +68,11 @@ async function schemeWithC(user: TestUser, db: Db): Promise<string> {
     }),
     "esquema",
   ) as { scheme_id: string };
-  await useAsDefault(db, user, scheme.scheme_id);
+  await setCompanyScheme(db, user, scheme.scheme_id);
   return scheme.scheme_id;
 }
 
-async function useAsDefault(db: Db, user: TestUser, schemeId: string): Promise<void> {
+async function setCompanyScheme(db: Db, user: TestUser, schemeId: string): Promise<void> {
   unwrap(
     await db.from("pay_companies").update({ default_scheme_id: schemeId }).eq("id", user.basics.companyId).select("id"),
     "esquema de la empresa",
@@ -168,7 +168,7 @@ test.describe("partes que no pagan comisión", () => {
     await expect(current.getByRole("listitem").filter({ hasText: "Grupo A" })).not.toContainText("no paga comisión");
     await checkScreen(page);
     const schemeId = /\/esquemas\/([0-9a-f-]{36})$/.exec(new URL(page.url()).pathname)?.[1] ?? "";
-    await useAsDefault(db, user, schemeId);
+    await setCompanyScheme(db, user, schemeId);
 
     // Registrar: pagando nosotros con un esquema sobre el neto, la pregunta sale marcada como dice el esquema.
     await page.goto("/pasarelas/registrar");

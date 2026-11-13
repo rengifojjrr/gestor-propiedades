@@ -152,10 +152,13 @@ function sparedAmounts(shares: readonly Share[], sale: Money, net: Money): Money
     sale,
     shares.map((share) => share.pct),
   );
-  const spared = shares.reduce((sum, share, i) => (share.feeExempt ? sum.plus(dec(asIfNoFees[i] as Money)) : sum), new D(0));
+  const sparedTotal = shares.reduce(
+    (sum, share, i) => (share.feeExempt ? sum.plus(dec(asIfNoFees[i] as Money)) : sum),
+    new D(0),
+  );
   // Las que no pagan comisión pesan 0 en lo que queda: no reciben nada de ahí (ni un centavo del mayor resto).
   const paying = allocateInProportion(
-    toMoney(dec(net).minus(spared)),
+    toMoney(dec(net).minus(sparedTotal)),
     shares.map((share) => (share.feeExempt ? "0" : share.pct)),
   );
   return shares.map((share, i) => (share.feeExempt ? asIfNoFees[i] : paying[i]) as Money);
@@ -181,8 +184,8 @@ function allocation(scheme: SchemeRule | null, gross: Decimal, net: Decimal, pay
   // Un esquema que aun así no suma 100 % (se pasa, o le falta y no hay «Resto») es inválido: allocate lanza RangeError.
   const baseKind: AllocBase = payer === "comprador" ? "neto" : scheme.base;
   const baseAmount = toMoney(baseKind === "bruto" ? gross : net);
-  const spared = payer === "nosotros" && baseKind === "neto" && shares.some((share) => share.feeExempt);
-  const amounts = spared
+  const exemptApplies = payer === "nosotros" && baseKind === "neto" && shares.some((share) => share.feeExempt);
+  const amounts = exemptApplies
     ? sparedAmounts(shares, toMoney(gross), baseAmount)
     : allocate(
         baseAmount,
@@ -194,7 +197,7 @@ function allocation(scheme: SchemeRule | null, gross: Decimal, net: Decimal, pay
     pct: share.pct,
     amount: amounts[i] as Money, // allocate devuelve un monto por porcentaje
     isRemainder: share.isRemainder,
-    feeExempt: spared && share.feeExempt,
+    feeExempt: exemptApplies && share.feeExempt,
   }));
   return { baseKind, baseAmount, lines };
 }

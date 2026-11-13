@@ -714,6 +714,35 @@ describe("partes que no pagan comisión", () => {
     save(write, tx);
   });
 
+  test("recalcular con la tarifa de hoy conserva quién no paga comisión en ese cobro (aunque el esquema diga otra cosa)", () => {
+    const cfg = withExemptC();
+    const tx = save(planCreate(cfg, inputE9({ feeExemptIds: [GROUP_A] })));
+    only(stripe(cfg).feeVersions).pct = "3.5";
+    const { write } = planRecalc(cfg, tx, "hoy", VIERNES);
+    // 1000 × 3,5 % + 0,30 = 35,30 → neto 964,70; A recibe 500,00 y B y C se reparten 464,70 en 30:20.
+    expect(write.fields).toMatchObject({ feesTotal: "35.30", netAmount: "964.70" });
+    expect(write.fields.breakdown?.rules.scheme?.lines.map((line) => line.feeExempt)).toEqual([true, false, false]);
+    expect(shares(write)).toEqual(["500.00", "278.82", "185.88"]);
+    save(write, tx);
+  });
+
+  test("cambiar la fecha (otra versión del esquema) sin decir las marcas conserva las de ese cobro", () => {
+    const cfg = withExemptC();
+    only(cfg.schemes).versions.push({
+      ...only(only(cfg.schemes).versions),
+      id: "sv-socios-2",
+      version: 2,
+      effectiveFrom: SABADO,
+    });
+    const tx = save(planCreate(cfg, inputE9({ feeExemptIds: [] })));
+    const write = planEdit(cfg, tx, { occurredAt: "2026-11-14T15:30:00Z" });
+    expect(write.fields.schemeVersionId).toBe("sv-socios-2");
+    expect(write.fields.breakdown?.rules.scheme?.lines.every((line) => !line.feeExempt)).toBe(true);
+    // El reparto queda como estaba (sin nadie exento), aunque la versión nueva marque al Grupo C.
+    expect(shares(write)).toEqual(["485.35", "291.21", "194.14"]);
+    save(write, tx);
+  });
+
   test("al cambiar de esquema, las marcas que se dicen van al esquema nuevo; sin decirlas, las del esquema", () => {
     const cfg = withExemptC();
     const tx = save(planCreate(cfg, inputE9({ schemeId: null })));

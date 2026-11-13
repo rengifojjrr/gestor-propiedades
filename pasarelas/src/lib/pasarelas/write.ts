@@ -11,7 +11,7 @@ import { buyerFeesOf, compute, diff, recalc, recompute } from "./breakdown";
 import { estimateDepositWindow, formatDate, nyDate, type DateWindow } from "./dates";
 import { ZERO, isMoney } from "./decimal";
 import { add, cmp, formatMoney } from "./money";
-import { reResolve, resolvePayout, resolveRules } from "./rules";
+import { feeExemptIdsOf, reResolve, resolvePayout, resolveRules } from "./rules";
 import { isPending } from "./status";
 import type {
   AllocWrite,
@@ -338,7 +338,10 @@ function estimatedColumns(window: DateWindow): Pick<TxFields, "estimatedDepositO
 const manualColumns = (on: ISODate) =>
   ({ estimatedDepositOn: on, estimatedDepositFrom: null, estimatedIsManual: true }) satisfies Partial<TxFields>;
 
-/** Lo que se eligió al registrar un cobro guardado. La comisión informada no se arrastra. */
+/**
+ * Lo que se eligió al registrar un cobro guardado. La comisión informada no se arrastra. Quién no paga comisión es
+ * lo congelado en el cobro: una versión del esquema que se vuelve a elegir (otra fecha, recalcular) no lo cambia.
+ */
 function selectionOf(tx: TxSnapshot): Selection {
   return {
     companyId: tx.companyId,
@@ -347,6 +350,7 @@ function selectionOf(tx: TxSnapshot): Selection {
     extraIds: tx.breakdown.rules.extras.map((option) => option.id),
     schemeId: tx.schemeId,
     occurredOn: tx.occurredOn,
+    feeExemptIds: feeExemptIdsOf(tx.breakdown.rules),
   };
 }
 
@@ -469,7 +473,9 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
     extraIds: pick(input.extraIds, before.extraIds),
     schemeId: pick(input.schemeId, before.schemeId),
     occurredOn: input.occurredAt === undefined ? before.occurredOn : nyDate(input.occurredAt),
-    feeExemptIds: input.feeExemptIds,
+    // Sin decirlo, las de este cobro; con otro esquema, las de ese esquema.
+    feeExemptIds:
+      input.feeExemptIds ?? (pick(input.schemeId, before.schemeId) === before.schemeId ? before.feeExemptIds : undefined),
   };
   const currency = pick(input.currency, tx.currency);
   const grossOriginal = pick(input.grossOriginal, tx.grossOriginal);
