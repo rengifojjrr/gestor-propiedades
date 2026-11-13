@@ -145,13 +145,18 @@ type Share = { pct: Pct; feeExempt: boolean };
  * que descontar (`buyerFeesOf` da 0). Las demás, «Resto» incluido, se reparten lo que queda del neto en proporción a
  * sus porcentajes, también por mayor resto. Suma exactamente el neto. Si nadie queda pagando la comisión, lanza
  * `PayRuleError("nadie_paga_comision")`.
+ *
+ * `shares` es el reparto completo: las líneas y, si suman menos de 100 %, el «Resto» que lo completa (sin marca).
+ * Por eso quién paga se pregunta solo entre ellas, sin preguntar aparte por el «Resto» (`hasRemainder` falso). Y por
+ * eso antes `allocate` comprueba que cubran el 100 % (si no, RangeError): sin el «Resto» adentro, la respuesta sería
+ * «nadie paga» en un esquema que en realidad no vale.
  */
 function sparedAmounts(shares: readonly Share[], sale: Money, net: Money): Money[] {
-  if (!someonePaysFees(shares, false)) throw new PayRuleError("nadie_paga_comision");
   const asIfNoFees = allocate(
     sale,
     shares.map((share) => share.pct),
   );
+  if (!someonePaysFees(shares, false)) throw new PayRuleError("nadie_paga_comision");
   const sparedTotal = shares.reduce(
     (sum, share, i) => (share.feeExempt ? sum.plus(dec(asIfNoFees[i] as Money)) : sum),
     new D(0),

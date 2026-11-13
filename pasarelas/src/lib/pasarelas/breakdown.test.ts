@@ -487,6 +487,21 @@ describe("compute: partes que no pagan comisión", () => {
     expect(b.alloc.lines.at(-1)?.isRemainder).toBe(true);
   });
 
+  test("quién paga se mira en el reparto completo («Resto» incluido): si no cubre el 100 %, es RangeError", () => {
+    // 50 + 30, las dos marcadas y sin «Resto» que complete el 20 %: no es que nadie pague, el esquema no vale.
+    const rules = rulesE9(["ben-a", "ben-b", "ben-c"]);
+    const scheme = schemeOf(rules);
+    const short = { ...rules, scheme: { ...scheme, lines: scheme.lines.slice(0, 2) } };
+    expect(() => compute(short, paid("1000.00"), "USD")).toThrow(RangeError);
+    // Lo mismo si se pasa del 100 %, aunque tenga «Resto».
+    const extra = { beneficiaryId: "ben-d", name: "Grupo D", pct: "0.0001", feeExempt: true };
+    const over = {
+      ...rules,
+      scheme: { ...scheme, lines: [...scheme.lines, extra], remainder: { beneficiaryId: "ben-e", name: "Grupo E" } },
+    };
+    expect(() => compute(over, paid("1000.00"), "USD")).toThrow(RangeError);
+  });
+
   test("una línea sin marcar de 0 % no paga nada: no cuenta como quien paga", () => {
     const rules = rulesE9(["ben-a", "ben-b", "ben-c"]);
     const scheme = schemeOf(rules);
