@@ -58,6 +58,8 @@ const ONE_WITH_VERSION = {
 };
 const oneIfSeen = ({ ids, expectedUpdatedAt }: { ids: string[]; expectedUpdatedAt?: string }): boolean =>
   expectedUpdatedAt === undefined || ids.length === 1;
+/** Las partes de un reparto que no pagan comisión: ids, a lo más tantas como líneas caben en un esquema. */
+const zFeeExemptIds = z.array(zId).max(50, { error: "Demasiadas partes" });
 
 const zNewTx = z.object({
   id: zId,
@@ -77,6 +79,8 @@ const zNewTx = z.object({
   estimatedDepositOn: zDate.nullish(),
   /** Sin decirlo, la comisión la pagó el negocio («nosotros»). */
   feesPaidBy: zFeesPaidBy.optional(),
+  /** Quiénes no pagan comisión en ESTE cobro (beneficiarios de líneas del esquema); sin decirlo, los del esquema. */
+  feeExemptIds: zFeeExemptIds.optional(),
 });
 
 /** Lo que no viene (`undefined`) no se toca; lo que viene con `null` se vacía. */
@@ -93,6 +97,7 @@ const zEditTx = zSeen.extend({
   note: zNote.optional(),
   bankAccountId: zId.nullable().optional(),
   feesPaidBy: zFeesPaidBy.optional(),
+  feeExemptIds: zFeeExemptIds.optional(),
 });
 
 /**

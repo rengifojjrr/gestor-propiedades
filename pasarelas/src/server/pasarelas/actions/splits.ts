@@ -61,7 +61,9 @@ const zScheme = z.object({
   base: z.enum(["neto", "bruto"], { error: "Elige sobre qué se reparte" }),
   remainderBeneficiaryId: zOptionalId,
   effectiveFrom: zDate,
-  lines: z.array(z.object({ beneficiaryId: zId, pct: zPct })).max(MAX_LINES, { error: "Demasiadas líneas" }),
+  lines: z
+    .array(z.object({ beneficiaryId: zId, pct: zPct, feeExempt: z.boolean().default(false) }))
+    .max(MAX_LINES, { error: "Demasiadas líneas" }),
 });
 
 /**

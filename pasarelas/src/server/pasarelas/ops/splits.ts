@@ -29,8 +29,8 @@ export type SchemeInput = {
   base: AllocBase;
   remainderBeneficiaryId: string | null;
   effectiveFrom: ISODate;
-  /** En su orden. */
-  lines: { beneficiaryId: string; pct: Pct }[];
+  /** En su orden. `feeExempt`: la marca «No paga comisión» de la línea (sin decirla, la paga). */
+  lines: { beneficiaryId: string; pct: Pct; feeExempt?: boolean }[];
 };
 
 export type SavedScheme = { schemeId: string; versionId: string; version: number };
@@ -99,8 +99,9 @@ export async function deleteBeneficiary(supabase: Db, id: string): Promise<void>
 
 /**
  * Guarda un esquema nuevo con su primera versión, o una versión nueva de uno que ya existe (cambia también su
- * nombre), en una sola transacción (`pay_save_scheme`). Antes lo valida con el motor y, si no vale, no escribe
- * nada y lanza el mismo texto que enseña la pantalla (`SCHEME_ISSUE_TEXT`). La base vuelve a exigir lo mismo.
+ * nombre), en una sola transacción (`pay_save_scheme`), con la marca «No paga comisión» de cada línea. Antes lo
+ * valida con el motor y, si no vale, no escribe nada y lanza el mismo texto que enseña la pantalla
+ * (`SCHEME_ISSUE_TEXT`). La base vuelve a exigir las sumas; que alguien pague la comisión lo exige el motor.
  */
 export async function saveScheme(supabase: Db, s: SchemeInput): Promise<SavedScheme> {
   const [issue] = validateScheme(s.lines, s.remainderBeneficiaryId);
@@ -113,7 +114,11 @@ export async function saveScheme(supabase: Db, s: SchemeInput): Promise<SavedSch
         base: s.base,
         remainder_beneficiary_id: s.remainderBeneficiaryId,
         effective_from: s.effectiveFrom,
-        lines: s.lines.map((line) => ({ beneficiary_id: line.beneficiaryId, pct: line.pct })),
+        lines: s.lines.map((line) => ({
+          beneficiary_id: line.beneficiaryId,
+          pct: line.pct,
+          fee_exempt: line.feeExempt === true,
+        })),
       },
     })
     .throwOnError();
