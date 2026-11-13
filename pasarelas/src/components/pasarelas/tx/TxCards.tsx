@@ -28,10 +28,11 @@ export function TxCards({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
                 <DateText value={tx.occurredOn} /> · {tx.companyName} · {tx.gatewayName}
               </p>
               <div className="flex items-start justify-between gap-2">
-                <span className="flex min-w-0 flex-col items-start gap-1">
+                {/* Un <div>: el menú lleva sus diálogos y su lista, que no caben en un <span>. */}
+                <div className="flex min-w-0 flex-col items-start gap-1">
                   <StatusBadge tx={tx} today={today} />
                   <TxStatusMenu tx={tx} today={today} placement="bottom" className="-my-2" />
-                </span>
+                </div>
                 <p className="shrink-0 text-sm">
                   <span className="text-ink-soft">Neto </span>
                   <Money value={tx.net} currency={tx.currency} />

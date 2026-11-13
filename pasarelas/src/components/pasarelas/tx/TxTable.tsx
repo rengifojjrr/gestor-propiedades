@@ -131,10 +131,11 @@ export function TxTable({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
               </span>
             </Td>
             <Td>
-              <span className="flex flex-col items-start gap-1">
+              {/* Un <div>: el menú lleva sus diálogos y su lista, que no caben en un <span>. */}
+              <div className="flex flex-col items-start gap-1">
                 <StatusBadge tx={tx} today={today} />
                 <TxStatusMenu tx={tx} today={today} placement="center" className="-my-2" />
-              </span>
+              </div>
             </Td>
             <Td numeric>
               <Money value={tx.gross} currency={tx.currency} />
