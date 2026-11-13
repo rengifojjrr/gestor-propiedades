@@ -15,7 +15,7 @@ como está guardado, con punto (`"90.30"`).
 2. [Cómo se usa](#cómo-se-usa)
 3. [Las piezas](#las-piezas)
 4. [Las reglas del dinero](#las-reglas-del-dinero)
-5. [Cómo se calcula un cobro](#cómo-se-calcula-un-cobro) (ejemplos E1 a E8)
+5. [Cómo se calcula un cobro](#cómo-se-calcula-un-cobro) (ejemplos E1 a E9)
 6. [Cuándo cae el dinero](#cuándo-cae-el-dinero) (ejemplos F1 a F3)
 7. [Lo que se congela y lo que lo cambia](#lo-que-se-congela-y-lo-que-lo-cambia)
 8. [Estados de un cobro](#estados-de-un-cobro)
@@ -67,8 +67,10 @@ rápido y la plataforma se van 9,70. Quedan 90,30, que se reparten 45,15 · 27,0
 **Estado (2026-11-10).** Está todo construido: el motor, la base, la entrada con segundo factor, todas las
 pantallas, el importador de CSV, «Exportar todo» y una semilla de ejemplo. Hay pruebas del motor (cubren el 100 %
 de su código), de la base y del servidor contra un Supabase **local**, y de punta a punta con un navegador, en celular
-y en escritorio. No se creó ni se tocó ningún proyecto remoto de Supabase ni de Vercel: elegir la base remota y
-publicar queda para el dueño. Lo que falta está en [Lo que queda](#lo-que-queda).
+y en escritorio. Está publicada desde el 10 de noviembre de 2026, en Vercel y en un proyecto de Supabase compartido
+con otras apps del dueño: dónde, con qué migraciones y qué saber de ese proyecto, en
+[«Dónde está publicada hoy»](../README.md#dónde-está-publicada-hoy), en el README. Lo que falta está en
+[Lo que queda](#lo-que-queda).
 
 ## Cómo se usa
 
@@ -114,8 +116,8 @@ ficha»** → «Esquema de reparto por defecto».
 (de Nueva York) y referencia. El comprobante, con **«Tomar foto»** o **«Elegir archivo»** (foto o PDF, hasta
 10 MB). Al lado (en el celular, debajo) se ve la cuenta: comisiones, neto, reparto y fecha estimada. En «Más
 opciones» van el esquema, la cuenta destino, la fecha estimada a mano, el estado inicial y la nota. **«Guardar»**.
-**«Repetir el último»** vuelve a poner la empresa, el canal, la pasarela, las opciones, la moneda y el esquema del
-cobro anterior.
+**«Repetir el último»** vuelve a poner la empresa, el canal, la pasarela, las opciones, quién paga la comisión, la
+moneda, el esquema y quién no paga comisión del cobro anterior.
 
 **¿Quién paga la comisión?** Al registrar (y al editar) se elige **«Nosotros»** o **«El comprador»**:
 
@@ -135,6 +137,31 @@ cobro anterior.
 
   Si se quiere que el comprador cubra exactamente la comisión, el recargo sobre 1000 es 30,96, no 40: con 40 queda un
   extra, que cuenta como venta y se reparte.
+
+**Una parte que no paga comisión.** Sirve cuando alguien del reparto (por ejemplo, el Grupo C) cobra su parte entera,
+sin que le descuenten la comisión. Solo vale con «Nosotros» y un esquema «Sobre el neto». Con «El comprador» o «Sobre
+el bruto», la marca no cambia nada.
+
+- **En el esquema.** En «Nuevo esquema» o en la «Versión nueva» de un esquema, con «Se reparte» «Sobre el neto», cada
+  línea trae la casilla **«No paga comisión»**. El «Resto» no se marca. En el esquema, esa línea lleva «no paga
+  comisión».
+- **En un cobro.** Al registrar con «Nosotros» y un esquema sobre el neto, sale **«¿Alguien no paga comisión?»**: una
+  casilla por línea, marcadas como dice el esquema. Lo que se cambie vale solo para ese cobro; el esquema no cambia.
+  Al editar sale lo mismo, marcado como quedó el cobro. «Repetir el último» repite también las marcas. Al importar
+  valen las del esquema.
+- **La cuenta.** Quien no paga comisión recibe su parte del bruto, como si no hubiera comisión. Los demás se reparten
+  lo que queda del neto, en proporción a sus porcentajes (ver [E9](#e9--una-parte-que-no-paga-comisión)). En el
+  detalle del cobro, esa parte lleva «no paga comisión» y una frase lo explica: «Grupo C no paga comisión: su parte
+  es el 20 % del bruto. La comisión la pagan los demás.»
+- **Alguien tiene que pagarla.** Con todas las líneas marcadas no se guarda ni el esquema ni el cobro: «Alguien tiene
+  que pagar la comisión: deja al menos una parte sin marcar.» Si el esquema tiene «Resto» y le toca algo, la paga el
+  «Resto».
+
+**Cambiar el estado de un cobro desde la lista.** En Cobros, cada cobro tiene el botón **«Cambiar estado ▾»**. Abre
+un menú con solo los cambios que ese cobro admite, los mismos que en su detalle salvo uno: la fecha de un depósito
+ya hecho se cambia solo en el detalle del cobro. Son «Pasar a en tránsito», «Marcar depositado…» (pide la fecha),
+«Revertir el depósito», «Marcar como fallido» y «Reabrir». «Revertir el depósito» y «Marcar como fallido» piden
+confirmar antes. Al terminar, la lista se actualiza con los mismos filtros. En la papelera no hay menú.
 
 **Marcar depositados varios cobros.** Cobros → «Más filtros» → Estado «Por caer» → marcar las casillas →
 **«Marcar depositado»** → la fecha en que llegó el dinero. O desde el Resumen, en «Próximos depósitos», el botón
@@ -176,9 +203,9 @@ Registrar cobro y en una liquidación, reenviar el mismo formulario no duplica n
 un dato, avisa de que ya se había guardado con los datos del primer intento, pero no con cualquier dato:
 
 - En Registrar cobro avisa si cambió el monto, la moneda, la fecha, la empresa, el canal, la pasarela, las opciones,
-  el esquema, la referencia, el estado inicial, la fecha del depósito, la fecha estimada a mano o la nota, o si se
-  eligió otra cuenta destino. Quitar la cuenta elegida (dejar la que pone la app) no se detecta: se toma como el
-  mismo envío y ese cambio se pierde.
+  quién paga la comisión, quién no paga comisión, el esquema, la referencia, el estado inicial, la fecha del
+  depósito, la fecha estimada a mano o la nota, o si se eligió otra cuenta destino. Quitar la cuenta elegida (dejar
+  la que pone la app) no se detecta: se toma como el mismo envío y ese cambio se pierde.
 - En una liquidación avisa si cambió el beneficiario, la fecha, la moneda o el monto, o si se puso o se quitó el
   comprobante. Un cambio en el medio de pago o en la nota no se detecta y se pierde.
 
@@ -231,7 +258,7 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 | `src/app/` | La entrada (`/login`), Ajustes (con «Exportar todo»), la galería del kit y las pantallas del libro, bajo `/pasarelas` |
 | `src/components/ui/`, `src/components/shell/` | Kit propio de interfaz y marco de navegación |
 | `src/components/pasarelas/` | Las piezas de cada pantalla del libro |
-| `supabase/migrations/` | El esquema de la base: `20261110120000_las_pasarelas_de_pago.sql` |
+| `supabase/migrations/` | El esquema de la base: cinco migraciones aditivas, de `20261110120000_las_pasarelas_de_pago.sql` a `20261114120000_pasarelas_5_partes_sin_comision.sql` |
 | `supabase/config.toml` | El Supabase local: registro público apagado, segundo factor TOTP encendido |
 | `scripts/` | El arranque del Supabase local (`stack.sh`), la semilla de ejemplo (`npm run seed`) y las capturas |
 | `tests/integration/` | Pruebas contra el Supabase local: RLS, cuadres, funciones, Storage, sesiones, borrado de usuario y cada parte del libro |
@@ -245,7 +272,7 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 |---|---|
 | `decimal.ts` | La única puerta a decimal.js: redondeo y montos canónicos |
 | `money.ts` | Leer lo que escribe una persona, mostrar, sumar por moneda |
-| `allocate.ts` | El reparto por mayor resto |
+| `allocate.ts` | El reparto por mayor resto: sobre el 100 % (`allocate`) o en proporción a unos pesos (`allocateInProportion`) |
 | `breakdown.ts` | El cálculo de un cobro y el desglose que se congela |
 | `rules.ts` | De la configuración a las reglas de un cobro, y los días que tarda el depósito |
 | `versions.ts` | Qué versión (tarifa o esquema) rige en una fecha |
@@ -304,7 +331,8 @@ mil.
 ## Cómo se calcula un cobro
 
 El cálculo recibe tres cosas: las **reglas** (tarifa de la pasarela, opciones encendidas, plataforma y esquema), el
-**estado** (lo cobrado, lo reembolsado, la disputa y si falló) y la moneda. Devuelve el **desglose**.
+**estado** (lo cobrado, lo reembolsado, la disputa, si falló y quién pagó la comisión) y la moneda. Devuelve el
+**desglose**.
 
 Los nombres que se usan en todo el documento:
 
@@ -342,7 +370,10 @@ Los nombres que se usan en todo el documento:
 7. **Costo de disputa.** El costo fijo de disputa de la pasarela, mientras la disputa esté abierta o si se perdió.
    Si se ganó, nada. Perder una disputa implica además el reembolso total.
 8. **Comisiones** = suma de todas las líneas. **Neto** = bruto vigente − comisiones. El neto puede ser negativo.
-9. **Reparto.** La base es el neto o el bruto vigente, según diga el esquema. Sin esquema no hay reparto.
+9. **Reparto.** La base es el neto o el bruto vigente, según diga el esquema. Si la comisión la pagó el comprador,
+   siempre el neto ([E7](#e7--la-comisión-la-pagó-el-comprador)). Si la pagamos nosotros, el esquema va sobre el neto
+   y una parte no paga comisión, esa parte sale del bruto vigente y las demás se reparten lo que queda del neto; la
+   base sigue siendo el neto ([E9](#e9--una-parte-que-no-paga-comisión)). Sin esquema no hay reparto.
 
 Las líneas quedan siempre en este orden: pasarela, costo del reembolso, opciones, plataforma, disputa.
 
@@ -359,6 +390,9 @@ así que se hace de otro modo:
 
 Un esquema que no cubre exactamente el 100 % (se pasa, o le falta y no tiene «Resto») no se calcula: el motor lo
 rechaza, y la base tampoco deja guardarlo.
+
+Si una parte no paga comisión, el mayor resto se usa dos veces: sobre el bruto, para esa parte, y sobre lo que queda
+del neto, para las demás ([E9](#e9--una-parte-que-no-paga-comisión)).
 
 ### Límites del modelo
 
@@ -553,6 +587,43 @@ disputa). El costo del reembolso y el de la disputa los cobra la pasarela **al n
 - **E8c** se calcula así dentro del motor. En la app, perder una disputa reembolsa todo: queda como E8a más los 15,00
   de la disputa (comprador 0, negocio 45,46, neto −45,46).
 
+### E9 · Una parte que no paga comisión
+
+Entrada: Stripe 2,9 % + 0,30, sin opciones ni plataforma (no devuelve la comisión al reembolsar). Se cobran
+**1000,00** y la comisión la pagamos «Nosotros». El esquema es 50/30/20 «Sobre el neto», con el Grupo C marcado «No
+paga comisión».
+
+- Comisión: 1000 × 2,9 % + 0,30 = **29,30**. Neto: 1000,00 − 29,30 = **970,70**.
+- Grupo C: su parte del bruto, como si no hubiera comisión. 1000,00 × 20 % = **200,00**.
+- A y B se reparten lo que queda del neto, 970,70 − 200,00 = 770,70, en proporción 50:30. 770,70 × 50/80 =
+  481,6875; × 30/80 = 289,0125. Truncados suman 770,69, y el centavo que falta va al de mayor resto (481,6875).
+  Resultado: **481,69 · 289,01 · 200,00**, que suma 970,70.
+- Sin la marca serían 485,35 · 291,21 · 194,14. Los 5,86 de comisión que C deja de pagar los cargan A (3,66) y B
+  (2,20).
+
+**E9b**, el mismo cobro reembolsado del todo. El bruto vigente queda en 0,00 y la pasarela se queda los 29,30 (costo
+del reembolso). Neto: **−29,30**.
+
+- Grupo C: su parte de un bruto de 0,00, **0,00**.
+- A y B cargan toda la pérdida, en proporción 50:30. Como en E4, se reparten 2930 centavos (el valor absoluto) y se
+  cambia el signo: 2930 × 50/80 = 1831,25 y × 30/80 = 1098,75. Truncados suman 2929, y el centavo que falta va al de
+  mayor resto (1098,75). Resultado: **−18,31 · −10,99 · 0,00**.
+
+**E9c**, el mismo esquema con las tres partes marcadas: nadie paga la comisión y se rechaza, con el mensaje «Alguien
+tiene que pagar la comisión: deja al menos una parte sin marcar.» Pasa igual al guardar el esquema y al registrar o
+editar el cobro.
+
+**La regla**, en cada cobro:
+
+- Solo cuenta si la comisión la pagamos nosotros y el reparto va sobre el neto. Con «El comprador» o «Sobre el
+  bruto», la marca ni se aplica ni se rechaza.
+- Quien no paga comisión recibe su parte del bruto vigente, con el reparto por mayor resto entre todas las partes,
+  como en un esquema sobre el bruto.
+- Las demás, «Resto» incluido, se reparten lo que queda del neto en proporción a sus porcentajes, también por mayor
+  resto. Cargan entre ellas las comisiones y los costos de un reembolso o de una disputa.
+- El reparto suma siempre exactamente el neto, y su base sigue siendo el neto.
+- Si hay «Resto» y le toca algo, él paga la comisión aunque todas las líneas estén marcadas.
+
 ## Cuándo cae el dinero
 
 La fecha estimada de depósito se calcula al registrar el cobro. Se puede corregir a mano.
@@ -689,12 +760,13 @@ guarda:
                   "payoutDaysOverride": 0 } ],
     "platform": { "channelId": "ch-web", "name": "Tienda en línea", "pct": "5", "fixed": "0.00" },
     "scheme": { "schemeId": "sch-1", "versionId": "sv-1", "name": "Socios", "base": "neto",
-                "lines": [ { "beneficiaryId": "ben-a", "name": "Grupo A", "pct": "50" },
-                           { "beneficiaryId": "ben-b", "name": "Grupo B", "pct": "30" },
-                           { "beneficiaryId": "ben-c", "name": "Grupo C", "pct": "20" } ],
+                "lines": [ { "beneficiaryId": "ben-a", "name": "Grupo A", "pct": "50", "feeExempt": false },
+                           { "beneficiaryId": "ben-b", "name": "Grupo B", "pct": "30", "feeExempt": false },
+                           { "beneficiaryId": "ben-c", "name": "Grupo C", "pct": "20", "feeExempt": false } ],
                 "remainder": null }
   },
-  "state": { "grossOriginal": "100.00", "refunded": "0.00", "dispute": null, "failed": false },
+  "state": { "grossOriginal": "100.00", "refunded": "0.00", "dispute": null, "failed": false,
+             "feesPaidBy": "nosotros" },
   "gross": "100.00",
   "lines": [
     { "kind": "pasarela", "refId": "gw-stripe", "name": "Stripe", "baseKind": "bruto", "baseAmount": "100.00",
@@ -710,9 +782,12 @@ guarda:
     "baseKind": "neto",
     "baseAmount": "90.30",
     "lines": [
-      { "beneficiaryId": "ben-a", "name": "Grupo A", "pct": "50", "amount": "45.15", "isRemainder": false },
-      { "beneficiaryId": "ben-b", "name": "Grupo B", "pct": "30", "amount": "27.09", "isRemainder": false },
-      { "beneficiaryId": "ben-c", "name": "Grupo C", "pct": "20", "amount": "18.06", "isRemainder": false }
+      { "beneficiaryId": "ben-a", "name": "Grupo A", "pct": "50", "amount": "45.15", "isRemainder": false,
+        "feeExempt": false },
+      { "beneficiaryId": "ben-b", "name": "Grupo B", "pct": "30", "amount": "27.09", "isRemainder": false,
+        "feeExempt": false },
+      { "beneficiaryId": "ben-c", "name": "Grupo C", "pct": "20", "amount": "18.06", "isRemainder": false,
+        "feeExempt": false }
     ]
   }
 }
@@ -720,11 +795,16 @@ guarda:
 
 Cómo leerlo:
 
-- `rules` es lo que se congela. `state` es lo que puede cambiar: cobrado, reembolsado, disputa y fallido.
+- `rules` es lo que se congela. `state` es lo que puede cambiar: cobrado, reembolsado, disputa, fallido y quién pagó
+  la comisión.
 - Cada línea de `lines` dice de qué tipo es (`pasarela`, `reembolso`, `opcion`, `plataforma`, `disputa`), sobre qué
   base se calculó, con qué porcentaje y cuota fija, y cuánto dio.
+- `feeExempt` en `rules.scheme.lines` es la marca «No paga comisión» congelada en ese cobro. Puede ser otra que la
+  del esquema, si se cambió al registrar o al editar. En `alloc.lines`, `feeExempt` dice si la marca se aplicó (solo
+  con «Nosotros» y sobre el neto: ver [E9](#e9--una-parte-que-no-paga-comisión)).
 - Todo el dinero va como texto. Al leer un desglose guardado, `parseBreakdown` lo valida y rechaza otra versión o
-  montos escritos como número.
+  montos escritos como número. A uno guardado antes de existir `feeExempt` o `feesPaidBy` le pone `false` y
+  `nosotros`.
 - Las columnas del cobro (`gross_amount`, `fees_total`, `net_amount`, `alloc_base_amount`) y las filas de
   `pay_allocations` repiten estas cifras para poder filtrar y sumar. Salen siempre del desglose.
 
@@ -776,8 +856,12 @@ aunque la configuración ya sea otra.
 | la fecha (a otro día) | solo la tarifa de la pasarela y la versión del esquema que rigen ese día | la fecha estimada |
 | el canal | la plataforma | nada |
 | el esquema | el esquema, con la versión de la fecha del cobro | nada |
+| quién no paga comisión | solo las marcas «No paga comisión» del esquema congelado (las de la edición, no las de la configuración), y con ellas el reparto | nada |
 
 Cambiar la hora dentro del mismo día, la referencia, la nota o solo la cuenta destino no recalcula nada.
+
+**Quién no paga comisión al editar.** Cambiar la fecha a otra versión del esquema conserva las marcas de ese cobro.
+Solo otro esquema trae las suyas. El historial lo dice: «Editado: quién no paga comisión».
 
 **La fecha estimada al editar.** Se vuelve a calcular cuando cambia la fecha, la empresa, la pasarela o las
 opciones. Nunca si está puesta a mano.
@@ -797,11 +881,11 @@ edición escribe la empresa, la cuenta destino nueva y la fecha estimada viernes
 - **Con la tarifa de la fecha del cobro** (`fecha_del_cobro`): usa las versiones que corresponden a la fecha del
   cobro según la configuración actual. Sirve cuando se corrigió una tarifa mal cargada.
 
-En los dos modos se conserva el estado (un reembolso sigue reembolsado), se descarta la comisión informada y se
-omiten las opciones que ya no existen. La fecha estimada se vuelve a calcular, salvo que esté puesta a mano. Antes
-de guardar se puede ver el antes y el después, fila por fila. En el ejemplo de las tarifas, recalcular con la tarifa
-de hoy el cobro del viernes 13 lo pasa de 3,20 a 3,80 de pasarela, de 9,70 a 10,30 de comisiones, de 90,30 a 89,70
-de neto, y el reparto a 44,85 · 26,91 · 17,94.
+En los dos modos se conserva el estado (un reembolso sigue reembolsado) y quién no paga comisión en ese cobro, se
+descarta la comisión informada y se omiten las opciones que ya no existen. La fecha estimada se vuelve a calcular,
+salvo que esté puesta a mano. Antes de guardar se puede ver el antes y el después, fila por fila. En el ejemplo de
+las tarifas, recalcular con la tarifa de hoy el cobro del viernes 13 lo pasa de 3,20 a 3,80 de pasarela, de 9,70 a
+10,30 de comisiones, de 90,30 a 89,70 de neto, y el reparto a 44,85 · 26,91 · 17,94.
 
 Marcar en tránsito, depositar, revertir un depósito, fijar la fecha estimada, mandar a la papelera y restaurar no
 tocan ningún número.
@@ -909,6 +993,12 @@ está depositado: revierte el depósito primero.»). Las operaciones sobre vario
 en tránsito, papelera, recalcular) se saltan los que no admiten el cambio y dicen cuántos escribieron; al depositar,
 también cuántos se saltaron y por qué.
 
+En la lista de cobros, el menú **«Cambiar estado»** de cada cobro ofrece solo lo que esta tabla permite: pasar a en
+tránsito, depositar, revertir el depósito, marcar como fallido y reabrir. Lo decide `statusChanges`
+(`statusChanges.ts`), que filtra la misma `allowedActions` del detalle (`allowed.ts`), y llama a las mismas acciones
+del servidor que el detalle. Un cobro ya depositado no ofrece «Marcar depositado…»: cambiar la fecha de su depósito
+queda en el detalle. En la papelera el cobro no tiene menú.
+
 Dos reglas de la disputa perdida: implica el reembolso total, y así se queda. Si después se corrige el monto del
 cobro, el reembolso lo sigue.
 
@@ -923,7 +1013,9 @@ cero.
 Un **esquema** dice cómo se reparte un cobro. Tiene un nombre y una o más **versiones**. Cada versión tiene:
 
 - **Líneas:** un beneficiario y su porcentaje (mayor que 0, hasta 100, con hasta 4 decimales). Un beneficiario
-  aparece una sola vez.
+  aparece una sola vez. Sobre el neto, cada línea puede llevar la marca **«No paga comisión»**: su parte sale del
+  bruto y la comisión la pagan las demás ([E9](#e9--una-parte-que-no-paga-comisión)). Sobre el bruto, el editor no
+  la ofrece ni la guarda.
 - **«Resto»** (opcional): el beneficiario que recibe lo que falte para llegar a 100 %. No puede ser además una
   línea. Si las líneas ya suman 100 %, el «Resto» no recibe nada.
 - **Base:** `neto` o `bruto`. Sobre el neto se reparte lo que queda después de las comisiones. Sobre el bruto se
@@ -934,6 +1026,10 @@ Un **esquema** dice cómo se reparte un cobro. Tiene un nombre y una o más **ve
 
 Reglas que se cumplen dos veces, en el motor (para avisar antes, en español) y en la base (para que nadie las
 rodee): las líneas no pasan de 100 %; si suman menos, tiene que haber «Resto»; el «Resto» no es una línea.
+
+Una regla más la hacen cumplir el motor y el servidor, pero no la base: alguien tiene que quedar pagando la
+comisión. Con todas las líneas marcadas «No paga comisión», el esquema no se guarda, salvo que haya «Resto» y le
+toque algo.
 
 Cambiar un esquema es agregarle una versión. Si ya hay una versión con la misma fecha «vigente desde» y ningún cobro
 la usa, se reemplaza. Si algún cobro la usa, no se puede: hay que elegir otra fecha.
@@ -965,10 +1061,10 @@ Lo liquidado pasa a 45,15 − 46,75 = −1,60, igual que lo asignado, y el saldo
 
 ## La base de datos
 
-Todo está en una migración aditiva: solo crea objetos con prefijo `pay_`, el esquema `private`, el bucket
-`comprobantes` y sus políticas. Si el proyecto ya tiene un esquema `private` o un bucket `comprobantes`, los
-reutiliza y les cambia permisos y políticas (el paso 1 de [«Pasar a producción»](../README.md#pasar-a-producción)
-dice qué mirar antes).
+Todo está en migraciones aditivas (cinco, de `20261110120000` a `20261114120000`): solo crean o cambian objetos con
+prefijo `pay_` y, la primera, además el esquema `private`, el bucket `comprobantes` y sus políticas. Si el proyecto
+ya tiene un esquema `private` o un bucket `comprobantes`, la primera los reutiliza y les cambia permisos y políticas
+(el paso 1 de [«Pasar a producción»](../README.md#pasar-a-producción) dice qué mirar antes).
 
 Columnas comunes de las 17 tablas:
 
@@ -994,9 +1090,9 @@ Columnas comunes de las 17 tablas:
 | `pay_beneficiaries` | Quienes reciben repartos: persona, empresa o cartera |
 | `pay_schemes` | Los esquemas de reparto (nombre) |
 | `pay_scheme_versions` | Las versiones de cada esquema: base, «Resto» y «vigente desde» |
-| `pay_scheme_lines` | Las líneas de cada versión: beneficiario y porcentaje |
+| `pay_scheme_lines` | Las líneas de cada versión: beneficiario, porcentaje y si no paga comisión (`fee_exempt`) |
 | `pay_transactions` | **Los cobros**, con sus montos, su estado y el desglose congelado |
-| `pay_allocations` | Lo que le toca a cada beneficiario de cada cobro |
+| `pay_allocations` | Lo que le toca a cada beneficiario de cada cobro, con su porcentaje y su base (`neto` o `bruto`) |
 | `pay_transaction_receipts` | Los comprobantes de un cobro (el archivo está en Storage; aquí, su ruta, tipo y tamaño) |
 | `pay_transaction_events` | El historial de cada cobro, con el antes y el después |
 | `pay_settlements` | Las liquidaciones a beneficiarios |
@@ -1029,6 +1125,17 @@ por fila, para poder guardar el cobro y su reparto juntos:
 - La suma de `pay_allocations` de un cobro es exactamente su `alloc_base_amount`. Borrar o cambiar a mano una fila
   del reparto se rechaza.
 - Un esquema válido: las líneas no pasan de 100 %; si suman menos hay «Resto»; el «Resto» no es además una línea.
+
+**Partes que no pagan comisión** (migración 5, `20261114120000_pasarelas_5_partes_sin_comision.sql`):
+
+- `pay_scheme_lines.fee_exempt` es la marca «No paga comisión» de cada línea. Vale `false` por defecto, así que las
+  líneas de antes la pagan y todo esquema y todo cobro dan lo mismo que antes.
+- La cuenta no la hace la base: la hace el motor y la congela en el desglose del cobro
+  (`rules.scheme.lines[].feeExempt`).
+- La base **no** comprueba que alguien quede pagando la comisión. Lo comprueban el motor y el servidor.
+- En `pay_allocations`, la fila de una parte que no pagó comisión lleva `base = 'bruto'`, y las demás `'neto'`.
+  Cada una lleva el porcentaje del esquema. La suma sigue siendo `alloc_base_amount`, que es el neto. Las
+  restricciones y los disparadores de antes lo admiten tal cual: la migración no los toca.
 
 **Nada apunta a datos de otro usuario.** Cada tabla tiene `unique (id, user_id)` y las claves foráneas son
 compuestas, con `user_id`. Tres van más lejos:
@@ -1114,7 +1221,7 @@ Exigen una sesión de usuario.
 | Función | Qué hace |
 |---|---|
 | `pay_save_transactions(p_items, p_skip_duplicates)` | Crea o actualiza de 1 a 500 cobros, cada uno con su reparto y su evento. Si uno falla, no queda nada de ninguno |
-| `pay_save_scheme(p)` | Si no llega `scheme_id`, crea el esquema. Si llega, le cambia el nombre (si viene `name`) y las notas (si viene la clave `notes`). En los dos casos le agrega una versión con sus líneas. Devuelve el esquema, la versión y su número |
+| `pay_save_scheme(p)` | Si no llega `scheme_id`, crea el esquema. Si llega, le cambia el nombre (si viene `name`) y las notas (si viene la clave `notes`). En los dos casos le agrega una versión con sus líneas. Cada línea trae `beneficiary_id`, `pct` y, desde la migración 5, `fee_exempt` (si no viene, `false`). Devuelve el esquema, la versión y su número |
 | `pay_create_gateway(p)` | Crea una pasarela con su primera tarifa («desde el inicio») y sus opciones |
 
 Quien llame a `pay_save_scheme` solo para agregar una versión no debe mandar `name` ni `notes`, salvo que quiera
@@ -1200,8 +1307,8 @@ Los rechazos de Storage se traducen por su código HTTP: sin segundo factor, arc
 repetido, más de 10 MB y tipo no admitido tienen cada uno su mensaje.
 
 El motor tiene además sus propios errores, que ya traen el mensaje en español: `PayStateError` (el cambio no
-corresponde al estado del cobro), `PayRuleError` (lo elegido no existe en la configuración) y los problemas de un
-esquema (`validateScheme`).
+corresponde al estado del cobro), `PayRuleError` (lo elegido no existe en la configuración, o nadie queda pagando la
+comisión: `nadie_paga_comision`) y los problemas de un esquema (`validateScheme`).
 
 ## Seguridad
 
@@ -1402,7 +1509,7 @@ definición de «por caer». Las filas (r) a (x) se tomaron al construir las pan
 | Decisión | Por qué | Qué cambia si el dueño decide lo contrario |
 |---|---|---|
 | **(a)** En un reembolso, la plataforma y las opciones se recalculan sobre el bruto vigente. Solo la comisión base de la pasarela puede quedar retenida | Es lo único coherente con E4, que da 3,20 de costo y no 9,70 | Si la plataforma o las opciones tampoco devuelven lo suyo, el costo de un reembolso total de E1 sería 9,70. Hay que cambiar el cálculo de esas dos líneas y las cifras de E4 y E5 |
-| **(b)** El costo de un reembolso o de una disputa baja el neto y se reparte como pérdida, con los mismos porcentajes | Con el esquema sobre el neto, la pérdida es de todos los que reparten | Si la pérdida la absorbe solo la empresa, el reparto de E4 sería 0,00 para todos y los saldos −45,15 · −27,09 · −18,06. Hace falta una regla nueva para sacar esos costos de la base del reparto |
+| **(b)** El costo de un reembolso o de una disputa baja el neto y se reparte como pérdida, con los mismos porcentajes, salvo las partes que no pagan comisión: su parte sale del bruto vigente y la pérdida la cargan las demás, en proporción a sus porcentajes ([E9b](#e9--una-parte-que-no-paga-comisión)) | Con el esquema sobre el neto, la pérdida es de todos los que reparten | Si la pérdida la absorbe solo la empresa, el reparto de E4 sería 0,00 para todos y los saldos −45,15 · −27,09 · −18,06. Hace falta una regla nueva para sacar esos costos de la base del reparto |
 | **(c)** Las cuotas fijas van en la moneda del cobro | No hay tipos de cambio en el libro | Si una cuota fija se cobra en otra moneda, hay que guardar su moneda y un tipo de cambio por fecha |
 | **(d)** Recalcular tiene dos modos. Por defecto, la tarifa vigente hoy | «Recalcular con la tarifa de hoy» era el pedido. El segundo modo sirve para corregir una tarifa mal cargada | Si el modo por defecto debe ser el de la fecha del cobro, se cambia en la pantalla. El motor ya exige que se le diga el modo |
 | **(e)** Editar solo vuelve a resolver las reglas de lo que cambió | Corregir una nota o un canal no debe cambiar en silencio la tarifa de un cobro viejo | Si editar debe traer siempre la configuración de hoy, cualquier edición cambiaría comisiones y repartos. Hoy eso se hace a propósito, con «Recalcular» |
@@ -1413,7 +1520,7 @@ definición de «por caer». Las filas (r) a (x) se tomaron al construir las pan
 | **(j)** Es una aplicación autónoma en `pasarelas/`, con su propia entrada y segundo factor. No es un módulo de otra plataforma | Lo decidió el dueño el 2026-11-09. El encargo original lo describía como módulo de una plataforma que ya tenía entrada, papelera y kit de interfaz | Para mudarlo a otra plataforma Next + Supabase: se llevan el motor, la migración y las pantallas, y se cambian la entrada y el kit por los de allá. Está preparado: rutas bajo `/pasarelas`, motor en una carpeta y todo en la base con prefijo `pay_` |
 | **(k)** La rama de trabajo es la de la sesión, no `pasarelas/v1` | La sesión solo puede empujar a su propia rama (su nombre está en el diseño, spec §1) | Renombrarla o abrir `pasarelas/v1` lo hace alguien con permiso. No cambia el código |
 | **(l)** Los patrones son propios | El encargo pedía copiar los de otro repositorio, y no se pudo leer | Si se consigue acceso, se ajustan nombres y estructura. El motor y la base no dependen de ellos. Las convenciones están en `AGENTS.md` |
-| **(m)** Todo se probó contra un Supabase local. No se tocó ningún proyecto remoto ni Vercel | El dueño decidió elegir la base remota al final | Cuando el dueño elija la base, se siguen los pasos de [«Pasar a producción»](../README.md#pasar-a-producción), en el README. Hasta entonces no hay nada publicado |
+| **(m)** Resuelta: está publicada desde el 10/11/2026, en Vercel y en un proyecto de Supabase compartido con otras apps del dueño ([«Dónde está publicada hoy»](../README.md#dónde-está-publicada-hoy), en el README) | Al construir, todo se probó contra un Supabase local y el dueño decidió elegir la base remota al final. Con el plan gratis no quedaba hueco para un proyecto propio | Para pasarla a un proyecto propio se siguen los pasos de [«Pasar a producción»](../README.md#pasar-a-producción), en el README, y además se copian las filas `pay_*` y los comprobantes |
 | **(n)** El costo de disputa es uno solo y desaparece si la disputa se gana | Así lo pide el encargo, y E6: al ganar, el cobro vuelve a las cifras de E1 | Según la documentación de Stripe consultada al construir (conviene confirmarla en su página de tarifas), desde junio de 2025 Stripe cobra un costo al recibir la disputa, que **no** devuelve aunque se gane, y otro al contestarla, que sí devuelve. Con Stripe, hoy el libro da por devuelto lo que no vuelve: cada disputa ganada deja el neto más alto que el real. Para reflejarlo, por pasarela: «el costo de disputa se devuelve si se gana» (sí o no), o partir el costo en dos. Es una migración aditiva, el motor y la pantalla de pasarelas, y E6 «ganada» ya no volvería a E1 |
 | **(o)** Las opciones no tienen monto mínimo | El encargo solo pedía porcentaje y cuota fija | Los depósitos instantáneos suelen tener una comisión mínima (0,50, por confirmar). En cobros chicos, el costo real del pago rápido sería mayor que el calculado. Hace falta un campo «mínimo» en la opción |
 | **(p)** Los días al depósito se cuentan desde la fecha del cobro en Nueva York | Es una sola regla para todas las pasarelas, y la fecha estimada se puede corregir a mano | Hay pasarelas que cuentan en UTC, que empiezan en el siguiente día hábil o que cuentan desde el retiro. Para afinar hace falta, por pasarela, la zona de corte y cómo trata un cobro en día inhábil |
@@ -1437,7 +1544,6 @@ Por orden de lo que más afecta al dinero:
    los beneficiarios o solo la empresa?
 4. **Pago rápido y días (o) y (p).** ¿El pago rápido tiene un mínimo? ¿Cómo cuenta los días cada pasarela?
 5. **«Por caer» (q).** ¿Así, o con una tercera cifra para lo retenido o devuelto?
-6. **Publicar (m).** Elegir la base remota y el proyecto de Vercel.
 
 Lo que hay que decidir para la fase C está aparte, en su
 [§9](#9-lo-que-el-dueño-tiene-que-decidir).
@@ -1451,9 +1557,10 @@ Lo que hay que decidir para la fase C está aparte, en su
 - Códigos de respaldo del segundo factor. Si se pierde el teléfono, se quita el factor desde el panel de Supabase.
   Por eso conviene registrar un segundo dispositivo.
 
-**Para producción.** No hay nada publicado. Los pasos (copia previa, aplicar la migración, ajustes de Auth, crear
-el usuario dueño y el proyecto de Vercel) están en [«Pasar a producción»](../README.md#pasar-a-producción), en el
-README.
+**Para producción.** Está publicada: dónde, con qué migraciones y qué saber del proyecto compartido, en
+[«Dónde está publicada hoy»](../README.md#dónde-está-publicada-hoy), en el README. Para armarla en un proyecto nuevo,
+los pasos (copia previa, aplicar las migraciones, ajustes de Auth, crear el usuario dueño y el proyecto de Vercel)
+están en [«Pasar a producción»](../README.md#pasar-a-producción), en el README.
 
 **Límites conocidos** que se notan al usar la app:
 
@@ -1552,8 +1659,8 @@ queda sin conexión. Es una decisión del dueño (§9).
 5. **Más formas de duplicar.** El mismo cobro puede llegar a mano, por CSV y por la API.
 6. **Dependencia de servicios ajenos.** Límites de frecuencia, retrasos y cambios de API de terceros.
 
-**Requisito previo.** Hoy no hay base remota ni proyecto en Vercel (decisión del 2026-11-09). Una pasarela no puede
-llamar a un equipo local. La fase C empieza después de publicar la app.
+**Requisito previo.** Una pasarela no puede llamar a un equipo local: la fase C necesita la app publicada. Lo está
+desde el 2026-11-10 ([«Dónde está publicada hoy»](../README.md#dónde-está-publicada-hoy), en el README).
 
 ### 2. Leer con claves restringidas de solo lectura
 

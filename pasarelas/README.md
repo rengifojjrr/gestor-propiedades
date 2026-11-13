@@ -30,7 +30,7 @@ npm run dev        # http://localhost:3000
 3. `npm run dev` y entra en http://localhost:3000 con ese correo y esa contraseña.
 
 `npm run db:stop` detiene el stack (los datos se conservan). `npm run db:reset` **borra** la base local y vuelve a
-aplicar la migración. Si alguien más usa el mismo stack, no hagas ninguno de los dos.
+aplicar las migraciones. Si alguien más usa el mismo stack, no hagas ninguno de los dos.
 
 **Desde el celular, por la red local, hace falta https**: fuera de un contexto seguro el navegador no da
 `crypto.randomUUID`, y sin él no funcionan registrar un cobro, subir comprobantes o logos, agregar opciones al crear
@@ -73,12 +73,14 @@ Desde el 10 de noviembre de 2026, en **https://pasarelas-rengifojjrr-6206s-proje
     | `pasarelas_2_pagos_internacionales` | `3d380e4` | `288d446c…` |
     | `pasarelas_3_ventanas_de_deposito` | `3d380e4` | `3397a10e…` |
     | `pasarelas_4_quien_paga_la_comision` | `ee9befa` | `eb659a8d…` |
+    | `pasarelas_5_partes_sin_comision` | `04ab658` | `2a3951c4…` |
 
-    Antes de la 4, todas las tablas `pay_*` se copiaron al esquema `pasarelas_copia_antes_4`, que la API no expone. Se
-    puede borrar cuando ya no haga falta.
-  - La huella del esquema coincide con la de una base local recién aplicada. La única diferencia: `service_role`
-    también escribe en las 4 vistas, por los permisos por defecto del proyecto alojado.
-  - No apareció ningún aviso de seguridad nuevo.
+    Antes de la 4, todas las tablas `pay_*` se copiaron al esquema `pasarelas_copia_antes_4`. Antes de la 5 se sacó
+    otra copia, en el esquema `pasarelas_copia_antes_5`. La API no expone ninguno de los dos. Se pueden borrar cuando
+    ya no hagan falta.
+  - Se comprobó después de cada publicación, la última tras la 5 (13/11/2026): la huella del esquema coincide con la
+    de una base local recién aplicada, y no apareció ningún aviso de seguridad nuevo. La única diferencia en la
+    huella: `service_role` también escribe en las 4 vistas, por los permisos por defecto del proyecto alojado.
   - Cada publicación se prueba en vivo con una cuenta de prueba.
 
 **Lo que hay que saber de ese proyecto compartido:**
@@ -102,10 +104,10 @@ El plan gratis permite **2 proyectos activos**, **pausa un proyecto tras una sem
 copias automáticas** (son de los planes de pago). Por eso la app trae «Exportar todo» (paso 7). Hay que crear un
 proyecto nuevo, o pausar o borrar uno que ya no se use para dejar el hueco.
 
-La migración agrega objetos `pay_`, el esquema `private`, el bucket privado `comprobantes` y sus políticas. Si el
-proyecto ya tiene un esquema `private` o un bucket `comprobantes`, los reutiliza y les cambia permisos y políticas:
-compruébalo antes (si ese bucket ya existe y es público, la migración se detiene). Si el proyecto ya tiene datos, haz
-la copia del paso 2.
+Las migraciones agregan objetos `pay_` y, la primera, además el esquema `private`, el bucket privado `comprobantes` y
+sus políticas. Si el proyecto ya tiene un esquema `private` o un bucket `comprobantes`, la primera los reutiliza y
+les cambia permisos y políticas: compruébalo antes (si ese bucket ya existe y es público, la migración se detiene).
+Si el proyecto ya tiene datos, haz la copia del paso 2.
 
 ### 2. Copia previa de esa base
 
@@ -139,24 +141,30 @@ pg_dump --version                                  # la misma versión mayor del
 pg_dump "$DB_URL" -Fc -f ~/copias-pasarelas/antes-de-pasarelas.dump
 ```
 
-### 3. Aplicar la migración
+### 3. Aplicar las migraciones
 
-Desde esta carpeta, con `psql`, **en una sola transacción**: si algo falla, no queda nada a medias.
+Son cinco y van todas, en orden: la app lee columnas de todas (por ejemplo, `pay_scheme_lines.fee_exempt`, de la
+5). Desde esta carpeta, con `psql`, **en una sola transacción**: si algo falla, no queda nada a medias.
 
 ```bash
 psql "$DB_URL" --single-transaction -v ON_ERROR_STOP=1 \
-  -f supabase/migrations/20261110120000_las_pasarelas_de_pago.sql
+  -f supabase/migrations/20261110120000_las_pasarelas_de_pago.sql \
+  -f supabase/migrations/20261111120000_pasarelas_2_pagos_internacionales.sql \
+  -f supabase/migrations/20261112120000_pasarelas_3_ventanas_de_deposito.sql \
+  -f supabase/migrations/20261113120000_pasarelas_4_quien_paga_la_comision.sql \
+  -f supabase/migrations/20261114120000_pasarelas_5_partes_sin_comision.sql
 ```
 
-Al final la propia migración comprueba que toda tabla `pay_` tiene RLS y la política del segundo factor, y que el
-bucket tiene la suya; si no, falla y no se aplica nada. **No uses `supabase db push`.**
+Al final, las migraciones 1 a 4 comprueban que toda tabla `pay_` tiene RLS y la política del segundo factor (la 1,
+además, que el bucket tiene la suya); si no, fallan y no se aplica nada. **No uses `supabase db push`.**
 
-### 4. Registrar la versión, solo si después usarás la CLI con ese proyecto
+### 4. Registrar las versiones, solo si después usarás la CLI con ese proyecto
 
-Así la CLI sabe que la migración ya está aplicada y no intenta repetirla:
+Así la CLI sabe que las migraciones ya están aplicadas y no intenta repetirlas:
 
 ```bash
-npx supabase migration repair 20261110120000 --status applied --remote="$DB_URL"
+npx supabase migration repair 20261110120000 20261111120000 20261112120000 20261113120000 20261114120000 \
+  --status applied --remote="$DB_URL"
 ```
 
 Sin `--remote`, la CLI trabaja contra el stack local.
@@ -218,7 +226,7 @@ No corras `npm run seed` contra producción: son datos de ejemplo.
 | `src/lib/pasarelas/` | El motor: cálculos puros (dinero, fechas, reglas, resumen, importador) con sus pruebas |
 | `src/server/pasarelas/` | Lecturas, escrituras y Server Actions; hablan con Supabase |
 | `src/app/`, `src/components/` | Pantallas y componentes |
-| `supabase/` | La migración y la configuración del stack local |
+| `supabase/` | Las migraciones y la configuración del stack local |
 | `scripts/` | Stack local, semilla demo, capturas e íconos |
 | `tests/integration/`, `e2e/` | Pruebas contra el Supabase local y de punta a punta |
 | `docs/` | [`PASARELAS.md`](docs/PASARELAS.md), capturas, diseño y plan |

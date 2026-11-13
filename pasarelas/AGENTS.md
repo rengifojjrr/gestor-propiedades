@@ -29,6 +29,16 @@ Qué es y por qué: [`docs/PASARELAS.md`](docs/PASARELAS.md). Diseño: `docs/sup
    - Lo facturado es `gross − buyerFees` y las comisiones del negocio, `fees − buyerFees`.
    - En las vistas, `gross` y `fees` conservan su significado de siempre.
    - No inventes otra regla en un componente: llama a esa función.
+10. **Partes que no pagan comisión** (`pay_scheme_lines.fee_exempt`, congelada en `rules.scheme.lines[].feeExempt`).
+    La cuenta vive solo en el motor: `allocation` y `sparedAmounts` de `breakdown.ts`. Las marcas las pone `rules.ts`
+    (las del esquema, o las de ese cobro con `feeExemptIds`) y `feeExemptIdsOf` las lee.
+    - Solo aplica con la comisión a cargo de nosotros y el reparto sobre el neto. Si no, la marca no cambia nada.
+    - La parte exenta recibe su parte del bruto vigente (`allocate`); las demás se reparten neto − exentas en
+      proporción a sus porcentajes (`allocateInProportion`). Las dos, por mayor resto (`allocate.ts`).
+    - Si nadie queda pagando (`someonePaysFees` de `schemes.ts`), lanza `PayRuleError("nadie_paga_comision")`. La
+      base no lo comprueba.
+    - En `pay_allocations`, la fila exenta va con `base = 'bruto'` (`allocationsOf` de `write.ts`). No repitas la
+      cuenta en un componente.
 
 ## Comandos (desde `pasarelas/`)
 
@@ -85,6 +95,9 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 - `error.tsx` recibe `{ error: unknown; retry; reset }` y es `'use client'`.
 - Tras mutar en una Server Action hay que llamar `revalidatePath('<ruta>')` (o `refresh()` si solo cambia la pantalla
   actual): si no, la pantalla queda vieja. `revalidateTag('x')` con un solo argumento no compila.
+- Dentro de un mismo render, Next **memoiza los `fetch` GET iguales** (misma URL y cabeceras), y el cliente de
+  Supabase lee con `fetch`. Si escribes y vuelves a leer lo mismo en el mismo render, la segunda lectura devuelve la
+  respuesta de antes de escribir. Usa lo que devolvió la escritura (así lo hace `getPayConfig` con `seedHolidays`).
 - Una Server Action es un **endpoint POST público**: verifica la sesión y valida con Zod dentro de cada una.
 - **`cacheComponents` va apagado a propósito** (el arranque oficial lo enciende): todo es privado y por usuario, y cada
   página lee la sesión, así que es dinámica. No uses `force-cache`, `unstable_cache`, `'use cache'` ni variables de
@@ -213,7 +226,7 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 
 ## Pruebas
 
-- Motor: pruebas puras junto al código, con los casos exactos del spec (E1–E6, F1–F3) y los de la guía (E7–E8). Cobertura 100 %.
+- Motor: pruebas puras junto al código, con los casos exactos del spec (E1–E6, F1–F3) y los de la guía (E7–E9). Cobertura 100 %.
 - En Vitest, `server-only` está simulado (`vitest.setup.ts`). `cookies()` y `headers()` no existen fuera de una
   petición: lo que las use se prueba de punta a punta.
 - Integración: dos usuarios reales del stack local; cada prueba crea los suyos y no depende de datos de otra.
@@ -238,6 +251,9 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 - `<Field>` lleva **un solo control** como hijo directo; si ese control trae su propio `id`, la etiqueta apunta a él.
 - axe se pasa con `expectNoSeriousAxe` de `e2e/axe.ts` (concilia los tipos de las dos versiones de `playwright-core`
   del lockfile). Si hace falta desde otro archivo de ayuda, se reexporta de ahí: no se duplica.
+- Si la pantalla pudo enseñar un aviso pasajero, antes de axe va `await waitForStillToasts(page)` de `e2e/avisos.ts`.
+  Un aviso a medio entrar o a medio irse es translúcido y axe lo mide como falta de contraste. No copies la espera
+  en un spec: llama al ayudante.
 
 ## Commits
 
