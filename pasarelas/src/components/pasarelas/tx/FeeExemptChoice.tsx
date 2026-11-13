@@ -15,11 +15,14 @@ export function FeeExemptChoice({
   question,
   value,
   onChange,
+  startsFrom = "esquema",
 }: {
   question: ExemptQuestion;
   /** Los beneficiarios marcados. */
   value: readonly string[];
   onChange: (ids: string[]) => void;
+  /** De dónde salen las marcas: del esquema (al registrar) o de cómo quedó el cobro (al editar). */
+  startsFrom?: "esquema" | "cobro";
 }) {
   const hintId = useId();
 
@@ -36,8 +39,9 @@ export function FeeExemptChoice({
     <fieldset className="flex min-w-0 flex-col gap-1" aria-describedby={hintId}>
       <legend className="mb-1 text-sm font-semibold">¿Alguien no paga comisión?</legend>
       <p id={hintId} className="text-sm text-ink-soft">
-        Su parte sale del bruto y la comisión la pagan los demás. Viene como dice el esquema; lo que cambies vale solo
-        para este cobro.
+        Su parte sale del bruto y la comisión la pagan los demás.{" "}
+        {startsFrom === "esquema" ? "Viene como dice el esquema" : "Viene como quedó este cobro"}; lo que cambies vale
+        solo para este cobro.
       </p>
       {question.lines.map((line) => (
         <Checkbox

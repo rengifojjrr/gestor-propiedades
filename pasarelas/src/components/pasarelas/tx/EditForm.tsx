@@ -268,6 +268,7 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
           question={exempt}
           value={exemptIds}
           onChange={(ids) => setExemptChoice({ schemeId: chosenScheme, ids })}
+          startsFrom={sameScheme ? "cobro" : "esquema"}
         />
       ) : null}
 
