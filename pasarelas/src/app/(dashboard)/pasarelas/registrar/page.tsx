@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { RegisterForm, type RegisterSelection } from "@/components/pasarelas/registrar/RegisterForm";
 import { ButtonLink, EmptyState, PageHeader } from "@/components/ui";
 import { requireSession } from "@/lib/auth/session";
-import { instantToLocalInput } from "@/lib/pasarelas";
+import { feeExemptIdsOf, instantToLocalInput } from "@/lib/pasarelas";
 import { createClient } from "@/lib/supabase/server";
 import { getPayConfig } from "@/server/pasarelas/queries/session-config";
 import { lastTx } from "@/server/pasarelas/queries/transactions";
@@ -56,6 +56,7 @@ export default async function RegistrarPage() {
           schemeId: tx.schemeId,
           currency: tx.currency,
           feesPaidBy: tx.feesPaidBy,
+          feeExemptIds: feeExemptIdsOf(tx.breakdown.rules),
         };
 
   return <RegisterForm cfg={cfg} now={instantToLocalInput(new Date().toISOString())} last={last} />;

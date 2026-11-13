@@ -10,11 +10,13 @@ import {
 } from "@/components/pasarelas/gateways/international";
 import { InternationalChoice } from "@/components/pasarelas/gateways/InternationalChoice";
 import { ExtrasToggles } from "@/components/pasarelas/registrar/ExtrasToggles";
+import { FeeExemptChoice } from "@/components/pasarelas/tx/FeeExemptChoice";
+import { exemptIdsOf, exemptQuestion, frozenExemptQuestion } from "@/components/pasarelas/tx/feeExempt";
 import { BUYER_AMOUNT_HINT, FeesPaidByChoice } from "@/components/pasarelas/tx/FeesPaidByChoice";
 import { Alert, Button, ButtonLink, Field, Input, MoneyInput, Select, Textarea, notify } from "@/components/ui";
-import { localInputToInstant } from "@/lib/pasarelas/dates";
+import { isISODate, localInputToInstant } from "@/lib/pasarelas/dates";
 import { formatAmount, parseMoney } from "@/lib/pasarelas/money";
-import { defaultExtraIds } from "@/lib/pasarelas/rules";
+import { defaultExtraIds, feeExemptIdsOf } from "@/lib/pasarelas/rules";
 import type { PayConfig, TxSnapshot } from "@/lib/pasarelas/types";
 import { PAY_STATE_TEXT } from "@/lib/pasarelas/write";
 import { editTransaction } from "@/server/pasarelas/actions/transactions";
@@ -43,6 +45,10 @@ const sameIds = (a: readonly string[], b: readonly string[]): boolean =>
  * fecha estimada se cambia aparte, desde el detalle. «¿El pago fue nacional o internacional?» parte de lo guardado
  * (si el desglose trae el recargo internacional) y, como las opciones, viaja solo si cambia. «¿Quién paga la
  * comisión?» también: cambiarla recalcula el reparto, como cambiar una opción.
+ *
+ * «¿Alguien no paga comisión?» (si la pagamos nosotros y el esquema reparte el neto) parte de las marcas congeladas
+ * del cobro; con otro esquema, de las de ese esquema. Viaja si cambia, y también si cambian el esquema o el día (que
+ * vuelven a elegir la versión del esquema): así se guarda lo que se ve.
  *
  * Manda la versión del cobro que se abrió (`expectedUpdatedAt`): si otra pestaña lo cambió entretanto, el servidor
  * da conflicto y no se pisa lo de la otra.
@@ -83,6 +89,8 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
   const [schemeId, setSchemeId] = useState(tx.schemeId ?? "");
   const [bankAccountId, setBankAccountId] = useState(tx.bankAccountId ?? "");
   const [note, setNote] = useState(tx.note ?? "");
+  // Lo marcado en «¿Alguien no paga comisión?», con el esquema para el que se marcó (con otro, no cuenta).
+  const [exemptChoice, setExemptChoice] = useState<{ schemeId: string | null; ids: string[] } | null>(null);
   const [error, setError] = useState<ActionFailure | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [pending, startTransition] = useTransition();
@@ -99,6 +107,25 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
   const international =
     gatewayId === tx.gatewayId && frozen.international !== null ? frozen.international : activeInternational(gateway);
   const appliedExtraIds = withOrigin(extraIds, international, origin);
+
+  // «¿Alguien no paga comisión?»: el mismo esquema el mismo día pregunta por lo congelado; otro esquema u otro día,
+  // por la versión que regirá. En el mismo esquema parte de las marcas de este cobro.
+  const frozenExemptIds = feeExemptIdsOf(tx.breakdown.rules);
+  const chosenScheme = schemeId || null;
+  const sameScheme = chosenScheme === tx.schemeId;
+  const day = occurredLocal.slice(0, 10);
+  const sameDay = !isISODate(day) || day === initialLocal.slice(0, 10);
+  const exempt =
+    sameScheme && sameDay
+      ? frozenExemptQuestion(feesPaidBy, tx.breakdown.rules.scheme)
+      : exemptQuestion(cfg, feesPaidBy, chosenScheme, sameDay ? tx.occurredOn : day);
+  const chosenExempt =
+    exemptChoice !== null && exemptChoice.schemeId === chosenScheme
+      ? exemptChoice.ids
+      : sameScheme
+        ? frozenExemptIds
+        : null;
+  const exemptIds = exempt === null ? null : exemptIdsOf(exempt, chosenExempt);
 
   function chooseCompany(next: string) {
     setCompanyId(next);
@@ -126,6 +153,9 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
     // Con otra pasarela van siempre sus opciones: las de la anterior no son suyas.
     if (gatewayId !== tx.gatewayId || !sameIds(appliedExtraIds, frozenExtras)) out.extraIds = appliedExtraIds;
     if (feesPaidBy !== tx.feesPaidBy) out.feesPaidBy = feesPaidBy;
+    if (exemptIds !== null && (!sameScheme || !sameDay || !sameIds(exemptIds, frozenExemptIds))) {
+      out.feeExemptIds = exemptIds;
+    }
     if (parseMoney(amount) !== tx.grossOriginal) out.grossOriginal = amount;
     if (currency !== tx.currency) out.currency = currency;
     if (occurredLocal !== initialLocal) out.occurredAt = localInputToInstant(occurredLocal);
@@ -232,6 +262,14 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
       ) : null}
 
       <FeesPaidByChoice value={feesPaidBy} onChange={setFeesPaidBy} />
+
+      {exempt !== null && exemptIds !== null ? (
+        <FeeExemptChoice
+          question={exempt}
+          value={exemptIds}
+          onChange={(ids) => setExemptChoice({ schemeId: chosenScheme, ids })}
+        />
+      ) : null}
 
       <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-start gap-3">
         <Field

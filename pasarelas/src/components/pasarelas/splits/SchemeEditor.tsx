@@ -6,6 +6,7 @@ import { useActionState, useEffect, useId, useRef, useState } from "react";
 import {
   Alert,
   Button,
+  Checkbox,
   DateText,
   Field,
   IconButton,
@@ -31,11 +32,11 @@ export type SchemeDraft = {
   name: string;
   base: AllocBase;
   remainderBeneficiaryId: string | null;
-  lines: { beneficiaryId: string; pct: Pct }[];
+  lines: { beneficiaryId: string; pct: Pct; feeExempt: boolean }[];
   effectiveFrom: ISODate;
 };
 
-type LineDraft = { key: string; beneficiaryId: string; pct: string };
+type LineDraft = { key: string; beneficiaryId: string; pct: string; feeExempt: boolean };
 type FieldErrors = Record<string, string[] | undefined> | undefined;
 type Choice = { id: string; name: string };
 
@@ -53,8 +54,9 @@ const schemeHref = (schemeId: string) => `/pasarelas/repartos/esquemas/${schemeI
 
 /**
  * El editor de un esquema de reparto: el nombre, sobre qué se reparte, cada beneficiario con su porcentaje (la suma
- * se ve mientras se escribe), quién recibe el «Resto» y desde cuándo rige. Mientras el esquema no valga (el mismo
- * `validateScheme` que usa el servidor) el botón no guarda y se dice por qué.
+ * se ve mientras se escribe) y, sobre el neto, su marca «No paga comisión»; quién recibe el «Resto» (que no se
+ * marca) y desde cuándo rige. Mientras el esquema no valga (el mismo `validateScheme` que usa el servidor, que pide
+ * que alguien quede pagando la comisión) el botón no guarda y se dice por qué.
  *
  * Sin `schemeId` crea el esquema. Con `schemeId` le agrega una versión nueva (las anteriores no se tocan), que no
  * puede regir desde la misma fecha que una de sus `versions`: la base la reemplazaría, y eso es corregir. Con
@@ -89,7 +91,12 @@ export function SchemeEditor({
   const [base, setBase] = useState<AllocBase>(initial.base);
   const [remainder, setRemainder] = useState(initial.remainderBeneficiaryId ?? "");
   const [lines, setLines] = useState<LineDraft[]>(() =>
-    initial.lines.map((line, index) => ({ key: `inicial-${index}`, beneficiaryId: line.beneficiaryId, pct: pctDraft(line.pct) })),
+    initial.lines.map((line, index) => ({
+      key: `inicial-${index}`,
+      beneficiaryId: line.beneficiaryId,
+      pct: pctDraft(line.pct),
+      feeExempt: line.feeExempt,
+    })),
   );
   const [sinceStart, setSinceStart] = useState(initial.effectiveFrom === SINCE_START);
   const [date, setDate] = useState(initial.effectiveFrom === SINCE_START ? defaultDate : initial.effectiveFrom);
@@ -109,8 +116,14 @@ export function SchemeEditor({
 
   const choices = [...beneficiaries, ...created.filter((b) => !beneficiaries.some((known) => known.id === b.id))];
   const nameOf = (id: string) => choices.find((b) => b.id === id)?.name ?? "";
+  // «No paga comisión» solo cuenta sobre el neto: sobre el bruto no cambia nada, así que no se ofrece ni se guarda.
+  const exemptOf = (line: LineDraft) => base === "neto" && line.feeExempt;
   // Lo que se valida: cada porcentaje ya leído; uno que no se puede leer va vacío y no pasa.
-  const parsed = lines.map((line) => ({ beneficiaryId: line.beneficiaryId, pct: parsePct(line.pct) ?? "" }));
+  const parsed = lines.map((line) => ({
+    beneficiaryId: line.beneficiaryId,
+    pct: parsePct(line.pct) ?? "",
+    feeExempt: exemptOf(line),
+  }));
   const issues = validateScheme(parsed, remainder || null);
   const total = schemeTotal(parsed.filter((line) => line.pct !== ""));
   const missing = normPct(dec("100").minus(dec(total)));
@@ -125,7 +138,7 @@ export function SchemeEditor({
   function addCreated(beneficiary: Choice) {
     const key = crypto.randomUUID();
     setCreated((rows) => [...rows, beneficiary]);
-    setLines((rows) => [...rows, { key, beneficiaryId: beneficiary.id, pct: "" }]);
+    setLines((rows) => [...rows, { key, beneficiaryId: beneficiary.id, pct: "", feeExempt: false }]);
     setFocusLine(key);
   }
 
@@ -136,7 +149,7 @@ export function SchemeEditor({
       base,
       remainderBeneficiaryId: remainder || null,
       effectiveFrom,
-      lines: lines.map((line) => ({ beneficiaryId: line.beneficiaryId, pct: line.pct })),
+      lines: lines.map((line) => ({ beneficiaryId: line.beneficiaryId, pct: line.pct, feeExempt: exemptOf(line) })),
     };
     let result;
     try {
@@ -214,13 +227,26 @@ export function SchemeEditor({
                   <Trash2 aria-hidden className="size-5" />
                 </IconButton>
               </div>
+              {base === "neto" ? (
+                <Checkbox
+                  label="No paga comisión"
+                  hint="Su parte sale del bruto; la comisión la pagan los demás."
+                  checked={line.feeExempt}
+                  onChange={(event) => updateLine(line.key, { feeExempt: event.currentTarget.checked })}
+                />
+              ) : null}
             </fieldset>
           ))}
           <div className="flex flex-wrap gap-2">
             <Button
               disabled={next === undefined}
               onClick={() => {
-                if (next) setLines((rows) => [...rows, { key: crypto.randomUUID(), beneficiaryId: next.id, pct: "" }]);
+                if (next) {
+                  setLines((rows) => [
+                    ...rows,
+                    { key: crypto.randomUUID(), beneficiaryId: next.id, pct: "", feeExempt: false },
+                  ]);
+                }
               }}
             >
               <Plus aria-hidden className="size-5" />

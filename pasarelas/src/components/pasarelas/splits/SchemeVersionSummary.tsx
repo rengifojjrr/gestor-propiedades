@@ -1,4 +1,4 @@
-import { DateText, Percent } from "@/components/ui";
+import { Badge, DateText, Percent } from "@/components/ui";
 import { dec, normPct } from "@/lib/pasarelas/decimal";
 import { schemeTotal } from "@/lib/pasarelas/schemes";
 import type { SchemeVersionCfg } from "@/lib/pasarelas/types";
@@ -15,7 +15,10 @@ export function SinceText({ from }: { from: string }) {
   );
 }
 
-/** Una versión de un esquema: cada beneficiario con su porcentaje, quién recibe el resto, la base y desde cuándo. */
+/**
+ * Una versión de un esquema: cada beneficiario con su porcentaje (y, sobre el neto, si no paga comisión), quién
+ * recibe el resto, la base y desde cuándo.
+ */
 export function SchemeVersionSummary({
   version,
   nameOf,
@@ -29,7 +32,10 @@ export function SchemeVersionSummary({
       <ul className="flex flex-col gap-1">
         {version.lines.map((line) => (
           <li key={line.beneficiaryId} className="flex items-baseline justify-between gap-3">
-            <span className="min-w-0 break-words">{nameOf(line.beneficiaryId)}</span>
+            <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+              <span className="min-w-0 break-words">{nameOf(line.beneficiaryId)}</span>
+              {version.base === "neto" && line.feeExempt ? <Badge>no paga comisión</Badge> : null}
+            </span>
             <Percent value={line.pct} />
           </li>
         ))}

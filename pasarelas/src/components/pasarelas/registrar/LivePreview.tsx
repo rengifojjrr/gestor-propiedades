@@ -34,6 +34,8 @@ export type PreviewInput = {
   manualEstimate: string;
   /** Quién paga la comisión: con «comprador», el reparto va sobre lo que queda. */
   feesPaidBy: FeesPaidBy;
+  /** Quiénes no pagan comisión en este cobro, si se preguntó; sin pregunta, las marcas del esquema. */
+  feeExemptIds?: string[];
 };
 
 type Preview =
@@ -70,6 +72,7 @@ function previewOf(cfg: PayConfig, input: PreviewInput): Preview {
     extraIds: input.extraIds,
     schemeId: input.schemeId,
     occurredOn,
+    feeExemptIds: input.feeExemptIds,
   };
   try {
     const rules = resolveRules(cfg, selection);

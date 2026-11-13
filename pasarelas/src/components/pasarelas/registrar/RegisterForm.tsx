@@ -21,10 +21,12 @@ import {
 } from "@/components/pasarelas/receipts/check";
 import { downscaleImage } from "@/components/pasarelas/receipts/downscale";
 import { uploadReceipt } from "@/components/pasarelas/receipts/upload";
+import { FeeExemptChoice } from "@/components/pasarelas/tx/FeeExemptChoice";
+import { exemptIdsOf, exemptQuestion } from "@/components/pasarelas/tx/feeExempt";
 import { BUYER_AMOUNT_HINT, FeesPaidByChoice } from "@/components/pasarelas/tx/FeesPaidByChoice";
 import { Alert, Button, Field, Input, Money, MoneyInput, PageHeader, Select, Textarea, notify } from "@/components/ui";
 import { notifyAction } from "@/components/ui/notify";
-import { instantToLocalInput, localInputToInstant } from "@/lib/pasarelas/dates";
+import { instantToLocalInput, isISODate, localInputToInstant } from "@/lib/pasarelas/dates";
 import { parseMoney } from "@/lib/pasarelas/money";
 import { defaultExtraIds } from "@/lib/pasarelas/rules";
 import { LIFECYCLE_LABEL } from "@/lib/pasarelas/status";
@@ -45,6 +47,8 @@ export type RegisterSelection = {
   currency: string;
   /** Quién pagó la comisión: «Repetir el último» lo repite. */
   feesPaidBy: FeesPaidBy;
+  /** Quiénes no pagaron comisión en ese cobro (las marcas congeladas): también se repiten, con el mismo esquema. */
+  feeExemptIds: string[];
 };
 
 export type RegisterFormProps = {
@@ -133,7 +137,8 @@ async function attachReceipt(file: File, transactionId: string): Promise<Receipt
 
 /**
  * «Registrar cobro» en un solo paso, en el orden del spec: empresa → canal → pasarela (con sus opciones) → quién
- * paga la comisión → monto y moneda → fecha y hora → referencia → comprobante, y lo demás en «Más opciones». Si la
+ * paga la comisión (y, si la pagamos nosotros con un esquema sobre el neto, «¿Alguien no paga comisión?») → monto y
+ * moneda → fecha y hora → referencia → comprobante, y lo demás en «Más opciones». Si la
  * comisión la paga el comprador, el monto es lo que pagó él y el reparto va sobre lo que queda. La vista previa se calcula al
  * momento con el mismo motor que el servidor; lo que se guarda lo vuelve a calcular el servidor.
  *
@@ -182,6 +187,8 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
 
   const [moreOpen, setMoreOpen] = useState(false);
   const [schemeId, setSchemeId] = useState(() => companyDefaults(companyId).schemeId);
+  // Lo que se marcó en «¿Alguien no paga comisión?», con el esquema para el que se marcó (con otro, no cuenta).
+  const [exemptChoice, setExemptChoice] = useState<{ schemeId: string; ids: string[] } | null>(null);
   const [bankAccountId, setBankAccountId] = useState("");
   const [manualEstimate, setManualEstimate] = useState("");
   const [status, setStatus] = useState<InitialStatus>("registrado");
@@ -224,6 +231,11 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
   // Si la pasarela cobra un recargo a los pagos internacionales, se pregunta; con «Internacional» se aplica.
   const international = activeInternational(gateway);
   const appliedExtraIds = withOrigin(extraIds, international, origin);
+  // «¿Alguien no paga comisión?»: con la versión del esquema del día del cobro (hoy, mientras la fecha no se lea).
+  const occurredDay = occurredLocal.slice(0, 10);
+  const exempt = exemptQuestion(cfg, feesPaidBy, schemeId === "" ? null : schemeId, isISODate(occurredDay) ? occurredDay : today);
+  const exemptIds =
+    exempt === null ? undefined : exemptIdsOf(exempt, exemptChoice?.schemeId === schemeId ? exemptChoice.ids : null);
 
   const canRepeat =
     last !== null &&
@@ -267,6 +279,7 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
     setFeesPaidBy(last.feesPaidBy);
     setCurrency(last.currency);
     setSchemeId(activeScheme && last.schemeId !== null ? last.schemeId : "");
+    setExemptChoice(activeScheme && last.schemeId !== null ? { schemeId: last.schemeId, ids: last.feeExemptIds } : null);
   }
 
   function pickReceipt(picked: File | null) {
@@ -341,6 +354,7 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
         bankAccountId: bankAccountId === "" ? null : bankAccountId,
         estimatedDepositOn: manualEstimate === "" ? null : manualEstimate,
         feesPaidBy,
+        feeExemptIds: exemptIds,
       });
       if (!result.ok) {
         const errors = Object.fromEntries(
@@ -547,6 +561,14 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
 
           <FeesPaidByChoice value={feesPaidBy} onChange={setFeesPaidBy} />
 
+          {exempt !== null && exemptIds !== undefined ? (
+            <FeeExemptChoice
+              question={exempt}
+              value={exemptIds}
+              onChange={(ids) => setExemptChoice({ schemeId, ids })}
+            />
+          ) : null}
+
           <div className="grid grid-cols-[minmax(0,1fr)_6rem] items-start gap-3">
             <Field
               label="Monto"
@@ -678,6 +700,7 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
               amount,
               manualEstimate,
               feesPaidBy,
+              feeExemptIds: exemptIds,
             }}
           />
           {/* Junto a «Guardar»: en el celular es lo que está a la vista al terminar de guardar. */}

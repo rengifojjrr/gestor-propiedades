@@ -82,6 +82,65 @@ describe("AllocationList", () => {
     expect(markup).toContain("Sobre el neto: -$");
   });
 
+  describe("partes que no pagan comisión", () => {
+    /** E9: 1000,00 por Stripe, sin opciones ni canal, con el 50/30/20 sobre el neto y `exempt` sin comisión. */
+    function e9(exempt: readonly string[], feesPaidBy: "nosotros" | "comprador" = "nosotros") {
+      const cfg = cfgDemo();
+      const version = cfg.schemes[0]?.versions[0];
+      if (version === undefined) throw new Error("Falta el esquema de ejemplo");
+      version.lines = version.lines.map((line) => ({ ...line, feeExempt: exempt.includes(line.beneficiaryId) }));
+      const rules = resolveRules(cfg, { ...E1, channelId: null, extraIds: [] });
+      return compute(rules, { ...PAID, grossOriginal: "1000.00", feesPaidBy }, "USD");
+    }
+
+    it("E9: la línea de C dice «no paga comisión» y una frase explica la cuenta", () => {
+      const markup = html(e9([DEMO.beneficiaryIds.c]));
+      expect(items(markup)).toEqual([
+        "Grupo A 50 % $481,69",
+        "Grupo B 30 % $289,01",
+        "Grupo C no paga comisión 20 % $200,00",
+      ]);
+      expect(text(markup)).toContain(
+        "Grupo C no paga comisión: su parte es el 20 % del bruto. La comisión la pagan los demás.",
+      );
+      expect(text(markup)).toContain("Sobre el neto: $970,70");
+    });
+
+    it("con dos partes sin comisión, la frase las nombra a las dos", () => {
+      const markup = html(e9([DEMO.beneficiaryIds.a, DEMO.beneficiaryIds.c]));
+      expect(text(markup)).toContain(
+        "Grupo A y Grupo C no pagan comisión: sus partes son el 50 % y el 20 % del bruto. La comisión la pagan los demás.",
+      );
+      expect(items(markup)).toEqual([
+        "Grupo A no paga comisión 50 % $500,00",
+        "Grupo B 30 % $270,70",
+        "Grupo C no paga comisión 20 % $200,00",
+      ]);
+    });
+
+    it("con tres o más, separa con comas y la última con «y»", () => {
+      const cfg = cfgDemo();
+      const version = cfg.schemes[0]?.versions[0];
+      if (version === undefined) throw new Error("Falta el esquema de ejemplo");
+      version.lines = [
+        ...version.lines.map((line) => ({ ...line, pct: "25", feeExempt: true })),
+        { beneficiaryId: "ben-d", pct: "25", feeExempt: false },
+      ];
+      cfg.beneficiaries.push({ id: "ben-d", name: "Grupo D", kind: "persona", active: true });
+      const b = compute(resolveRules(cfg, { ...E1, channelId: null, extraIds: [] }), PAID, "USD");
+      // `text` cambia cada etiqueta por un espacio: el que queda antes de la coma no está en la pantalla.
+      expect(text(html(b)).replaceAll(" ,", ",")).toContain(
+        "Grupo A, Grupo B y Grupo C no pagan comisión: sus partes son el 25 %, el 25 % y el 25 % del bruto.",
+      );
+    });
+
+    it("si pagó el comprador la marca no cuenta: ni la etiqueta ni la frase", () => {
+      const markup = text(html(e9([DEMO.beneficiaryIds.c], "comprador")));
+      expect(markup).not.toContain("no paga comisión");
+      expect(markup).not.toContain("del bruto");
+    });
+  });
+
   it("sin esquema dice que el cobro no se reparte", () => {
     const markup = html(compute(resolveRules(cfgDemo(), { ...E1, schemeId: null }), PAID, "USD"));
     expect(markup).not.toContain("<li");

@@ -39,7 +39,7 @@ export default async function NuevoEsquemaPage() {
               name: "",
               base: "neto",
               remainderBeneficiaryId: null,
-              lines: first === undefined ? [] : [{ beneficiaryId: first.id, pct: "" }],
+              lines: first === undefined ? [] : [{ beneficiaryId: first.id, pct: "", feeExempt: false }],
               effectiveFrom: SINCE_START,
             }}
             beneficiaries={beneficiaries}
