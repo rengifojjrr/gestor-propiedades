@@ -27,6 +27,16 @@ export const STATUS_CHANGE_LABEL: Record<StatusChange, string> = {
 };
 
 /**
+ * Lo que se pregunta antes de revertir un depósito, igual en el detalle (`TxActions`) y en el menú de la lista: el
+ * cobro vuelve a «en tránsito» y se pierde la fecha real del depósito.
+ */
+export const REVERT_DEPOSIT_CONFIRM = {
+  title: "¿Revertir el depósito?",
+  description: "El cobro vuelve a «En tránsito» y se borra la fecha real del depósito.",
+  confirmLabel: "Revertir depósito",
+} as const;
+
+/**
  * Los cambios de estado que el motor admite para ese cobro (`allowedActions`). En uno ya depositado, «Marcar
  * depositado» solo cambiaría la fecha del depósito, no el estado: eso queda en el detalle. En la papelera no sale
  * ninguno (ahí solo se restaura): ese cobro no tiene menú.

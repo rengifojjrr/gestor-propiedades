@@ -2,6 +2,7 @@
 
 import { ChevronDown } from "lucide-react";
 import { useState, useSyncExternalStore, useTransition } from "react";
+import { flushSync } from "react-dom";
 import { ConfirmDialog, Dialog, cn, notify } from "@/components/ui";
 import { STATUS_LABEL, displayStatus } from "@/lib/pasarelas";
 import type { ISODate } from "@/lib/pasarelas/types";
@@ -12,12 +13,19 @@ import { DialogActionError } from "../ActionError";
 import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { DepositDialog } from "./DepositDialog";
 import { STALE_TEXT } from "./plural";
-import { STATUS_CHANGE_LABEL, statusChanges, txName, type StatusChange } from "./statusChanges";
+import { STATUS_MENU_ATTR, useTxSelection } from "./TxBulkBar";
+import {
+  REVERT_DEPOSIT_CONFIRM,
+  STATUS_CHANGE_LABEL,
+  statusChanges,
+  txName,
+  type StatusChange,
+} from "./statusChanges";
 
 /** `useSyncExternalStore` sin nada que escuchar: solo distingue el HTML del servidor de la página ya hidratada. */
 const noSubscription = () => () => {};
 
-type Open = "menu" | "deposito" | "fallido" | null;
+type Open = "menu" | "deposito" | "revertir" | "fallido" | null;
 
 export type TxStatusMenuProps = {
   tx: TxListItem;
@@ -45,7 +53,9 @@ export function TxStatusMenu(props: TxStatusMenuProps) {
  * El botón y sus diálogos. El menú es un diálogo (en el celular, una hoja abajo): atrapa el foco, Escape lo cierra
  * y el foco vuelve al botón. Las opciones que no piden nada más corren ahí mismo; si fallan, el error (o la duda de
  * un corte, con «Ver cómo quedó») se enseña en el menú. «Marcar depositado…» abre el diálogo de siempre, con su
- * fecha, y «Marcar como fallido» pide confirmación antes, porque deja el cobro en cero.
+ * fecha; «Revertir el depósito» pide la misma confirmación que en el detalle, porque borra la fecha real del
+ * depósito, y «Marcar como fallido» también, porque deja el cobro en cero. Si el cambio saca el cobro de la lista (ya
+ * no pasa el filtro), el foco pasa al menú de al lado (`followChange`).
  */
 function StatusMenu({ tx, today, placement, className, changes }: TxStatusMenuProps & { changes: StatusChange[] }) {
   // Como el enlace de la misma fila: «cobro pi_123» o «cobro del jue 12 nov 2026 por $675,00».
@@ -58,6 +68,7 @@ function StatusMenu({ tx, today, placement, className, changes }: TxStatusMenuPr
   const hydrated = useSyncExternalStore(noSubscription, () => true, () => false);
   const [error, setError] = useState<ActionFailure | null>(null);
   const [pending, startTransition] = useTransition();
+  const { followChange } = useTxSelection();
   const close = () => setOpen(null);
   const seen = { id: tx.id, expectedUpdatedAt: tx.updatedAt };
 
@@ -72,23 +83,34 @@ function StatusMenu({ tx, today, placement, className, changes }: TxStatusMenuPr
    * menú queda abierto (o se vuelve a abrir, si se cerró mientras corría) con el error.
    */
   function run<T>(action: () => Promise<ActionResult<T>>, done: string, unchanged: (data: T) => boolean = () => false) {
+    // Desde dónde se pidió: el menú, o la confirmación de «Revertir el depósito» o de «Marcar como fallido».
+    const from = open;
     setError(null);
     startTransition(async () => {
       const result = await callAction(action);
-      if (!result.ok || unchanged(result.data)) {
-        setError(result.ok ? { text: STALE_TEXT, unsure: false } : failureOf(result));
-        setOpen("menu");
-        return;
-      }
-      setOpen(null);
-      notify.success(done);
+      const failed = !result.ok || unchanged(result.data);
+      // Si falló una confirmación, se cierra ella antes de volver a abrir el menú: así su foco vuelve al botón del
+      // cobro y el menú se abre desde ahí (al cerrarlo, el foco vuelve al botón y no se pierde).
+      if (failed && from !== "menu") flushSync(() => setOpen(null));
+      // Lo que sigue va en la misma transición, para que se pinte junto con el fin de `pending`: si el menú se
+      // volviera a abrir antes, con las opciones todavía desactivadas, el foco caería en «Cerrar».
+      startTransition(() => {
+        if (failed) {
+          setError(result.ok ? { text: STALE_TEXT, unsure: false } : failureOf(result));
+          setOpen("menu");
+          return;
+        }
+        setOpen(null);
+        notify.success(done);
+        followChange(tx.id);
+      });
     });
   }
 
   const choose: Record<StatusChange, () => void> = {
     en_transito: () => run(() => markInTransit({ ids: [tx.id] }), "Cobro en tránsito.", ({ count }) => count === 0),
     depositado: () => show("deposito"),
-    revertir_deposito: () => run(() => revertDeposit(seen), "Depósito revertido."),
+    revertir_deposito: () => show("revertir"),
     fallido: () => show("fallido"),
     reabrir: () => run(() => reopenTransaction(seen), "Cobro reabierto."),
   };
@@ -99,6 +121,7 @@ function StatusMenu({ tx, today, placement, className, changes }: TxStatusMenuPr
       <button
         type="button"
         aria-haspopup="dialog"
+        {...{ [STATUS_MENU_ATTR]: tx.id }}
         disabled={!hydrated}
         onClick={() => show("menu")}
         className={cn(
@@ -143,6 +166,14 @@ function StatusMenu({ tx, today, placement, className, changes }: TxStatusMenuPr
             earliest={tx.occurredOn}
             onlyPending={false}
             expectedUpdatedAt={tx.updatedAt}
+            onDone={() => followChange(tx.id)}
+          />
+          <ConfirmDialog
+            open={open === "revertir"}
+            onClose={close}
+            onConfirm={() => run(() => revertDeposit(seen), "Depósito revertido.")}
+            {...REVERT_DEPOSIT_CONFIRM}
+            pending={pending}
           />
           <ConfirmDialog
             open={open === "fallido"}

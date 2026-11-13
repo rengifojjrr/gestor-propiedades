@@ -27,7 +27,28 @@ type Selection = {
   finish: () => void;
   /** Cuántos cobros tiene la página. */
   total: number;
+  /**
+   * Tras cambiar el estado de un cobro desde su menú: si con la lista nueva ese cobro ya no está (el cambio lo sacó
+   * del filtro), su botón se fue con él y el foco caería en <body>. Entonces pasa al menú del cobro siguiente, al del
+   * anterior si era el último o, si no queda ninguno, a `focusAfterId`.
+   */
+  followChange: (id: string) => void;
 };
+
+/**
+ * El atributo que lleva el botón «Cambiar estado» de cada cobro (`TxStatusMenu`), con el id del cobro: ahí busca
+ * `followChange` a dónde llevar el foco.
+ */
+export const STATUS_MENU_ATTR = "data-menu-estado";
+
+/** El botón «Cambiar estado» de ese cobro que se ve: la lista se pinta dos veces (tarjetas y tabla), una oculta. */
+function visibleStatusMenu(id: string): HTMLElement | null {
+  const buttons = document.querySelectorAll<HTMLElement>(`[${STATUS_MENU_ATTR}="${CSS.escape(id)}"]`);
+  return [...buttons].find((button) => button.getClientRects().length > 0) ?? null;
+}
+
+/** Un cambio de estado hecho desde el menú de un cobro: cuál, sus vecinos (primero los de después) y la lista de entonces. */
+type MenuChange = { id: string; neighbors: string[]; ids: string[] };
 
 const SelectionContext = createContext<Selection | null>(null);
 
@@ -61,6 +82,28 @@ export function TxSelectionProvider({ ids, focusAfterId, children }: TxSelection
   // nueva puede llegar después: si se lleva lo que tenía el foco (la lista quedó vacía), el foco caería en <body> y
   // se pasa a lo que lo reemplaza. Si la persona ya lo movió a otra parte, se deja de vigilar.
   const focusGuard = useRef<HTMLElement | typeof PENDING | null>(null);
+  // Tras un cambio desde el menú de un cobro: lo que hay que mirar cuando llegue la lista nueva (`ids` cambia con
+  // cada lista que pinta el servidor, aunque traiga los mismos cobros).
+  const menuChange = useRef<MenuChange | null>(null);
+  const shownIds = useRef(ids);
+
+  /** Con la lista nueva (`current`): si el cobro ya no está y el foco cayó en <body>, lo lleva al vecino. */
+  function focusAfterMenuChange(change: MenuChange, current: string[]): void {
+    if (current.includes(change.id)) return;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    const target =
+      change.neighbors.map(visibleStatusMenu).find((button) => button !== null) ?? document.getElementById(focusAfterId);
+    target?.focus();
+  }
+
+  useEffect(() => {
+    shownIds.current = ids;
+    const change = menuChange.current;
+    if (change === null || change.ids === ids) return;
+    menuChange.current = null;
+    focusAfterMenuChange(change, ids);
+  });
 
   useEffect(() => {
     const guarded = focusGuard.current;
@@ -98,6 +141,14 @@ export function TxSelectionProvider({ ids, focusAfterId, children }: TxSelection
       setChosen(new Set());
     },
     total: ids.length,
+    followChange: (id) => {
+      const at = ids.indexOf(id);
+      const neighbors = at < 0 ? [] : [...ids.slice(at + 1), ...ids.slice(0, at).reverse()];
+      const change = { id, neighbors, ids };
+      // Si la lista nueva ya se pintó, se mira ahora; si no, cuando llegue.
+      if (shownIds.current === ids) menuChange.current = change;
+      else focusAfterMenuChange(change, shownIds.current);
+    },
   };
   return <SelectionContext value={value}>{children}</SelectionContext>;
 }

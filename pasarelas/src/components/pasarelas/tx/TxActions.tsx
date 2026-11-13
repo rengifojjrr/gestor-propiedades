@@ -22,6 +22,7 @@ import { DisputeDialog } from "./DisputeDialog";
 import { STALE_TEXT } from "./plural";
 import { RecalcDialog } from "./RecalcDialog";
 import { RefundDialog } from "./RefundDialog";
+import { REVERT_DEPOSIT_CONFIRM } from "./statusChanges";
 
 /** ¿Es la respuesta de una acción de lote que no cambió ningún cobro? */
 const changedNone = (data: unknown): boolean =>
@@ -242,9 +243,7 @@ export function TxActions({ tx, today }: TxActionsProps) {
         open={open === "revertir"}
         onClose={close}
         onConfirm={() => run(() => revertDeposit(seen), "Depósito revertido.")}
-        title="¿Revertir el depósito?"
-        description="El cobro vuelve a «En tránsito» y se borra la fecha real del depósito."
-        confirmLabel="Revertir depósito"
+        {...REVERT_DEPOSIT_CONFIRM}
         pending={pending}
       />
       <ConfirmDialog
