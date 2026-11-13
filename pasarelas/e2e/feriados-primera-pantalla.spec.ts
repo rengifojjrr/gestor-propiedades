@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { signInAal1, unwrap } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
 import { expectNoSeriousAxe, login, newUser } from "./helpers";
@@ -18,10 +18,9 @@ import { expectNoSeriousAxe, login, newUser } from "./helpers";
 const WINDOW_TEXT = "Llega entre el lun 16 y el mié 18 nov";
 const WINDOW_DAYS = ["2026-11-16", "2026-11-18"];
 
-/** Las dos puntas de la ventana que se ve, como `<time>`: [desde, hasta]. */
-async function windowTimes(page: Page, scope: "Vista previa" | "main"): Promise<(string | null)[]> {
-  const area = scope === "main" ? page.getByRole("main") : page.getByRole("region", { name: scope });
-  const times = area.getByTestId("fecha-estimada").locator("time");
+/** Las dos puntas de la ventana de un cobro, como `<time>`: [desde, hasta]. */
+async function windowTimes(scope: Locator): Promise<(string | null)[]> {
+  const times = scope.getByTestId("fecha-estimada").locator("time");
   return Promise.all((await times.all()).map((time) => time.getAttribute("datetime")));
 }
 
@@ -73,7 +72,7 @@ test.describe("feriados en la primera pantalla", () => {
     await page.getByLabel("Referencia").fill(reference);
     const preview = page.getByRole("region", { name: "Vista previa" });
     await expect(preview.getByTestId("fecha-estimada")).toHaveText(WINDOW_TEXT);
-    expect(await windowTimes(page, "Vista previa")).toEqual(WINDOW_DAYS);
+    expect(await windowTimes(preview)).toEqual(WINDOW_DAYS);
     await expectNoHorizontalOverflow(page);
     await expectNoSeriousAxe(page);
 
@@ -85,8 +84,9 @@ test.describe("feriados en la primera pantalla", () => {
       .getByRole("button", { name: "Ver cobro" })
       .click();
     await expect(page).toHaveURL(/\/pasarelas\/cobros\/[0-9a-f-]{36}$/);
-    await expect(page.getByRole("main").getByTestId("fecha-estimada")).toHaveText(WINDOW_TEXT);
-    expect(await windowTimes(page, "main")).toEqual(WINDOW_DAYS);
+    const detail = page.getByRole("main");
+    await expect(detail.getByTestId("fecha-estimada")).toHaveText(WINDOW_TEXT);
+    expect(await windowTimes(detail)).toEqual(WINDOW_DAYS);
     const saved = unwrap(
       await db
         .from("pay_transactions")
