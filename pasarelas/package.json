@@ -33,6 +33,7 @@
     "luxon": "3.7.2",
     "next": "16.4.6",
     "papaparse": "5.7.0",
+    "pdfkit": "0.20.2",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "recharts": "3.10.1",
@@ -47,6 +48,7 @@
     "@types/luxon": "3.7.6",
     "@types/node": "^22.20.5",
     "@types/papaparse": "5.5.2",
+    "@types/pdfkit": "0.17.7",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitest/coverage-v8": "4.1.12",
@@ -56,6 +58,7 @@
     "tailwindcss": "4.3.5",
     "tsx": "4.23.15",
     "typescript": "~5.9.3",
+    "unpdf": "1.7.0",
     "vitest": "4.1.12"
   }
 }
