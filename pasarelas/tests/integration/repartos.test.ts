@@ -663,7 +663,7 @@ describe("liquidaciones y saldos", () => {
 
     const balances = await listBalances(user.client);
     const of = (id: string) => balances.find((row) => row.beneficiaryId === id);
-    expect(of(a)).toEqual({ beneficiaryId: a, currency: "USD", assigned: "-1.60", settled: "45.15", balance: "-46.75" });
+    expect(of(a)).toEqual({ beneficiaryId: a, currency: "USD", assigned: "-1.60", settled: "45.15", retained: "0.00", balance: "-46.75" });
     expect(of(b)?.balance).toBe("-28.05");
     expect(of(c)?.balance).toBe("-18.70");
     // Otro usuario no ve nada de esto.
@@ -693,8 +693,8 @@ describe("liquidaciones y saldos", () => {
       receipt: null,
     });
     expect(await listBalances(user.client, a)).toEqual([
-      { beneficiaryId: a, currency: "EUR", assigned: "0.00", settled: "12.00", balance: "-12.00" },
-      { beneficiaryId: a, currency: "USD", assigned: "-1.60", settled: "-1.60", balance: "0.00" },
+      { beneficiaryId: a, currency: "EUR", assigned: "0.00", settled: "12.00", retained: "0.00", balance: "-12.00" },
+      { beneficiaryId: a, currency: "USD", assigned: "-1.60", settled: "-1.60", retained: "0.00", balance: "0.00" },
     ]);
   });
 

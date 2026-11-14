@@ -24,6 +24,7 @@ import type {
   Money,
   PayConfig,
   Pct,
+  RetentionCfg,
   SchemeCfg,
   SchemeVersionCfg,
   TxSnapshot,
@@ -46,7 +47,9 @@ export type Db = SupabaseClient<Database>;
 export const COMPANY_COLUMNS = "id, name, currency, default_scheme_id, active";
 export const CHANNEL_COLUMNS = "id, company_id, name, platform_fee_pct::text, platform_fee_fixed::text, active";
 export const GATEWAY_COLUMNS =
-  "id, name, payout_days, payout_days_max, payout_day_type, refunds_return_fee, dispute_fee::text, active";
+  "id, name, payout_days, payout_days_max, payout_day_type, refunds_return_fee, dispute_fee::text, active, retention_pct::text, retention_days";
+/** Las personas a las que les cae lo que retiene cada pasarela, en su orden (`sort`). */
+export const RETENTION_RECIPIENT_COLUMNS = "gateway_id, beneficiary_id, pct::text, sort";
 export const FEE_VERSION_COLUMNS = "id, gateway_id, pct::text, fixed::text, effective_from, note";
 export const EXTRA_COLUMNS =
   "id, gateway_id, name, pct::text, fixed::text, base, default_on, payout_days_override, payout_days_override_max, active, sort, kind";
@@ -63,7 +66,7 @@ export const SETTLEMENT_COLUMNS =
 
 /** La fila mínima de un cobro: lo que hace falta para totales, resumen y estados. */
 export const LEAN_TX_COLUMNS =
-  "id, occurred_on, company_id, channel_id, gateway_id, bank_account_id, currency, gross_original::text, refunded_amount::text, gross_amount::text, fees_total::text, net_amount::text, status, dispute_state, estimated_deposit_on, estimated_deposit_from, deposited_on, receipts_count, fees_paid_by, buyer_fees::text";
+  "id, occurred_on, company_id, channel_id, gateway_id, bank_account_id, currency, gross_original::text, refunded_amount::text, gross_amount::text, fees_total::text, net_amount::text, status, dispute_state, estimated_deposit_on, estimated_deposit_from, deposited_on, receipts_count, fees_paid_by, buyer_fees::text, retention_amount::text";
 /** Lo que pinta la lista de cobros: la fila mínima más sus textos y sus fechas. Sin el desglose. */
 export const TX_LIST_COLUMNS =
   `${LEAN_TX_COLUMNS}, occurred_at, scheme_id, reference, note, estimated_is_manual, dispute_opened_on, dispute_closed_on, deleted_at, updated_at` as const;
@@ -100,7 +103,10 @@ export type GatewayRow = {
   refunds_return_fee: boolean;
   dispute_fee: string;
   active: boolean;
+  retention_pct: string;
+  retention_days: number;
 };
+export type RetentionRecipientRow = { gateway_id: string; beneficiary_id: string; pct: string; sort: number };
 export type FeeVersionRow = {
   id: string;
   gateway_id: string;
@@ -186,6 +192,7 @@ export type LeanTxRow = {
   receipts_count: number;
   fees_paid_by: string;
   buyer_fees: string;
+  retention_amount: string;
 };
 export type TxListRow = LeanTxRow & {
   occurred_at: string;
@@ -217,6 +224,8 @@ export type ConfigRows = {
   gateways: GatewayRow[];
   feeVersions: FeeVersionRow[];
   extras: ExtraRow[];
+  /** Las personas de la retención de cada pasarela, en su orden. */
+  retentionRecipients: RetentionRecipientRow[];
   companyGateways: CompanyGatewayRow[];
   bankAccounts: BankAccountRow[];
   beneficiaries: BeneficiaryRow[];
@@ -363,11 +372,21 @@ export function toExtraCfg(row: ExtraRow): ExtraCfg {
   };
 }
 
-/** La pasarela con sus versiones de tarifa y sus opciones, que llegan ya ordenadas. */
+/** La retención de una pasarela con sus personas, que llegan ya ordenadas. */
+export function toRetentionCfg(row: GatewayRow, recipients: readonly RetentionRecipientRow[]): RetentionCfg {
+  return {
+    pct: pct(row.retention_pct),
+    days: row.retention_days,
+    recipients: recipients.map((recipient) => ({ beneficiaryId: recipient.beneficiary_id, pct: pct(recipient.pct) })),
+  };
+}
+
+/** La pasarela con sus versiones de tarifa, sus opciones y las personas de su retención, que llegan ya ordenadas. */
 export function toGatewayCfg(
   row: GatewayRow,
   feeVersions: readonly FeeVersionRow[],
   extras: readonly ExtraRow[],
+  recipients: readonly RetentionRecipientRow[],
 ): GatewayCfg {
   return {
     id: row.id,
@@ -380,6 +399,7 @@ export function toGatewayCfg(
     active: row.active,
     feeVersions: feeVersions.map(toFeeVersionCfg),
     extras: extras.map(toExtraCfg),
+    retention: toRetentionCfg(row, recipients),
   };
 }
 
@@ -432,12 +452,15 @@ export function toSchemeCfg(row: SchemeRow, versions: SchemeVersionCfg[]): Schem
 export function toPayConfig(rows: ConfigRows): PayConfig {
   const feeVersions = groupBy(rows.feeVersions, (row) => row.gateway_id);
   const extras = groupBy(rows.extras, (row) => row.gateway_id);
+  const recipients = groupBy(rows.retentionRecipients, (row) => row.gateway_id);
   const schemeLines = groupBy(rows.schemeLines, (row) => row.scheme_version_id);
   const schemeVersions = groupBy(rows.schemeVersions, (row) => row.scheme_id);
   return {
     companies: rows.companies.map(toCompanyCfg),
     channels: rows.channels.map(toChannelCfg),
-    gateways: rows.gateways.map((row) => toGatewayCfg(row, feeVersions.get(row.id) ?? [], extras.get(row.id) ?? [])),
+    gateways: rows.gateways.map((row) =>
+      toGatewayCfg(row, feeVersions.get(row.id) ?? [], extras.get(row.id) ?? [], recipients.get(row.id) ?? []),
+    ),
     companyGateways: rows.companyGateways.map(toCompanyGatewayCfg),
     bankAccounts: rows.bankAccounts.map(toBankAccountCfg),
     beneficiaries: rows.beneficiaries.map(toBeneficiaryCfg),
@@ -493,6 +516,7 @@ export function toLeanTx(row: LeanTxRow): LeanTx {
     receiptsCount: row.receipts_count,
     feesPaidBy: known(FEES_PAID_BY, row.fees_paid_by, "Quién pagó la comisión, desconocido"),
     buyerFees: money(row.buyer_fees),
+    retention: money(row.retention_amount),
   };
 }
 

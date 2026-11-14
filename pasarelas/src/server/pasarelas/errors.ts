@@ -1,6 +1,6 @@
 import "server-only";
 import { ZodError } from "zod";
-import { PAY_RULE_TEXT, PAY_STATE_TEXT, PayRuleError, PayStateError } from "@/lib/pasarelas";
+import { PAY_RULE_TEXT, PAY_STATE_TEXT, PayRuleError, PayStateError, RETENTION_ISSUE_TEXT } from "@/lib/pasarelas";
 
 /**
  * De un error a un mensaje en español para la persona. Función pura: no registra ni lanza.
@@ -35,6 +35,7 @@ const DATABASE_TEXT: Record<string, { named: Record<string, string>; other: stri
       pay_schemes_name_uq: "Ya hay un esquema de reparto con ese nombre.",
       pay_transactions_reference_uq: "Ya hay un cobro de esa pasarela con esa referencia.",
       pay_gateway_extras_internacional_uq: "Esta pasarela ya tiene un recargo internacional.",
+      pay_gateway_retention_recipients_uq: RETENTION_ISSUE_TEXT.persona_repetida,
     },
     other: "Ya existe un registro con esos datos.",
   },
@@ -53,6 +54,16 @@ const DATABASE_TEXT: Record<string, { named: Record<string, string>; other: stri
       pay_scheme_under_100: "Las líneas del esquema suman menos de 100 %: elige quién recibe el resto.",
       pay_scheme_remainder_in_lines: "Quien recibe el resto no puede ser además una línea del esquema.",
       pay_transactions_alloc_base_check: "La base del reparto no coincide con el cobro. No se guardó nada.",
+      // La retención de la pasarela (`pay_save_gateway_retention` y las restricciones de sus columnas).
+      pay_retention_without_recipients: RETENTION_ISSUE_TEXT.sin_personas,
+      pay_retention_recipients_without_pct: RETENTION_ISSUE_TEXT.personas_sin_pct,
+      pay_retention_not_100: RETENTION_ISSUE_TEXT.no_suma_100,
+      pay_retention_inactive_beneficiary: "Cada persona tiene que ser un beneficiario activo.",
+      pay_gateways_retention_pct_check: "El % que retiene va de 0 a 100.",
+      pay_gateways_retention_days_check: "Los días que la retiene van de 0 a 365.",
+      pay_gateway_retention_recipients_pct_check: "El % de cada persona tiene que ser mayor que 0 y no pasar de 100.",
+      pay_retention_sum_mismatch: "Lo retenido no suma lo que recibe cada persona. No se guardó nada.",
+      pay_transactions_retention_amount_check: "Lo retenido no puede pasar de lo cobrado. No se guardó nada.",
     },
     other: "Algún dato no cumple las reglas del libro. Revísalo e inténtalo de nuevo.",
   },
@@ -65,6 +76,7 @@ const DATABASE_TEXT: Record<string, { named: Record<string, string>; other: stri
     named: {
       pay_tx_not_found: "Ese cobro ya no existe.",
       pay_scheme_not_found: "Ese esquema de reparto ya no existe.",
+      pay_gateway_not_found: "Esa pasarela ya no existe.",
     },
     other: "Ese registro ya no existe.",
   },

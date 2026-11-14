@@ -4,9 +4,9 @@ import type { TxSnapshot, TxWrite } from "@/lib/pasarelas";
 import { DEMO, cfgDemo } from "@/lib/pasarelas/demo.fixture";
 import { toRpcItem } from "./tx-save";
 
-/** El alta del cobro E1 del spec, planeada por el motor. */
-function createE1(): TxWrite {
-  return planCreate(cfgDemo(), {
+/** Lo que se registra en el cobro E1 del spec. */
+function createInput() {
+  return {
     id: "tx-e1",
     companyId: DEMO.companyId,
     channelId: DEMO.channelId,
@@ -19,7 +19,12 @@ function createE1(): TxWrite {
     grossOriginal: "100.00",
     reference: "ch_demo_0001",
     note: null,
-  });
+  };
+}
+
+/** El alta del cobro E1 del spec, planeada por el motor. */
+function createE1(): TxWrite {
+  return planCreate(cfgDemo(), createInput());
 }
 
 /** E1 como se leería de la base después de guardarlo. */
@@ -47,6 +52,7 @@ function savedE1(): TxSnapshot {
     receiptsCount: 0,
     feesPaidBy: "nosotros",
     buyerFees: "0.00",
+    retention: "0.00",
     occurredAt: "2026-11-13T15:30:00+00:00",
     schemeId: DEMO.schemeId,
     reference: "ch_demo_0001",
@@ -107,12 +113,15 @@ describe("toRpcItem", () => {
       deleted_at: null,
       fees_paid_by: "nosotros",
       buyer_fees: "0.00",
+      retention_amount: "0.00",
     });
     expect(item.allocations).toEqual([
       { beneficiary_id: DEMO.beneficiaryIds.a, amount: "45.15", base: "neto", pct: "50", is_remainder: false },
       { beneficiary_id: DEMO.beneficiaryIds.b, amount: "27.09", base: "neto", pct: "30", is_remainder: false },
       { beneficiary_id: DEMO.beneficiaryIds.c, amount: "18.06", base: "neto", pct: "20", is_remainder: false },
     ]);
+    // Stripe no retiene: una lista vacía (en un alta, «sin partes»).
+    expect(item.retention_shares).toEqual([]);
     expect(item.event).toEqual(write.event);
     // Ni un monto ni un porcentaje viajan como number: los únicos números son la versión del desglose y unos días.
     expect(numberPaths(item).sort()).toEqual(["tx.breakdown.rules.extras.0.payoutDaysOverride", "tx.breakdown.v"]);
@@ -127,8 +136,9 @@ describe("toRpcItem", () => {
       tx: { id: "tx-e1", status: "depositado", deposited_on: "2026-11-17" },
       // Tal cual se leyó, con sus microsegundos.
       expected_updated_at: "2026-11-13T15:31:07.847283+00:00",
-      // null = «no toques el reparto» (una lista vacía lo borraría).
+      // null = «no toques el reparto» (una lista vacía lo borraría), y lo mismo las partes de lo retenido.
       allocations: null,
+      retention_shares: null,
       event: expect.objectContaining({ kind: "depositado", summary: "Depositado el mar 17 nov 2026" }) as unknown,
     });
   });
@@ -155,5 +165,17 @@ describe("toRpcItem", () => {
     ]);
     expect(item.tx).toMatchObject({ refunded_amount: "40.00", gross_amount: "60.00", net_amount: "52.90" });
     expect(item.allocations?.map((line) => line.amount)).toEqual(["26.45", "15.87", "10.58"]);
+    expect(item.retention_shares).toEqual([]);
+  });
+
+  test("las partes de lo retenido viajan con el nombre de sus columnas y el monto como texto", () => {
+    const cfg = cfgDemo();
+    const stripe = cfg.gateways[0];
+    if (stripe === undefined) throw new Error("La configuración de ejemplo no tiene Stripe");
+    stripe.retention = { pct: "5", days: 30, recipients: [{ beneficiaryId: DEMO.beneficiaryIds.a, pct: "100" }] };
+    const write = planCreate(cfg, { ...createInput(), id: "tx-retenido" });
+    const item = toRpcItem(write);
+    expect(item.tx).toMatchObject({ retention_amount: "5.00" });
+    expect(item.retention_shares).toEqual([{ beneficiary_id: DEMO.beneficiaryIds.a, amount: "5.00" }]);
   });
 });

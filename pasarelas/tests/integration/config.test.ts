@@ -153,6 +153,7 @@ describe("loadPayConfig", () => {
           active: true,
           feeVersions: [{ id: added.paypalFeeId, pct: "3.49", fixed: "0.49", effectiveFrom: "2000-01-01", note: null }],
           extras: [],
+          retention: { pct: "0", days: 0, recipients: [] },
         },
         {
           id: b.gatewayId,
@@ -203,6 +204,7 @@ describe("loadPayConfig", () => {
               kind: "opcion",
             },
           ],
+          retention: { pct: "0", days: 0, recipients: [] },
         },
       ],
       companyGateways: [

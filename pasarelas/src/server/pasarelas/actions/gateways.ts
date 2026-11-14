@@ -3,7 +3,7 @@
 import "server-only";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { ZERO, cmp } from "@/lib/pasarelas";
+import { RETENTION_ISSUE_TEXT, ZERO, cmp, dec, validateRetention } from "@/lib/pasarelas";
 import type { Money } from "@/lib/pasarelas";
 import { runAction } from "../action";
 import {
@@ -14,6 +14,7 @@ import {
   deleteGateway as deleteGatewayOp,
   removeInternational as removeInternationalOp,
   saveExtra as saveExtraOp,
+  saveGatewayRetention as saveGatewayRetentionOp,
   saveInternational as saveInternationalOp,
   setGatewayActive as setGatewayActiveOp,
   updateGateway as updateGatewayOp,
@@ -184,4 +185,46 @@ export async function saveInternational(input: unknown): Promise<ActionResult<{ 
 /** Quita (apaga) el recargo internacional: lo ya registrado lo conserva en su desglose. */
 export async function removeInternational(input: unknown): Promise<ActionResult> {
   return runAction(zById, input, ({ supabase }, { id }) => removeInternationalOp(supabase, id));
+}
+
+// ─── La retención ───────────────────────────────────────────────────────────────────────────────────────────
+
+/** El tope de días que la pasarela retiene, como en la base. */
+const RETENTION_DAYS_MAX = 365;
+const RETENTION_DAYS_TEXT = `Escribe un número de días entre 0 y ${RETENTION_DAYS_MAX}`;
+/** Lo más que pueden ser las personas de una retención (una pasarela tiene pocos titulares). */
+const RETENTION_RECIPIENTS_MAX = 20;
+
+const zRetentionDays = z
+  .string({ error: RETENTION_DAYS_TEXT })
+  .trim()
+  .regex(/^\d{1,3}$/, { error: RETENTION_DAYS_TEXT })
+  .transform(Number)
+  .refine((days) => days <= RETENTION_DAYS_MAX, { error: RETENTION_DAYS_TEXT });
+
+const zRetentionPct = zPct.refine((pct) => dec(pct).lte(100), { error: "El % que retiene va de 0 a 100" });
+const zRecipientPct = zPct.refine((pct) => dec(pct).gt(0) && dec(pct).lte(100), {
+  error: "El % de cada persona tiene que ser mayor que 0 y no pasar de 100",
+});
+
+/**
+ * Fija lo que retiene la pasarela: el %, los días corridos y a quién le cae, cada persona con su %. Con 0 % no hay
+ * personas; con más, al menos una, y sus porcentajes suman 100 (el error va en «recipients»). Lo ya registrado no
+ * cambia: «Recalcular» le trae la retención de ahora.
+ */
+export async function saveGatewayRetention(input: unknown): Promise<ActionResult> {
+  const schema = z
+    .object({
+      gatewayId: zId,
+      pct: zRetentionPct,
+      days: zRetentionDays,
+      recipients: z.array(z.object({ beneficiaryId: zId, pct: zRecipientPct })).max(RETENTION_RECIPIENTS_MAX),
+    })
+    .superRefine((retention, ctx) => {
+      const [issue] = validateRetention(retention);
+      if (issue !== undefined) {
+        ctx.issues.push({ code: "custom", message: RETENTION_ISSUE_TEXT[issue], path: ["recipients"], input: retention });
+      }
+    });
+  return runAction(schema, input, ({ supabase }, retention) => saveGatewayRetentionOp(supabase, retention));
 }

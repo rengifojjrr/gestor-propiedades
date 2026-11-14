@@ -164,6 +164,8 @@ describe("createGateway", () => {
           kind: "opcion",
         },
       ],
+      // Nace sin retener.
+      retention: { pct: "0", days: 0, recipients: [] },
     });
   });
 

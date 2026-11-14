@@ -6,7 +6,7 @@ import type { Db } from "./dto";
 
 /**
  * De las escrituras que planea el motor (`TxWrite`) a la función `pay_save_transactions`, que guarda cada cobro
- * con su reparto y su evento en una sola transacción.
+ * con su reparto, las partes de lo retenido y su evento en una sola transacción.
  */
 
 /** Lo más que admite `pay_save_transactions` en una llamada. */
@@ -50,6 +50,7 @@ const COLUMN_OF: Record<keyof TxFields, TxColumn> = {
   deletedAt: "deleted_at",
   feesPaidBy: "fees_paid_by",
   buyerFees: "buyer_fees",
+  retentionAmount: "retention_amount",
 };
 
 /** Un elemento de `p_items`: las columnas con su nombre de la base y el dinero como texto. */
@@ -58,6 +59,8 @@ export type RpcItem = {
   tx: Record<string, unknown>;
   expected_updated_at: string | null;
   allocations: { beneficiary_id: string; amount: string; base: string; pct: string; is_remainder: boolean }[] | null;
+  /** Lo que recibe cada persona de lo retenido. `null` = no tocarlas (una lista vacía las borraría). */
+  retention_shares: { beneficiary_id: string; amount: string }[] | null;
   event: { kind: string; summary: string; data: Record<string, unknown> | null };
 };
 
@@ -84,6 +87,8 @@ export function toRpcItem(write: TxWrite): RpcItem {
         pct: line.pct,
         is_remainder: line.isRemainder,
       })) ?? null,
+    retention_shares:
+      write.retentionShares?.map((share) => ({ beneficiary_id: share.beneficiaryId, amount: share.amount })) ?? null,
     event: write.event,
   };
 }

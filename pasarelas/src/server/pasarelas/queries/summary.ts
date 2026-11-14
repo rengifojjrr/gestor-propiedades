@@ -4,6 +4,7 @@ import {
   ZERO,
   add,
   addDays,
+  sub,
   dec,
   isOverdue,
   isZero,
@@ -176,8 +177,8 @@ export type DepositPart = DepositGroup & { part: { index: number; of: number } |
 
 /**
  * Los grupos de próximos depósitos, con los de más de `size` cobros (lo más que se marca depositado de una vez)
- * partidos en partes de `size` como mucho, cada una con su neto y con desde cuándo pueden caer sus cobros (la más
- * temprana de sus ventanas). `rows`: los cobros de esos grupos.
+ * partidos en partes de `size` como mucho, cada una con su neto, lo que llega al banco y desde cuándo pueden caer
+ * sus cobros (la más temprana de sus ventanas). `rows`: los cobros de esos grupos.
  */
 export function depositParts(
   groups: readonly DepositGroup[],
@@ -195,6 +196,12 @@ export function depositParts(
       ids,
       count: ids.length,
       net: add(...ids.map((id) => byId.get(id)?.net ?? ZERO)),
+      payout: add(
+        ...ids.map((id) => {
+          const row = byId.get(id);
+          return row === undefined ? ZERO : sub(row.net, row.retention);
+        }),
+      ),
       part: { index: index + 1, of: parts.length },
     }));
   });

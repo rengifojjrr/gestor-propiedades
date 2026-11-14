@@ -6,13 +6,14 @@ import type { Db } from "../dto";
 /**
  * Lo que pinta la pantalla de cuentas destino: cada cuenta con lo que ya cayó en ella, lo que está por caer y
  * cuánto tarda, por moneda (vista `pay_bank_account_totals`, con la definición única de «por caer»), y cuántos
- * cobros y cuentas de pasarela la usan (lo que cambia si se borra).
+ * cobros y cuentas de pasarela la usan (lo que cambia si se borra). Lo que cae es lo que llega al banco: el neto
+ * menos lo que retuvieron las pasarelas (`*Payout`).
  */
 
 const ACCOUNT_COLUMNS = "id, alias, institution, last4, currency, notes, active";
 /** Dinero y días con `::text`: PostgREST devuelve `numeric` como número JSON. */
 const ACCOUNT_TOTALS_COLUMNS =
-  "bank_account_id, currency, deposited_count, deposited_net::text, pending_count, pending_net::text, avg_days::text, median_days::text";
+  "bank_account_id, currency, deposited_count, deposited_net::text, pending_count, pending_net::text, avg_days::text, median_days::text, deposited_payout::text, pending_payout::text";
 
 type AccountRow = {
   id: string;
@@ -32,6 +33,8 @@ type AccountTotalsRow = {
   pending_net: string | null;
   avg_days: string | null;
   median_days: string | null;
+  deposited_payout: string | null;
+  pending_payout: string | null;
 };
 
 /** Lo de una cuenta en una moneda. Los días son de calendario, entre el cobro y el depósito real (2 decimales). */
@@ -41,6 +44,10 @@ export type BankAccountTotals = {
   depositedNet: Money;
   pendingCount: number;
   pendingNet: Money;
+  /** Lo que llegó al banco de lo depositado: su neto menos lo retenido. */
+  depositedPayout: Money;
+  /** Lo que llega al banco de lo que está por caer: su neto menos lo retenido. */
+  pendingPayout: Money;
   /** `null` si todavía no hay depósitos. */
   avgDays: string | null;
   medianDays: string | null;
@@ -71,6 +78,8 @@ function toTotals(row: AccountTotalsRow): BankAccountTotals {
     depositedNet: money(row.deposited_net),
     pendingCount: row.pending_count ?? 0,
     pendingNet: money(row.pending_net),
+    depositedPayout: money(row.deposited_payout),
+    pendingPayout: money(row.pending_payout),
     avgDays: row.avg_days,
     medianDays: row.median_days,
   };

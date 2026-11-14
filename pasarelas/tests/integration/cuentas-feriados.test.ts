@@ -125,6 +125,9 @@ describe("cuentas destino", () => {
           depositedNet: "90.30",
           pendingCount: 1,
           pendingNet: "90.30",
+          // Sin retención, lo que llega al banco es el neto.
+          depositedPayout: "90.30",
+          pendingPayout: "90.30",
           avgDays: "3.00",
           medianDays: "3.00",
         },

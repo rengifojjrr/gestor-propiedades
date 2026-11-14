@@ -25,6 +25,7 @@ function tx(patch: Partial<LeanTx> = {}): LeanTx {
     receiptsCount: 0,
     feesPaidBy: "nosotros",
     buyerFees: "0.00",
+    retention: "0.00",
     ...patch,
   };
 }

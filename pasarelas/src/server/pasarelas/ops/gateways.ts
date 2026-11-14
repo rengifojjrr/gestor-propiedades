@@ -1,5 +1,6 @@
 import "server-only";
-import type { DayType, ExtraBase, ISODate, Money, Pct } from "@/lib/pasarelas";
+import { RETENTION_ISSUE_TEXT, validateRetention } from "@/lib/pasarelas";
+import type { DayType, ExtraBase, ISODate, Money, Pct, RetentionCfg } from "@/lib/pasarelas";
 import type { Db } from "../dto";
 import { UserError } from "../errors";
 
@@ -52,6 +53,9 @@ export type NewGateway = GatewayFields & {
   extras: ExtraFields[];
   international?: InternationalFee | null;
 };
+
+/** La retención de una pasarela: el % que retiene, los días corridos y a quién le cae (con 0 %, nadie). */
+export type RetentionInput = RetentionCfg & { gatewayId: string };
 
 export type NewFeeVersion = { gatewayId: string; pct: Pct; fixed: Money; effectiveFrom: ISODate; note?: string | null };
 
@@ -183,6 +187,32 @@ export async function deleteGateway(supabase: Db, id: string): Promise<void> {
     IN_USE,
   );
   touched(data, GATEWAY_NOT_FOUND);
+}
+
+// ─── La retención ───────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fija lo que retiene la pasarela (el %, los días y a quién le cae) en una sola transacción
+ * (`pay_save_gateway_retention`), que reemplaza a las personas. Antes lo valida con el motor y, si no vale, no escribe
+ * nada y lanza el mismo texto que enseña la pantalla. Los cobros ya registrados no cambian: cada uno congeló la
+ * retención de entonces; «Recalcular» les trae la de ahora.
+ */
+export async function saveGatewayRetention(supabase: Db, input: RetentionInput): Promise<void> {
+  const [issue] = validateRetention(input);
+  if (issue !== undefined) throw new UserError(RETENTION_ISSUE_TEXT[issue]);
+  await supabase
+    .rpc("pay_save_gateway_retention", {
+      p: {
+        gateway_id: input.gatewayId,
+        pct: input.pct,
+        days: input.days,
+        recipients: input.recipients.map((recipient) => ({
+          beneficiary_id: recipient.beneficiaryId,
+          pct: recipient.pct,
+        })),
+      },
+    })
+    .throwOnError();
 }
 
 // ─── Las tarifas ────────────────────────────────────────────────────────────────────────────────────────────

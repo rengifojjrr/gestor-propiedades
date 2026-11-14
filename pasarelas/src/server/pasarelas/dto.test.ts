@@ -59,6 +59,7 @@ function leanRow(patch: Partial<LeanTxRow> = {}): LeanTxRow {
     receipts_count: 0,
     fees_paid_by: "nosotros",
     buyer_fees: "0.00",
+    retention_amount: "0.00",
     ...patch,
   };
 }
@@ -135,6 +136,7 @@ describe("toLeanTx", () => {
       receiptsCount: 0,
       feesPaidBy: "nosotros",
       buyerFees: "0.00",
+      retention: "0.00",
     });
   });
 
@@ -172,6 +174,9 @@ describe("toLeanTx", () => {
   test("lo que pagaron los compradores se lee de su columna, como el resto del dinero", () => {
     expect(toLeanTx(leanRow({ fees_paid_by: "comprador", buyer_fees: "15.38" })).buyerFees).toBe("15.38");
     expect(toLeanTx(leanRow({ fees_paid_by: "comprador", buyer_fees: "30.5" })).buyerFees).toBe("30.50");
+    // Lo retenido, como monto canónico.
+    expect(toLeanTx(leanRow({ retention_amount: "50" })).retention).toBe("50.00");
+    expect(toLeanTx(leanRow()).retention).toBe("0.00");
   });
 
   test("quién pagó la comisión: «nosotros» o «comprador»; otra cosa no se cuela", () => {
@@ -386,6 +391,8 @@ describe("toPayConfig", () => {
           refunds_return_fee: false,
           dispute_fee: "15.00",
           active: true,
+          retention_pct: "0.0000",
+          retention_days: 0,
         },
         {
           id: "gw-paypal",
@@ -396,7 +403,14 @@ describe("toPayConfig", () => {
           refunds_return_fee: true,
           dispute_fee: "20.00",
           active: false,
+          retention_pct: "5.0000",
+          retention_days: 30,
         },
+      ],
+      // Las personas de la retención de PayPal, en su orden (las de cada pasarela van con ella).
+      retentionRecipients: [
+        { gateway_id: "gw-paypal", beneficiary_id: DEMO.beneficiaryIds.b, pct: "60.0000", sort: 0 },
+        { gateway_id: "gw-paypal", beneficiary_id: DEMO.beneficiaryIds.a, pct: "40.0000", sort: 1 },
       ],
       feeVersions: [
         {
@@ -575,6 +589,7 @@ describe("toPayConfig", () => {
               kind: "internacional",
             },
           ],
+          retention: { pct: "0", days: 0, recipients: [] },
         },
         {
           id: "gw-paypal",
@@ -587,6 +602,14 @@ describe("toPayConfig", () => {
           active: false,
           feeVersions: [{ id: "fv-paypal-1", pct: "3.49", fixed: "0.49", effectiveFrom: "2000-01-01", note: null }],
           extras: [],
+          retention: {
+            pct: "5",
+            days: 30,
+            recipients: [
+              { beneficiaryId: DEMO.beneficiaryIds.b, pct: "60" },
+              { beneficiaryId: DEMO.beneficiaryIds.a, pct: "40" },
+            ],
+          },
         },
       ],
       companyGateways: [
@@ -662,6 +685,7 @@ describe("toPayConfig", () => {
       feeVersions: rows().feeVersions.slice(0, 1),
       extras: rows().extras.slice(0, 1),
       companyGateways: rows().companyGateways.slice(0, 1),
+      retentionRecipients: [],
       beneficiaries: rows().beneficiaries.map((row) => ({ ...row, kind: "persona", active: true })),
       schemes: rows().schemes.slice(0, 1),
       schemeVersions: rows().schemeVersions.slice(0, 1),

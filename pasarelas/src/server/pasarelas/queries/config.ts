@@ -11,6 +11,7 @@ import {
   FEE_VERSION_COLUMNS,
   GATEWAY_COLUMNS,
   HOLIDAY_COLUMNS,
+  RETENTION_RECIPIENT_COLUMNS,
   SCHEME_COLUMNS,
   SCHEME_LINE_COLUMNS,
   SCHEME_VERSION_COLUMNS,
@@ -40,6 +41,7 @@ export async function loadPayConfig(supabase: Db): Promise<PayConfig> {
     gateways,
     feeVersions,
     extras,
+    retentionRecipients,
     companyGateways,
     bankAccounts,
     beneficiaries,
@@ -90,6 +92,15 @@ export async function loadPayConfig(supabase: Db): Promise<PayConfig> {
         .select(EXTRA_COLUMNS, EXACT_COUNT)
         .order("sort")
         .order("name")
+        .order("id")
+        .range(from, to)
+        .throwOnError(),
+    ),
+    readAll((from, to) =>
+      supabase
+        .from("pay_gateway_retention_recipients")
+        .select(RETENTION_RECIPIENT_COLUMNS, EXACT_COUNT)
+        .order("sort")
         .order("id")
         .range(from, to)
         .throwOnError(),
@@ -164,6 +175,7 @@ export async function loadPayConfig(supabase: Db): Promise<PayConfig> {
     gateways,
     feeVersions,
     extras,
+    retentionRecipients,
     companyGateways,
     bankAccounts,
     beneficiaries,

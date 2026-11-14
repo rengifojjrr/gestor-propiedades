@@ -138,6 +138,8 @@ describe("loadSummary", () => {
         bankAccountId: b.bankAccountId,
         currency: "USD",
         net: "90.30",
+        // Sin retención, lo que llega al banco es el neto.
+        payout: "90.30",
         count: 1,
         ids: expect.any(Array),
         overdue: true,
@@ -149,6 +151,7 @@ describe("loadSummary", () => {
         bankAccountId: b.bankAccountId,
         currency: "USD",
         net: "10745.70",
+        payout: "10745.70",
         count: USD_COUNT - 1,
         ids: expect.any(Array),
         overdue: true,

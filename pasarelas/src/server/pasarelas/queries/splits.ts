@@ -4,26 +4,30 @@ import type { BeneficiaryKind, Currency, ISODate, Money, Pct } from "@/lib/pasar
 import type { Db } from "../dto";
 
 /**
- * Lo que leen las pantallas de Repartos: el libro (asignado, liquidado y saldo por beneficiario y moneda, de la
- * vista `pay_beneficiary_balances`), la ficha de un beneficiario y sus repartos, cada uno con su cobro. Dinero y
+ * Lo que leen las pantallas de Repartos: el libro (asignado, liquidado, retenido y saldo por beneficiario y moneda,
+ * de la vista `pay_beneficiary_balances`), la ficha de un beneficiario y sus repartos, cada uno con su cobro. Dinero y
  * porcentajes con `::text`: PostgREST devuelve `numeric` como número JSON.
  */
 
 /** Filas por página en los movimientos de la ficha. */
 export const MOVEMENTS_PAGE_SIZE = 20;
 
-const BALANCE_COLUMNS = "beneficiary_id, currency, assigned::text, settled::text, balance::text";
+const BALANCE_COLUMNS = "beneficiary_id, currency, assigned::text, settled::text, balance::text, retained::text";
 const BENEFICIARY_COLUMNS = "id, name, kind, account_alias, notes, active";
 /** El reparto y, de su cobro, lo que se pinta. `!inner`: solo los repartos de cobros que se pueden ver y cuentan. */
 const ALLOCATION_COLUMNS =
   "transaction_id, amount::text, pct::text, is_remainder, pay_transactions!inner(occurred_on, company_id, currency, gross_amount::text)";
 
-/** Lo de un beneficiario en una moneda. `balance` = asignado − liquidado; negativo, lo debe a la empresa. */
+/**
+ * Lo de un beneficiario en una moneda. `retained`: lo que ya le pagó la pasarela de lo que retuvo. `balance` =
+ * asignado − liquidado − retenido: lo que se le debe; negativo, lo debe a la empresa (o es un adelanto).
+ */
 export type BeneficiaryBalance = {
   beneficiaryId: string;
   currency: Currency;
   assigned: Money;
   settled: Money;
+  retained: Money;
   balance: Money;
 };
 
@@ -95,6 +99,7 @@ export async function listBalances(supabase: Db, beneficiaryId?: string): Promis
     currency: row.currency ?? "",
     assigned: money(row.assigned),
     settled: money(row.settled),
+    retained: money(row.retained),
     balance: money(row.balance),
   }));
 }
