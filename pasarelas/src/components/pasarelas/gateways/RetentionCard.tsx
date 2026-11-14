@@ -27,8 +27,11 @@ import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { firstError, pctDraft, type FieldErrors } from "./drafts";
 import { retentionDraftIssues, retentionDraftTotal, type RecipientDraft } from "./retention";
 
-type Choice = { id: string; name: string };
+type Choice = { id: string; name: string; active: boolean };
 type Row = RecipientDraft & { key: string };
+
+/** Lo que se dice de una persona de la retención que se desactivó en Repartos: la base no la deja guardar. */
+const inactiveText = (name: string): string => `${name} está desactivado: quítalo o vuelve a activarlo en Repartos.`;
 
 /** «Titular A (50 %) y Titular B (50 %)». */
 function recipientsText(retention: RetentionCfg, nameOf: (id: string) => string): string {
@@ -43,8 +46,10 @@ function recipientsText(retention: RetentionCfg, nameOf: (id: string) => string)
  * retiene y no hay personas.
  *
  * Mientras lo escrito no valga (las reglas del motor, las mismas de la acción y de la base), el botón no guarda y se
- * dice por qué. Lo ya registrado no cambia: cada cobro congeló la retención con la que se calculó, y «Recalcular» le
- * trae la de ahora. Quien la pinta le cambia la `key` cuando cambia lo guardado: así vuelve a partir de ahí.
+ * dice por qué. Solo se ofrecen beneficiarios activos: si una persona guardada se desactivó, su fila lo dice (y su
+ * lista la nombra así), y no se guarda hasta quitarla o volver a activarla en Repartos, como exige la base.
+ * Lo ya registrado no cambia: cada cobro congeló la retención con la que se calculó, y «Recalcular» le trae la de
+ * ahora. Quien la pinta le cambia la `key` cuando cambia lo guardado: así vuelve a partir de ahí.
  */
 export function RetentionCard({
   gatewayId,
@@ -54,7 +59,7 @@ export function RetentionCard({
   gatewayId: string;
   /** Lo guardado: `pct` "0" si no retiene. */
   retention: RetentionCfg;
-  /** Los que se pueden elegir: los activos y los que ya reciben la retención. */
+  /** Los activos, que son los que se ofrecen, y los que ya reciben la retención aunque estén desactivados. */
   beneficiaries: readonly Choice[];
 }) {
   const titleId = useId();
@@ -72,8 +77,14 @@ export function RetentionCard({
   const [errors, setErrors] = useState<FieldErrors>(undefined);
 
   const nameOf = (id: string) => beneficiaries.find((b) => b.id === id)?.name ?? "Beneficiario borrado";
-  const issues = retentionDraftIssues(pct, rows);
-  const next = beneficiaries.find((b) => !rows.some((row) => row.beneficiaryId === b.id));
+  const active = beneficiaries.filter((b) => b.active);
+  const isInactive = (id: string) => beneficiaries.some((b) => b.id === id && !b.active);
+  // Lo que no deja guardar: las reglas del motor y, una vez cada una, las personas desactivadas.
+  const blockers = [
+    ...retentionDraftIssues(pct, rows).map((issue) => RETENTION_ISSUE_TEXT[issue]),
+    ...[...new Set(rows.map((row) => row.beneficiaryId))].filter(isInactive).map((id) => inactiveText(nameOf(id))),
+  ];
+  const next = active.find((b) => !rows.some((row) => row.beneficiaryId === b.id));
   const retains = !isZero(retention.pct);
 
   const updateRow = (key: string, patch: Partial<RecipientDraft>) =>
@@ -144,11 +155,14 @@ export function RetentionCard({
                         value={row.beneficiaryId}
                         onChange={(event) => updateRow(row.key, { beneficiaryId: event.currentTarget.value })}
                       >
-                        {beneficiaries.map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.name}
-                          </option>
-                        ))}
+                        {/* Solo los activos; el desactivado, solo en su fila y dicho así, para que se vea quién es. */}
+                        {beneficiaries
+                          .filter((b) => b.active || b.id === row.beneficiaryId)
+                          .map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.active ? b.name : `${b.name} (desactivado)`}
+                            </option>
+                          ))}
                       </Select>
                     </Field>
                     <Field label="Porcentaje">
@@ -161,6 +175,9 @@ export function RetentionCard({
                       <Trash2 aria-hidden className="size-5" />
                     </IconButton>
                   </div>
+                  {isInactive(row.beneficiaryId) ? (
+                    <Alert tone="warning">{inactiveText(nameOf(row.beneficiaryId))}</Alert>
+                  ) : null}
                 </fieldset>
               ))}
               <Button
@@ -173,7 +190,7 @@ export function RetentionCard({
                 <Plus aria-hidden className="size-5" />
                 Agregar persona
               </Button>
-              {beneficiaries.length === 0 ? (
+              {active.length === 0 ? (
                 <p className="text-sm text-ink-soft">No hay beneficiarios activos: agrégalos en Repartos.</p>
               ) : null}
               {rows.length > 0 ? (
@@ -183,12 +200,12 @@ export function RetentionCard({
               ) : null}
             </fieldset>
 
-            {issues.length > 0 ? (
+            {blockers.length > 0 ? (
               <div id={issuesId}>
                 <Alert tone="warning" title="Todavía no se puede guardar">
                   <ul className="flex flex-col gap-1">
-                    {issues.map((issue) => (
-                      <li key={issue}>{RETENTION_ISSUE_TEXT[issue]}</li>
+                    {blockers.map((text) => (
+                      <li key={text}>{text}</li>
                     ))}
                   </ul>
                 </Alert>
@@ -207,8 +224,8 @@ export function RetentionCard({
             <SubmitButton
               variant="secondary"
               className="self-start"
-              disabled={issues.length > 0}
-              aria-describedby={issues.length > 0 ? issuesId : undefined}
+              disabled={blockers.length > 0}
+              aria-describedby={blockers.length > 0 ? issuesId : undefined}
             >
               Guardar retención
             </SubmitButton>

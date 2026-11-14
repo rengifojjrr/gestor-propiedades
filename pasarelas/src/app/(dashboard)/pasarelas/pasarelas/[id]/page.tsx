@@ -103,11 +103,12 @@ export default async function PasarelaPage({ params }: PageProps<"/pasarelas/pas
   const totals = allTotals.filter((row) => row.gatewayId === gateway.id);
   const payout = payoutText(gateway.payoutDays, gateway.payoutDayType, gateway.payoutDaysMax);
   const international = activeInternational(gateway);
-  // A quién le puede caer la retención: los beneficiarios activos y los que ya la reciben (aunque estén inactivos).
+  // A quién le puede caer la retención: los beneficiarios activos. Los que ya la reciben van también, aunque estén
+  // desactivados: la tarjeta los nombra y dice qué hacer, pero no los ofrece.
   const recipientIds = new Set(gateway.retention.recipients.map((recipient) => recipient.beneficiaryId));
   const beneficiaries = cfg.beneficiaries
     .filter((b) => b.active || recipientIds.has(b.id))
-    .map((b) => ({ id: b.id, name: b.name }));
+    .map((b) => ({ id: b.id, name: b.name, active: b.active }));
 
   return (
     <>
