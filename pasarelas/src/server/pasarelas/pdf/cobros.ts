@@ -2,6 +2,7 @@ import "server-only";
 import { todayNY } from "@/lib/pasarelas/dates";
 import type { ISODate, PayConfig, TxSnapshot } from "@/lib/pasarelas/types";
 import type { Db } from "../dto";
+import { payoutStatuses } from "../queries/settlements";
 import { getSnapshots, listTx } from "../queries/transactions";
 import { drawPdf } from "./draw";
 import { pdfModel } from "./model";
@@ -9,7 +10,8 @@ import { PDF_MAX, pdfFileName, scopeText, tooManyText, type PdfRequest } from ".
 
 /*
  * El PDF de cobros, de la petición a la respuesta. Lee con el cliente del usuario (la RLS manda: lo que no ve no
- * sale, sin error) y no recalcula nada: cada cobro va con su desglose congelado. La sesión la exige la ruta.
+ * sale, sin error) y no recalcula nada: cada cobro va con su desglose congelado y con lo ya pagado a cada parte de su
+ * reparto (`payoutStatuses`, lo mismo que dice su detalle). La sesión la exige la ruta.
  */
 
 /** El PDF y cómo se llama; o, si son más cobros de los que admite, cuántos son y qué decir. */
@@ -41,15 +43,19 @@ async function chosen(
   return { txs: txs.filter((tx) => tx.deletedAt === null) };
 }
 
-/** El PDF de los cobros que pide `request`, generado en `now`. */
+/**
+ * El PDF de los cobros que pide `request`, generado en `now`. Lo pagado a cada parte se lee solo de esos cobros (su
+ * reparto, lo retenido y los pagos ligados a ellos), por tramos.
+ */
 export async function txPdf(supabase: Db, cfg: PayConfig, request: PdfRequest, now: Date): Promise<PdfResult> {
   const today = todayNY(now);
   const found = await chosen(supabase, cfg, request, today);
   if ("tooMany" in found) return { ok: false, count: found.tooMany, message: tooManyText(request, found.tooMany) };
   const scope = scopeText(request, found.txs.length, cfg, today);
+  const payouts = await payoutStatuses(supabase, found.txs);
   return {
     ok: true,
-    bytes: await drawPdf(pdfModel({ txs: found.txs, cfg, scope, now })),
+    bytes: await drawPdf(pdfModel({ txs: found.txs, payouts, cfg, scope, now })),
     fileName: pdfFileName(request, today),
     count: found.txs.length,
   };

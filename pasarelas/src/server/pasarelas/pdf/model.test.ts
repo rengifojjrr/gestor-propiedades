@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { buyerFeesOf, compute, recompute, retentionOf } from "@/lib/pasarelas/breakdown";
+import { payoutStatus, type BeneficiaryAmount, type PayoutStatus } from "@/lib/pasarelas/payouts";
 import type {
   Breakdown,
   GatewayCfg,
@@ -13,8 +14,9 @@ import type {
 import { pdfModel, type PdfRow } from "./model";
 
 /**
- * El modelo del PDF de cobros: lo que se dibuja de cada cobro (siempre de su desglose congelado, como el detalle) y
- * los totales por moneda y por parte. Datos inventados: Tienda Demo, Escuela Demo, OTF Demo, Grupos y Titulares.
+ * El modelo del PDF de cobros: lo que se dibuja de cada cobro (siempre de su desglose congelado, como el detalle, con
+ * lo ya pagado a cada parte) y los totales por moneda y por parte. Datos inventados: Tienda Demo, Escuela Demo, OTF
+ * Demo, Grupos y Titulares.
  */
 
 const gateway = (id: string, name: string): GatewayCfg => ({
@@ -188,9 +190,36 @@ function snapshot(b: Breakdown, patch: Partial<TxSnapshot> = {}): TxSnapshot {
 /** Las tres de la tarde del martes 10 de noviembre de 2026 en Nueva York. */
 const NOW = new Date("2026-11-10T20:00:00Z");
 
-const modelOf = (txs: TxSnapshot[], cfg: PayConfig = CFG) => pdfModel({ txs, cfg, scope: "Seleccionados", now: NOW });
-const onlyTx = (tx: TxSnapshot, cfg: PayConfig = CFG) => {
-  const [first] = modelOf([tx], cfg).transactions;
+/**
+ * Lo que se le debe a cada parte de ese cobro con esos pagos ligados, según el motor (`payoutStatus`), como lo arma
+ * `payoutStatuses` con lo que lee de la base: el reparto, lo retenido a cada persona y los pagos.
+ */
+function statusOf(tx: TxSnapshot, paid: readonly BeneficiaryAmount[] = []): PayoutStatus | null {
+  const b = tx.breakdown;
+  return payoutStatus({
+    counts: tx.status !== "fallido" && tx.deletedAt === null,
+    allocations: b.alloc.lines,
+    retained: retentionOf(b)?.shares ?? [],
+    paid,
+  });
+}
+
+/** Un pago ligado a un cobro: lo de ese beneficiario en ese cobro. */
+const pay = (beneficiaryId: string, amount: string): BeneficiaryAmount => ({ beneficiaryId, amount });
+
+/** Los pagos ligados a cada cobro, por id; un cobro que no está no tiene pagos. */
+type Paid = Record<string, BeneficiaryAmount[]>;
+
+const modelOf = (txs: TxSnapshot[], cfg: PayConfig = CFG, paid: Paid = {}) =>
+  pdfModel({
+    txs,
+    cfg,
+    scope: "Seleccionados",
+    now: NOW,
+    payouts: new Map(txs.map((tx) => [tx.id, statusOf(tx, paid[tx.id])])),
+  });
+const onlyTx = (tx: TxSnapshot, cfg: PayConfig = CFG, paid: BeneficiaryAmount[] = []) => {
+  const [first] = modelOf([tx], cfg, { [tx.id]: paid }).transactions;
   if (first === undefined) throw new Error("el cobro no salió en el modelo");
   return first;
 };
@@ -202,7 +231,13 @@ const e1 = compute(rulesE1(), paid("100.00"), "USD");
 
 describe("pdfModel: el encabezado", () => {
   test("lleva lo que abarca y la fecha y hora en que se generó, en Nueva York", () => {
-    const model = pdfModel({ txs: [], cfg: CFG, scope: "Seleccionados (0)", now: new Date("2026-11-14T03:30:00Z") });
+    const model = pdfModel({
+      txs: [],
+      cfg: CFG,
+      scope: "Seleccionados (0)",
+      now: new Date("2026-11-14T03:30:00Z"),
+      payouts: new Map(),
+    });
     expect(model.scope).toBe("Seleccionados (0)");
     // 03:30 en UTC del sábado es todavía viernes por la noche en Nueva York.
     expect(model.generatedAt).toBe("Generado el vie 13 nov 2026, 22:30 (hora de Nueva York)");
@@ -248,21 +283,22 @@ describe("pdfModel: cada cobro, del desglose congelado", () => {
           text: "Titular A y Titular B no pagan comisión: sus partes son el 5 % y el 5 % del bruto. La comisión la pagan los demás.",
         },
         { kind: "monto", label: "Sobre el neto", amount: "970.80" },
-        { kind: "monto", label: "Grupo A (60 %)", amount: "580.53", indent: true },
-        { kind: "monto", label: "Grupo B (30 %)", amount: "290.27", indent: true },
+        // Sin pagos todavía: a cada parte le falta lo suyo, menos lo que ya recibió de la retención.
+        { kind: "monto", label: "Grupo A (60 %)", amount: "580.53", indent: true, detail: "Falta $580,53" },
+        { kind: "monto", label: "Grupo B (30 %)", amount: "290.27", indent: true, detail: "Falta $290,27" },
         {
           kind: "monto",
           label: "Titular A (5 %) · no paga comisión",
           amount: "50.00",
           indent: true,
-          detail: "ya recibió $25,00 de la retención · falta $25,00",
+          detail: "ya recibió $25,00 de la retención · Falta $25,00",
         },
         {
           kind: "monto",
           label: "Titular B (5 %) · no paga comisión",
           amount: "50.00",
           indent: true,
-          detail: "ya recibió $25,00 de la retención · falta $25,00",
+          detail: "ya recibió $25,00 de la retención · Falta $25,00",
         },
       ],
     });
@@ -283,9 +319,9 @@ describe("pdfModel: cada cobro, del desglose congelado", () => {
     ]);
     expect(tx.allocation.rows).toEqual([
       { kind: "monto", label: "Sobre el neto", amount: "90.30" },
-      { kind: "monto", label: "Grupo A (50 %)", amount: "45.15", indent: true },
-      { kind: "monto", label: "Grupo B (30 %)", amount: "27.09", indent: true },
-      { kind: "monto", label: "Grupo C (20 %)", amount: "18.06", indent: true },
+      { kind: "monto", label: "Grupo A (50 %)", amount: "45.15", indent: true, detail: "Falta $45,15" },
+      { kind: "monto", label: "Grupo B (30 %)", amount: "27.09", indent: true, detail: "Falta $27,09" },
+      { kind: "monto", label: "Grupo C (20 %)", amount: "18.06", indent: true, detail: "Falta $18,06" },
     ]);
   });
 
@@ -313,14 +349,16 @@ describe("pdfModel: cada cobro, del desglose congelado", () => {
 
   test("con reembolso total la pasarela no retiene nada y llega al banco lo mismo que el neto", () => {
     const tx = onlyTx(snapshot(recompute(e10, { refunded: "1000.00" })));
-    expect(tx.status).toBe("Reembolsado · llega el jue 12 nov");
+    // Como el detalle: reembolsado del todo, no hay depósito que esperar (no está «Por caer»).
+    expect(tx.status).toBe("Reembolsado · no hay depósito");
     expect(tx.breakdown.rows.slice(-3)).toEqual([
       { kind: "monto", label: "Retiene OTF Demo (5 %)", amount: "0.00" },
       { kind: "nota", text: "Sin nada cobrado, no retiene nada." },
       { kind: "monto", label: "Llega al banco", amount: "-29.20", strong: true },
     ]);
     // Lo retenido en 0 no se cuenta como recibido.
-    expect(tx.allocation.rows.filter((row) => row.kind === "monto" && row.detail !== undefined)).toEqual([]);
+    const details = tx.allocation.rows.flatMap((row) => (row.kind === "monto" && row.detail ? [row.detail] : []));
+    expect(details.filter((detail) => detail.includes("ya recibió"))).toEqual([]);
   });
 
   test("una sola parte que no paga comisión se dice en singular", () => {
@@ -373,13 +411,14 @@ describe("pdfModel: cada cobro, del desglose congelado", () => {
     ]);
   });
 
-  test("si recibió de la retención más que su parte, lo de más es un adelanto", () => {
+  test("si recibió de la retención más que su parte, se le pagó de más", () => {
     const retention: RetentionRule = { ...OTF_RETENTION, pct: "20" };
     const tx = onlyTx(snapshot(compute(rulesE10({ retention }), paid("1000.00"), "USD")));
     const titular = tx.allocation.rows.find((row) => row.kind === "monto" && row.label.startsWith("Titular A"));
+    // Lo de más es lo que el detalle dice «Se le pagó de más»: recibió de la retención más que su parte.
     expect(titular).toMatchObject({
       amount: "50.00",
-      detail: "ya recibió $100,00 de la retención · $50,00 de adelanto",
+      detail: "ya recibió $100,00 de la retención · Se le pagó de más $50,00",
     });
   });
 
@@ -476,7 +515,13 @@ describe("pdfModel: cada cobro, del desglose congelado", () => {
   });
 
   test("lo que está por caer con la fecha estimada ya pasada sale atrasado", () => {
-    const late = pdfModel({ txs: [snapshot(e1)], cfg: CFG, scope: "", now: new Date("2026-11-14T15:00:00Z") });
+    const late = pdfModel({
+      txs: [snapshot(e1)],
+      cfg: CFG,
+      scope: "",
+      now: new Date("2026-11-14T15:00:00Z"),
+      payouts: new Map(),
+    });
     expect(late.transactions[0]?.status).toBe("Registrado · atrasado · llega el jue 12 nov");
   });
 
@@ -510,6 +555,93 @@ describe("pdfModel: cada cobro, del desglose congelado", () => {
   });
 });
 
+describe("pdfModel: lo ya pagado a cada parte, en cada cobro", () => {
+  test("una parte pagada, otra a medias y otra pagada de más (hubo un reembolso después de pagarle)", () => {
+    // E5: con el reembolso de 40,00 el reparto baja a 26,45 · 15,87 · 10,58; a Grupo C ya se le habían pagado 18,06.
+    const tx = onlyTx(snapshot(recompute(e1, { refunded: "40.00" })), CFG, [
+      pay("ben-ga", "26.45"),
+      pay("ben-gb", "10.00"),
+      pay("ben-gc", "18.06"),
+    ]);
+    expect(tx.allocation.rows).toEqual([
+      { kind: "monto", label: "Sobre el neto", amount: "52.90" },
+      { kind: "monto", label: "Grupo A (50 %)", amount: "26.45", indent: true, detail: "Pagado" },
+      { kind: "monto", label: "Grupo B (30 %)", amount: "15.87", indent: true, detail: "Falta $5,87" },
+      { kind: "monto", label: "Grupo C (20 %)", amount: "10.58", indent: true, detail: "Se le pagó de más $7,48" },
+    ]);
+  });
+
+  test("lo retenido se sigue viendo como ya recibido, y lo que falta cuenta también lo pagado", () => {
+    const tx = onlyTx(snapshot(e10), CFG, [pay("ben-ta", "25.00"), pay("ben-ga", "300.00"), pay("ben-ga", "280.53")]);
+    const rowOf = (name: string) => tx.allocation.rows.find((row) => row.kind === "monto" && row.label.startsWith(name));
+    // Dos pagos a la misma parte se suman.
+    expect(rowOf("Grupo A")).toMatchObject({ amount: "580.53", detail: "Pagado" });
+    expect(rowOf("Grupo B")).toMatchObject({ amount: "290.27", detail: "Falta $290,27" });
+    expect(rowOf("Titular A")).toMatchObject({
+      amount: "50.00",
+      detail: "ya recibió $25,00 de la retención · Pagado",
+    });
+    expect(rowOf("Titular B")).toMatchObject({
+      amount: "50.00",
+      detail: "ya recibió $25,00 de la retención · Falta $25,00",
+    });
+  });
+
+  test("un pago a quien no está en el reparto de ese cobro (se cambió el esquema después): se le pagó de más", () => {
+    const tx = onlyTx(snapshot(e1), CFG, [pay("ben-ta", "10.00")]);
+    expect(notes(tx.allocation.rows)).toEqual([
+      "Pagos a quien no está en el reparto: Titular A · Se le pagó de más $10,00",
+    ]);
+    const unshared = snapshot(compute(rulesE10({ retention: null, scheme: null }), paid("1000.00"), "USD"));
+    expect(onlyTx(unshared, CFG, [pay("ben-gb", "5.00"), pay("ben-borrado", "1.00")]).allocation.rows).toEqual([
+      { kind: "nota", text: "Este cobro no se reparte." },
+      { kind: "nota", text: "Pagos a quien no está en el reparto: Grupo B · Se le pagó de más $5,00" },
+      {
+        kind: "nota",
+        text: "Pagos a quien no está en el reparto: Beneficiario que ya no existe · Se le pagó de más $1,00",
+      },
+    ]);
+  });
+
+  test("un fallido no tiene nada pendiente: su reparto no dice lo pagado, como antes", () => {
+    const tx = onlyTx(snapshot(recompute(e1, { failed: true })), CFG, [pay("ben-ga", "45.15")]);
+    expect(tx.allocation.rows.filter((row) => row.kind === "monto" && row.detail !== undefined)).toEqual([]);
+    expect(notes(tx.allocation.rows)).toEqual([]);
+  });
+
+  test("sin el estado de pago de un cobro, su reparto no dice lo pagado; lo retenido, sí", () => {
+    const model = pdfModel({ txs: [snapshot(e10)], cfg: CFG, scope: "", now: NOW, payouts: new Map() });
+    const rows = model.transactions[0]?.allocation.rows ?? [];
+    expect(rows.find((row) => row.kind === "monto" && row.label.startsWith("Grupo A"))).not.toHaveProperty("detail");
+    expect(rows.find((row) => row.kind === "monto" && row.label.startsWith("Titular A"))).toMatchObject({
+      detail: "ya recibió $25,00 de la retención",
+    });
+  });
+
+  test("reembolsado del todo no hay depósito que esperar, salvo lo ya depositado", () => {
+    const full = recompute(e1, { refunded: "100.00" });
+    expect(onlyTx(snapshot(full)).status).toBe("Reembolsado · no hay depósito");
+    expect(onlyTx(snapshot(full, { status: "en_transito" })).status).toBe("Reembolsado · no hay depósito");
+    expect(onlyTx(snapshot(full, { disputeState: "abierta" })).status).toBe("En disputa · no hay depósito");
+    expect(onlyTx(snapshot(full, { status: "depositado", depositedOn: "2026-11-13" })).status).toBe(
+      "Reembolsado · depositado el vie 13 nov 2026",
+    );
+  });
+});
+
+/** Las columnas de la tabla del reparto por parte. */
+const PARTY_COLUMNS = [{ title: "Reparto" }, { title: "Retenido" }, { title: "Pagado" }, { title: "Falta", strong: true }];
+
+/** Lo de una parte en los totales. */
+const party = (beneficiaryId: string, name: string, allocated: string, retained: string, paid: string, owed: string) => ({
+  beneficiaryId,
+  name,
+  allocated,
+  retained,
+  paid,
+  owed,
+});
+
 describe("pdfModel: los totales por moneda y por parte", () => {
   test("D2: monedas distintas dan un bloque cada una, en el orden en que aparecen; las partes se suman", () => {
     const model = modelOf([
@@ -529,11 +661,12 @@ describe("pdfModel: los totales por moneda y por parte", () => {
         retention: "100.00",
         payout: "1841.60",
         parties: [
-          { beneficiaryId: "ben-ga", name: "Grupo A", amount: "1161.06", received: "0.00" },
-          { beneficiaryId: "ben-gb", name: "Grupo B", amount: "580.54", received: "0.00" },
-          { beneficiaryId: "ben-ta", name: "Titular A", amount: "100.00", received: "50.00" },
-          { beneficiaryId: "ben-tb", name: "Titular B", amount: "100.00", received: "50.00" },
+          party("ben-ga", "Grupo A", "1161.06", "0.00", "0.00", "1161.06"),
+          party("ben-gb", "Grupo B", "580.54", "0.00", "0.00", "580.54"),
+          party("ben-ta", "Titular A", "100.00", "50.00", "0.00", "50.00"),
+          party("ben-tb", "Titular B", "100.00", "50.00", "0.00", "50.00"),
         ],
+        advances: [],
       },
       {
         currency: "MXN",
@@ -545,10 +678,11 @@ describe("pdfModel: los totales por moneda y por parte", () => {
         retention: "0.00",
         payout: "90.30",
         parties: [
-          { beneficiaryId: "ben-ga", name: "Grupo A", amount: "45.15", received: "0.00" },
-          { beneficiaryId: "ben-gb", name: "Grupo B", amount: "27.09", received: "0.00" },
-          { beneficiaryId: "ben-gc", name: "Grupo C", amount: "18.06", received: "0.00" },
+          party("ben-ga", "Grupo A", "45.15", "0.00", "0.00", "45.15"),
+          party("ben-gb", "Grupo B", "27.09", "0.00", "0.00", "27.09"),
+          party("ben-gc", "Grupo C", "18.06", "0.00", "0.00", "18.06"),
         ],
+        advances: [],
       },
     ]);
     const usd = model.totals[0];
@@ -565,22 +699,69 @@ describe("pdfModel: los totales por moneda y por parte", () => {
     });
     expect(usd?.allocation).toEqual({
       title: "Reparto por parte",
+      columns: PARTY_COLUMNS,
       rows: [
-        { kind: "monto", label: "Grupo A", amount: "1161.06" },
-        { kind: "monto", label: "Grupo B", amount: "580.54" },
-        {
-          kind: "monto",
-          label: "Titular A",
-          amount: "100.00",
-          detail: "ya recibió $50,00 de la retención · falta $50,00",
-        },
-        {
-          kind: "monto",
-          label: "Titular B",
-          amount: "100.00",
-          detail: "ya recibió $50,00 de la retención · falta $50,00",
-        },
+        { label: "Grupo A", amounts: ["1161.06", "0.00", "0.00", "1161.06"] },
+        { label: "Grupo B", amounts: ["580.54", "0.00", "0.00", "580.54"] },
+        { label: "Titular A", amounts: ["100.00", "50.00", "0.00", "50.00"] },
+        { label: "Titular B", amounts: ["100.00", "50.00", "0.00", "50.00"] },
       ],
+      notes: [],
+    });
+  });
+
+  test("por parte: reparto, retenido, pagado y lo que falta; con «falta» negativa, se le pagó de más", () => {
+    const [usd] = modelOf(
+      [
+        snapshot(recompute(e1, { refunded: "40.00" }), { id: "tx-e5" }),
+        snapshot(e1, { id: "tx-e1" }),
+        snapshot(e10, { id: "tx-e10" }),
+        // Un fallido no cuenta, aunque tenga un pago ligado.
+        snapshot(recompute(e1, { failed: true }), { id: "tx-fallido" }),
+      ],
+      CFG,
+      {
+        "tx-e5": [pay("ben-ga", "26.45"), pay("ben-gb", "10.00"), pay("ben-gc", "18.06")],
+        "tx-e1": [pay("ben-gc", "18.06")],
+        "tx-e10": [pay("ben-ta", "25.00")],
+        "tx-fallido": [pay("ben-gb", "99.00")],
+      },
+    ).totals;
+    expect(usd?.parties).toEqual([
+      party("ben-ga", "Grupo A", "652.13", "0.00", "26.45", "625.68"),
+      party("ben-gb", "Grupo B", "333.23", "0.00", "10.00", "323.23"),
+      party("ben-gc", "Grupo C", "28.64", "0.00", "36.12", "-7.48"),
+      party("ben-ta", "Titular A", "50.00", "25.00", "25.00", "0.00"),
+      party("ben-tb", "Titular B", "50.00", "25.00", "0.00", "25.00"),
+    ]);
+    expect(usd?.allocation).toEqual({
+      title: "Reparto por parte",
+      columns: PARTY_COLUMNS,
+      rows: [
+        { label: "Grupo A", amounts: ["652.13", "0.00", "26.45", "625.68"] },
+        { label: "Grupo B", amounts: ["333.23", "0.00", "10.00", "323.23"] },
+        { label: "Grupo C", amounts: ["28.64", "0.00", "36.12", "-7.48"], detail: "Se le pagó de más $7,48" },
+        { label: "Titular A", amounts: ["50.00", "25.00", "25.00", "0.00"] },
+        { label: "Titular B", amounts: ["50.00", "25.00", "0.00", "25.00"] },
+      ],
+      notes: [],
+    });
+  });
+
+  test("quien tiene pagos sin estar en el reparto sale como parte; si ya no existe, se dice", () => {
+    const paidOutside = { "tx-1": [pay("ben-ta", "10.00"), pay("ben-x", "1.00")] };
+    const [usd] = modelOf([snapshot(e1, { id: "tx-1" })], CFG, paidOutside).totals;
+    expect(usd?.allocation.rows.slice(0, 1)).toEqual([
+      {
+        label: "Beneficiario que ya no existe",
+        amounts: ["0.00", "0.00", "1.00", "-1.00"],
+        detail: "Se le pagó de más $1,00",
+      },
+    ]);
+    expect(usd?.allocation.rows.at(-1)).toEqual({
+      label: "Titular A",
+      amounts: ["0.00", "0.00", "10.00", "-10.00"],
+      detail: "Se le pagó de más $10,00",
     });
   });
 
@@ -592,7 +773,8 @@ describe("pdfModel: los totales por moneda y por parte", () => {
   });
 
   test("con reembolso: los totales son del bruto vigente y de las comisiones que quedaron", () => {
-    const [usd] = modelOf([snapshot(recompute(e1, { refunded: "40.00" })), snapshot(e1)]).totals;
+    const refunded = snapshot(recompute(e1, { refunded: "40.00" }), { id: "tx-1" });
+    const [usd] = modelOf([refunded, snapshot(e1, { id: "tx-2" })]).totals;
     expect(usd).toMatchObject({ count: 2, gross: "160.00", fees: "16.80", net: "143.20" });
   });
 
@@ -613,25 +795,37 @@ describe("pdfModel: los totales por moneda y por parte", () => {
       { kind: "dato", label: "Cobros", value: "1" },
       { kind: "nota", text: "Sin contar 1 fallido." },
     ]);
-    const failed = snapshot(recompute(e1, { failed: true }));
-    const two = modelOf([snapshot(e1), failed, failed]);
+    const failed = recompute(e1, { failed: true });
+    const two = modelOf([snapshot(e1), snapshot(failed, { id: "tx-f1" }), snapshot(failed, { id: "tx-f2" })]);
     expect(notes(two.totals[0]?.figures.rows ?? [])).toEqual(["Sin contar 2 fallidos."]);
   });
 
-  test("quien solo recibió de la retención sale en el reparto por parte con su adelanto", () => {
+  test("quien solo recibió de la retención no es una parte: su adelanto se dice debajo de la tabla", () => {
     const retention: RetentionRule = {
       ...OTF_RETENTION,
       recipients: [{ beneficiaryId: "ben-tc", name: "Titular C", pct: "100" }],
     };
-    const [usd] = modelOf([snapshot(compute(rulesE10({ retention, scheme: null }), paid("1000.00"), "USD"))]).totals;
-    expect(usd?.parties).toEqual([{ beneficiaryId: "ben-tc", name: "Titular C", amount: "0.00", received: "50.00" }]);
-    expect(usd?.allocation.rows).toEqual([
-      {
-        kind: "monto",
-        label: "Titular C",
-        amount: "0.00",
-        detail: "ya recibió $50,00 de la retención · $50,00 de adelanto",
-      },
+    const [alone] = modelOf([snapshot(compute(rulesE10({ retention, scheme: null }), paid("1000.00"), "USD"))]).totals;
+    expect(alone?.parties).toEqual([]);
+    expect(alone?.advances).toEqual([{ beneficiaryId: "ben-tc", name: "Titular C", amount: "50.00" }]);
+    expect(alone?.allocation).toMatchObject({
+      rows: [],
+      notes: [
+        "Titular C recibió $50,00 de la retención sin estar en el reparto de esos cobros: es un adelanto y su " +
+          "saldo baja.",
+      ],
+    });
+    // Con el reparto de E10, sus adelantos de dos cobros se suman y van debajo de las partes.
+    const withScheme = snapshot(compute(rulesE10({ retention }), paid("1000.00"), "USD"));
+    const [both] = modelOf([
+      { ...withScheme, id: "tx-1" },
+      { ...withScheme, id: "tx-2" },
+    ]).totals;
+    expect(both?.parties.map((total) => total.name)).toEqual(["Grupo A", "Grupo B", "Titular A", "Titular B"]);
+    expect(both?.advances).toEqual([{ beneficiaryId: "ben-tc", name: "Titular C", amount: "100.00" }]);
+    expect(both?.allocation.notes).toEqual([
+      "Titular C recibió $100,00 de la retención sin estar en el reparto de esos cobros: es un adelanto y su " +
+        "saldo baja.",
     ]);
   });
 
@@ -639,7 +833,7 @@ describe("pdfModel: los totales por moneda y por parte", () => {
     const unshared = compute(rulesE10({ retention: null, scheme: null }), paid("1000.00"), "USD");
     const [usd] = modelOf([snapshot(unshared)]).totals;
     expect(usd?.parties).toEqual([]);
-    expect(usd?.allocation.rows).toEqual([{ kind: "nota", text: "Sin reparto." }]);
+    expect(usd?.allocation).toMatchObject({ rows: [], notes: ["Sin reparto."] });
   });
 
   test("cada parte con su nombre de ahora o, si ya no existe, el congelado; en orden alfabético", () => {
@@ -648,6 +842,6 @@ describe("pdfModel: los totales por moneda y por parte", () => {
       beneficiaries: [person("ben-ga", "Ángel Demo"), person("ben-gb", "Zeta Demo")],
     };
     const [usd] = modelOf([snapshot(e1)], renamed).totals;
-    expect(usd?.parties.map((party) => party.name)).toEqual(["Ángel Demo", "Grupo C", "Zeta Demo"]);
+    expect(usd?.parties.map((total) => total.name)).toEqual(["Ángel Demo", "Grupo C", "Zeta Demo"]);
   });
 });

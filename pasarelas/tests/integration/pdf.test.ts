@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { PayConfig } from "@/lib/pasarelas";
 import { pdfResponse, txPdf } from "@/server/pasarelas/pdf/cobros";
 import { pdfRequestOf } from "@/server/pasarelas/pdf/scope";
+import { recordPayouts, type PayoutInput } from "@/server/pasarelas/ops/settlements";
 import { createTx, trashTx } from "@/server/pasarelas/ops/transactions";
 import { loadPayConfig } from "@/server/pasarelas/queries/config";
 import { anonClient, createUser, e1Item, saveTransactions, seedBasics, unwrap, type Basics, type Db } from "./helpers";
@@ -37,6 +38,18 @@ async function textOf(bytes: Uint8Array): Promise<string> {
   return text;
 }
 
+/** Un pago a ese beneficiario de lo suyo en esos cobros (cobro y monto), como «Marcar pagado…». */
+function payout(beneficiaryId: string, items: [transactionId: string, amount: string][]): PayoutInput {
+  return {
+    id: randomUUID(),
+    beneficiaryId,
+    currency: "USD",
+    paidOn: "2026-11-12",
+    method: null,
+    items: items.map(([transactionId, amount]) => ({ transactionId, amount })),
+  };
+}
+
 /** Un cobro E1 (100,00 → comisiones 9,70, neto 90,30) con esa referencia, a esa hora (UTC) y en esa moneda. */
 async function e1({ db, basics }: Owner, reference: string, at = "2026-11-13T15:00:00Z", currency = "USD") {
   const on = new Date(new Date(at).getTime() - 5 * 3_600_000).toISOString().slice(0, 10);
@@ -46,12 +59,19 @@ async function e1({ db, basics }: Owner, reference: string, at = "2026-11-13T15:
   return unwrap({ data: saved?.id ?? null, error: null }, "cobro");
 }
 
+/** OTF Demo con su retención y el esquema de E10, y los ids de cada beneficiario por nombre. */
+type E10 = {
+  gatewayId: string;
+  schemeId: string;
+  ids: Record<"Grupo A" | "Grupo B" | "Titular A" | "Titular B", string>;
+};
+
 /**
  * E10 con las operaciones de la app: Titular A y Titular B; «OTF Demo» (2,9 % + 0,20) retiene el 5 % durante 30
  * días para los dos, mitad y mitad; el esquema «Sobre el neto» da Grupo A 60 %, Grupo B 30 % y 5 % a cada titular,
- * los dos sin comisión. El cobro: 1000,00 USD el martes 10 de noviembre al mediodía.
+ * los dos sin comisión.
  */
-async function chargeE10({ db, basics }: Owner, reference: string): Promise<string> {
+async function setupE10({ db, basics }: Owner): Promise<E10> {
   const titulares = unwrap(
     await db.from("pay_beneficiaries").insert([{ name: "Titular A" }, { name: "Titular B" }]).select("id, name"),
     "titulares",
@@ -89,14 +109,25 @@ async function chargeE10({ db, basics }: Owner, reference: string): Promise<stri
       },
     })
     .throwOnError();
+  const ids = {
+    "Grupo A": basics.beneficiaryIds.a,
+    "Grupo B": basics.beneficiaryIds.b,
+    "Titular A": idOf("Titular A"),
+    "Titular B": idOf("Titular B"),
+  };
+  return { gatewayId, schemeId: scheme.scheme_id, ids };
+}
+
+/** Un cobro E10: 1000,00 USD el martes 10 de noviembre al mediodía, por OTF Demo y con el esquema de E10. */
+async function chargeE10({ db, basics }: Owner, e10: E10, reference: string): Promise<string> {
   const id = randomUUID();
   await createTx(db, {
     id,
     companyId: basics.companyId,
     channelId: null,
-    gatewayId,
+    gatewayId: e10.gatewayId,
     extraIds: [],
-    schemeId: scheme.scheme_id,
+    schemeId: e10.schemeId,
     occurredAt: "2026-11-10T17:00:00Z",
     occurredOn: "2026-11-10",
     currency: "USD",
@@ -111,7 +142,7 @@ async function chargeE10({ db, basics }: Owner, reference: string): Promise<stri
 describe("el PDF de cobros", () => {
   it("D1: E10 solo, elegido: un PDF válido con sus cifras, su retención, su reparto y los acentos bien", async () => {
     const me = await owner();
-    const id = await chargeE10(me, "pi_d1");
+    const id = await chargeE10(me, await setupE10(me), "pi_d1");
     const result = await pdfOf(me, `id=${id}`);
     if (!result.ok) throw new Error(result.message);
     expect(result).toMatchObject({ fileName: "cobros-elegidos-2026-11-13.pdf", count: 1 });
@@ -144,7 +175,7 @@ describe("el PDF de cobros", () => {
       "Grupo B (30 %) $290,27",
       "Titular A (5 %) · no paga comisión $50,00",
       "Titular B (5 %) · no paga comisión $50,00",
-      "ya recibió $25,00 de la retención · falta $25,00",
+      "ya recibió $25,00 de la retención · Falta $25,00",
       "Titular A y Titular B no pagan comisión",
       "Totales en USD",
       "Cobros 1",
@@ -247,13 +278,22 @@ describe("el PDF de cobros", () => {
     expect(text).not.toContain("pi_papelera");
   });
 
-  it("D5: con 300 cobros en el filtro sale el PDF; con 301, el mensaje y ningún PDF", async () => {
+  it("D5: con 300 cobros en el filtro (con pagos) sale el PDF; con 301, el mensaje y ningún PDF", async () => {
     const me = await owner();
     const items = (from: number, count: number) =>
       Array.from({ length: count }, (_, i) =>
         e1Item(me.basics, { reference: `pi_tope_${String(from + i).padStart(3, "0")}`, occurred_on: TODAY }),
       );
-    await saveTransactions(me.db, items(1, 300));
+    const saved = await saveTransactions(me.db, items(1, 300));
+    // A Grupo A se le pagó lo suyo de los 300 en un solo pago; a Grupo B, lo del primero.
+    const [first] = saved;
+    await recordPayouts(me.db, [
+      payout(
+        me.basics.beneficiaryIds.a,
+        saved.map((row) => [row.id, "45.15"]),
+      ),
+      payout(me.basics.beneficiaryIds.b, [[first?.id ?? "", "27.09"]]),
+    ]);
     const full = await pdfOf(me, "periodo=este_mes");
     if (!full.ok) throw new Error(full.message);
     expect(full.count).toBe(300);
@@ -261,6 +301,11 @@ describe("el PDF de cobros", () => {
     expect(text).toContain("pi_tope_001");
     expect(text).toContain("pi_tope_300");
     expect(text).toContain("Cobros 300");
+    expect(text.match(/Grupo A \(50 %\) \$45,15\nPagado/g)).toHaveLength(300);
+    expect(text.match(/Grupo B \(30 %\) \$27,09\nPagado/g)).toHaveLength(1);
+    expect(text).toContain("Grupo A $13.545,00 $0,00 $13.545,00 $0,00");
+    expect(text).toContain("Grupo B $8.127,00 $0,00 $27,09 $8.099,91");
+    expect(text).toContain("Grupo C $5.418,00 $0,00 $0,00 $5.418,00");
 
     await saveTransactions(me.db, items(301, 1));
     const tooMany = await pdfOf(me, "periodo=este_mes");
@@ -287,6 +332,57 @@ describe("el PDF de cobros", () => {
       count: 301,
       message: "Son 301 cobros; el PDF admite hasta 300. Elige menos.",
     });
+  });
+
+  it("un cobro con pagos: cada parte dice «Pagado» o lo que le falta, y los totales por parte lo cuentan", async () => {
+    const me = await owner();
+    const e10 = await setupE10(me);
+    const id = await chargeE10(me, e10, "pi_pagos");
+    await recordPayouts(me.db, [
+      payout(e10.ids["Grupo A"], [[id, "580.53"]]),
+      payout(e10.ids["Grupo B"], [[id, "100.00"]]),
+      payout(e10.ids["Titular A"], [[id, "25.00"]]),
+    ]);
+    const result = await pdfOf(me, `id=${id}`);
+    if (!result.ok) throw new Error(result.message);
+    const text = await textOf(result.bytes);
+    for (const expected of [
+      // Cada parte, con su estado de pago debajo; lo retenido, como ya recibido.
+      "Grupo A (60 %) $580,53\nPagado",
+      "Grupo B (30 %) $290,27\nFalta $190,27",
+      "Titular A (5 %) · no paga comisión $50,00\nya recibió $25,00 de la retención · Pagado",
+      "Titular B (5 %) · no paga comisión $50,00\nya recibió $25,00 de la retención · Falta $25,00",
+      // Los totales por parte, en columnas: reparto, retenido, pagado y lo que falta.
+      "Reparto por parte\nReparto Retenido Pagado Falta",
+      "Grupo A $580,53 $0,00 $580,53 $0,00",
+      "Grupo B $290,27 $0,00 $100,00 $190,27",
+      "Titular A $50,00 $25,00 $25,00 $0,00",
+      "Titular B $50,00 $25,00 $0,00 $25,00",
+    ]) {
+      expect(text).toContain(expected);
+    }
+    expect(text).not.toContain("falta $25,00");
+  });
+
+  it("«Reparto pendiente»: el encabezado lo nombra y solo salen los cobros a los que les falta algo", async () => {
+    const me = await owner();
+    const e10 = await setupE10(me);
+    const paidUp = await chargeE10(me, e10, "pi_pagado");
+    await chargeE10(me, e10, "pi_pendiente");
+    await recordPayouts(me.db, [
+      payout(e10.ids["Grupo A"], [[paidUp, "580.53"]]),
+      payout(e10.ids["Grupo B"], [[paidUp, "290.27"]]),
+      payout(e10.ids["Titular A"], [[paidUp, "25.00"]]),
+      payout(e10.ids["Titular B"], [[paidUp, "25.00"]]),
+    ]);
+    const result = await pdfOf(me, "periodo=personalizado&desde=2026-11-10&hasta=2026-11-10&reparto=pendiente");
+    if (!result.ok) throw new Error(result.message);
+    expect(result.count).toBe(1);
+    const text = await textOf(result.bytes);
+    expect(text).toContain("El mar 10 nov 2026 · Reparto pendiente");
+    expect(text).toContain("pi_pendiente");
+    expect(text).not.toContain("pi_pagado");
+    expect(text).toContain("Grupo A $580,53 $0,00 $0,00 $580,53");
   });
 
   it("sin sesión no sale nada: la base no le deja leer ni los elegidos ni el filtro", async () => {

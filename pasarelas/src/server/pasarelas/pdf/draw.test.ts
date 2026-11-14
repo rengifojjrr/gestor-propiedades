@@ -1,7 +1,7 @@
 import { extractText, getDocumentProxy } from "unpdf";
 import { describe, expect, test } from "vitest";
 import { drawPdf, pdfText } from "./draw";
-import type { PdfModel, PdfRow, PdfTotals, PdfTx } from "./model";
+import type { PdfModel, PdfRow, PdfTable, PdfTotals, PdfTx } from "./model";
 
 /**
  * El dibujo del PDF: un archivo de verdad (se lee con `unpdf`, que extrae su texto), Carta vertical, con «Página X
@@ -38,7 +38,8 @@ function tx(n: string, rows = 6, currency = "USD"): PdfTx {
   };
 }
 
-function totals(currency: string): PdfTotals {
+/** Los totales de una moneda, con la tabla del reparto por parte que se le pase (por defecto, sin nadie). */
+function totals(currency: string, allocation?: Partial<PdfTable>): PdfTotals {
   return {
     currency,
     count: 1,
@@ -49,6 +50,7 @@ function totals(currency: string): PdfTotals {
     retention: "0.00",
     payout: "90.30",
     parties: [],
+    advances: [],
     figures: {
       title: "Cifras",
       rows: [
@@ -56,7 +58,13 @@ function totals(currency: string): PdfTotals {
         { kind: "monto", label: "Llega al banco", amount: "90.30", strong: true },
       ],
     },
-    allocation: { title: "Reparto por parte", rows: [{ kind: "nota", text: "Sin reparto." }] },
+    allocation: {
+      title: "Reparto por parte",
+      columns: [{ title: "Reparto" }, { title: "Retenido" }, { title: "Pagado" }, { title: "Falta", strong: true }],
+      rows: [],
+      notes: ["Sin reparto."],
+      ...allocation,
+    },
   };
 }
 
@@ -131,6 +139,57 @@ describe("drawPdf", () => {
     expect(found).toEqual(Array.from({ length: 139 }, (_, i) => i + 1));
     expect(all).toContain("fin-01");
     pages.forEach((text, i) => expect(text).toContain(`Página ${i + 1} de ${pages.length}`));
+  });
+
+  test("el reparto por parte va en columnas, cada monto alineado a la derecha de la suya, con su detalle y sus notas", async () => {
+    const table: Partial<PdfTable> = {
+      rows: [
+        { label: "Grupo A", amounts: ["652.13", "0.00", "26.45", "625.68"] },
+        { label: "Grupo C", amounts: ["28.64", "0.00", "36.12", "-7.48"], detail: "Se le pagó de más $7,48" },
+        { label: "Titular B", amounts: ["1050.00", "25.00", "0.00", "1025.00"] },
+      ],
+      notes: ["Titular C recibió $50,00 de la retención sin estar en el reparto de esos cobros."],
+    };
+    // Sin cobros: el título «Reparto» de cada cobro no se confunde con el de la columna.
+    const bytes = await drawPdf(model([], [totals("USD", table)]));
+    const [text = ""] = await pagesOf(bytes);
+    for (const expected of [
+      "Reparto por parte",
+      "Reparto Retenido Pagado Falta",
+      "Grupo A $652,13 $0,00 $26,45 $625,68",
+      "Grupo C $28,64 $0,00 $36,12 -$7,48",
+      "Se le pagó de más $7,48",
+      "Titular B $1.050,00 $25,00 $0,00 $1.025,00",
+      "Titular C recibió $50,00 de la retención sin estar en el reparto de esos cobros.",
+    ]) {
+      expect(text).toContain(expected);
+    }
+    expect(text).not.toContain("Sin reparto.");
+
+    // Dónde termina cada texto de la tabla: los de una misma columna terminan en el mismo punto.
+    const page = await (await getDocumentProxy(new Uint8Array(bytes))).getPage(1);
+    const items = (await page.getTextContent()).items.flatMap((item) =>
+      "str" in item ? [{ text: item.str, right: item.transform[4] + item.width }] : [],
+    );
+    const rightOf = (value: string) => {
+      const found = items.filter((item) => item.text === value);
+      expect(found, value).toHaveLength(1);
+      return found[0]?.right ?? 0;
+    };
+    const columns = [
+      ["Reparto", "$652,13", "$28,64", "$1.050,00"],
+      ["Retenido", "$25,00"],
+      ["Pagado", "$26,45", "$36,12"],
+      ["Falta", "$625,68", "-$7,48", "$1.025,00"],
+    ];
+    for (const column of columns) {
+      const [first = "", ...rest] = column;
+      for (const value of rest) expect(rightOf(value), `${value} bajo ${first}`).toBeCloseTo(rightOf(first), 0);
+    }
+    // Las columnas, de izquierda a derecha y sin encimarse; la última, al borde derecho de la página.
+    const edges = columns.map(([title = ""]) => rightOf(title));
+    expect(edges).toEqual([...edges].sort((a, b) => a - b));
+    expect(edges.at(-1)).toBeCloseTo(612 - 48, 0);
   });
 
   test("sin cobros lo dice", async () => {

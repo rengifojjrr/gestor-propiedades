@@ -116,14 +116,22 @@ describe("scopeText: qué abarca, en palabras", () => {
       currency: "MXN",
       status: "depositado",
       receipt: "sin",
+      payout: "pendiente",
       estimatedOn: "2026-11-16",
       q: "pi_1",
     };
     expect(scopeText(filtro(filters), 3, CFG, TODAY)).toBe(
       "Del dom 1 nov 2026 al sáb 14 nov 2026 · Empresa: Tienda Demo · Canal: Señales «en línea» · " +
         "Pasarela: OTF Demo · Cuenta destino: Cuenta principal ··4321 · Moneda: MXN · Estado: Depositado · " +
-        "Sin comprobante · Caen el lun 16 nov 2026 · Búsqueda: «pi_1»",
+        "Sin comprobante · Reparto pendiente · Caen el lun 16 nov 2026 · Búsqueda: «pi_1»",
     );
+  });
+
+  test("«Reparto pendiente» se nombra, también si llega por la URL como en la lista", () => {
+    const query = "periodo=personalizado&desde=2026-11-14&hasta=2026-11-14&reparto=pendiente";
+    const request = pdfRequestOf(params(query), TODAY);
+    expect(request).toEqual(filtro({ from: TODAY, to: TODAY, payout: "pendiente" }));
+    expect(scopeText(request, 2, CFG, TODAY)).toBe("Hoy, sáb 14 nov 2026 · Reparto pendiente");
   });
 
   test("por caer, atrasados y con comprobante; lo que ya no existe se dice así", () => {

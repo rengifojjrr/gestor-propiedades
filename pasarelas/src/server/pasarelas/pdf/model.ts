@@ -1,3 +1,4 @@
+import { refundedInFull } from "@/components/pasarelas/tx/allowed";
 import { FEES_PAID_BY_LABEL } from "@/components/pasarelas/tx/payer";
 import { buyerFeesOf, payoutOf, retentionOf, retentionReleaseOn, type Retention } from "@/lib/pasarelas/breakdown";
 import {
@@ -9,7 +10,8 @@ import {
   type DateWindow,
 } from "@/lib/pasarelas/dates";
 import { ZERO } from "@/lib/pasarelas/decimal";
-import { add, cmp, formatMoney, formatPct, isZero, sub } from "@/lib/pasarelas/money";
+import { add, cmp, formatMoney, formatPct, isZero, neg, sub } from "@/lib/pasarelas/money";
+import type { PayoutPart, PayoutStatus } from "@/lib/pasarelas/payouts";
 import { STATUS_LABEL, displayStatus, isOverdue, isPartialRefund } from "@/lib/pasarelas/status";
 import type {
   AllocLine,
@@ -25,7 +27,8 @@ import type {
 /*
  * El modelo del PDF de cobros: lo que se dibuja, ya resuelto, sin tocar la base ni el reloj (`now` entra como
  * parámetro). Cada cobro sale de su desglose congelado, nunca recalculado, y dice lo mismo que su detalle
- * (`BreakdownCard` y `AllocationList`): las cuentas de la retención son las del motor (`retentionOf`, `payoutOf`).
+ * (`BreakdownCard` y `AllocationList`): las cuentas de la retención son las del motor (`retentionOf`, `payoutOf`), y
+ * lo ya pagado a cada parte, su estado de pago (`payoutStatus`), que entra hecho.
  * Los montos van como `Money`; quien dibuja les da el formato de la app con la moneda del cobro o del bloque.
  */
 
@@ -56,8 +59,42 @@ export type PdfTx = {
   allocation: PdfSection;
 };
 
-/** Lo que le tocó a una parte en el reparto de los cobros de una moneda, y lo que ya recibió de lo retenido. */
-export type PartyTotal = { beneficiaryId: string; name: string; amount: Money; received: Money };
+/**
+ * Lo que se le debe a cada parte del reparto de cada cobro (`payoutStatus` del motor, con los pagos ligados que hay
+ * en la base), por id de cobro. `null`: el cobro no tiene nada pendiente (fallido) o no tiene partes.
+ */
+export type PdfPayouts = ReadonlyMap<string, PayoutStatus | null>;
+
+/**
+ * Lo de una parte en los cobros de una moneda, sumado de su estado de pago en cada uno: `paid + owed + retained =
+ * allocated`, como en cada cobro.
+ */
+export type PartyTotal = {
+  beneficiaryId: string;
+  name: string;
+  /** Lo que le tocó en el reparto. */
+  allocated: Money;
+  /** Lo que la pasarela le retuvo y le paga directo: ya lo recibió. */
+  retained: Money;
+  /** Lo ya pagado, ligado a esos cobros. */
+  paid: Money;
+  /** Lo que se le debe todavía: positivo, falta; negativo, se le pagó de más. */
+  owed: Money;
+};
+
+/** Lo que recibió de lo retenido quien no es parte del reparto de esos cobros: un adelanto que le baja el saldo. */
+export type PartyAdvance = { beneficiaryId: string; name: string; amount: Money };
+
+/** Una columna de montos de una tabla: su título y, con `strong`, en negrita (lo que más importa). */
+export type PdfColumn = { title: string; strong?: boolean };
+
+/** Una tabla de montos: cada fila con lo que es (y su `detail` en letra chica) y un monto por columna; notas debajo. */
+export type PdfTable = {
+  title: string;
+  columns: readonly PdfColumn[];
+  rows: { label: string; amounts: Money[]; detail?: string }[];
+  notes: string[];
+};
 
 /** Los totales de una moneda: sin los fallidos, que no cuentan en nada (`failed` dice cuántos quedaron fuera). */
 export type PdfTotals = {
@@ -73,8 +110,11 @@ export type PdfTotals = {
   payout: Money;
   /** Por nombre: es lo que el dueño usa para pagar. */
   parties: PartyTotal[];
+  /** Por nombre. */
+  advances: PartyAdvance[];
   figures: PdfSection;
-  allocation: PdfSection;
+  /** Las partes en columnas: reparto, retenido, pagado y lo que falta; los adelantos, debajo. */
+  allocation: PdfTable;
 };
 
 export type PdfModel = {
@@ -182,24 +222,56 @@ function sparedText(lines: readonly AllocLine[]): string {
   return `${listed(lines.map((line) => line.name))} ${verb} ${pcts} del bruto. La comisión la pagan los demás.`;
 }
 
-/** «ya recibió $25,00 de la retención · falta $25,00» (o «· $50,00 de adelanto» si recibió más que su parte). */
-function receivedText(amount: Money, received: Money, currency: Currency): string {
-  const rest = sub(amount, received);
-  const tail =
-    cmp(rest, ZERO) >= 0
-      ? `falta ${formatMoney(rest, currency)}`
-      : `${formatMoney(sub(received, amount), currency)} de adelanto`;
-  return `ya recibió ${formatMoney(received, currency)} de la retención · ${tail}`;
+const GONE_NAME = "Beneficiario que ya no existe";
+
+/** Los nombres congelados en el desglose: los de las partes del reparto y los de quienes reciben lo retenido. */
+function frozenNames(b: Breakdown): ReadonlyMap<string, string> {
+  return new Map([...b.alloc.lines, ...(retentionOf(b)?.shares ?? [])].map((item) => [item.beneficiaryId, item.name]));
+}
+
+/** El nombre de ahora de un beneficiario; si ya no existe, el congelado en el desglose o, sin él, que ya no existe. */
+function nameOf(cfg: PayConfig, beneficiaryId: string, frozen: ReadonlyMap<string, string>): string {
+  return cfg.beneficiaries.find((item) => item.id === beneficiaryId)?.name ?? frozen.get(beneficiaryId) ?? GONE_NAME;
+}
+
+/** «Se le pagó de más $10,00»: lo que se le debe es negativo, y eso es lo que tiene que devolver. */
+const overpaidText = (owed: Money, currency: Currency): string =>
+  `Se le pagó de más ${formatMoney(neg(owed), currency)}`;
+
+/** El estado de pago de una parte con las palabras del detalle (`PayoutBadge`). */
+function partText(part: PayoutPart, currency: Currency): string {
+  switch (part.state) {
+    case "pagado":
+      return "Pagado";
+    case "falta":
+      return `Falta ${formatMoney(part.owed, currency)}`;
+    case "de_mas":
+      return overpaidText(part.owed, currency);
+  }
 }
 
 const BASE_LABEL = { neto: "Sobre el neto", bruto: "Sobre el bruto" } as const;
 
 /**
- * El reparto de `AllocationList`: sobre qué se reparte y cuánto le toca a cada parte, con sus marcas; a quien recibe
- * lo retenido, lo que ya recibió; y el aviso de quien lo recibe sin estar en el reparto de este cobro.
+ * El reparto de `AllocationList` en el detalle del cobro: sobre qué se reparte y cuánto le toca a cada parte, con sus
+ * marcas; a quien recibe lo retenido, lo que ya recibió; a cada parte, lo ya pagado según su estado de pago («Pagado»,
+ * «Falta $25,00» o «Se le pagó de más $10,00»), que cuenta también lo retenido; el aviso de quien recibe lo retenido
+ * sin estar en el reparto de este cobro, y lo pagado a quien no está en él. Sin estado de pago (un fallido), no dice
+ * lo pagado.
  */
-function allocationRows(b: Breakdown): PdfRow[] {
+function allocationRows(b: Breakdown, status: PayoutStatus | null, cfg: PayConfig): PdfRow[] {
   const { alloc, currency } = b;
+  const parts = status?.parts ?? [];
+  const partOf = new Map(parts.map((part) => [part.beneficiaryId, part]));
+  const names = frozenNames(b);
+  const paidOutside = parts
+    .filter((part) => !alloc.lines.some((line) => line.beneficiaryId === part.beneficiaryId))
+    .map((part) =>
+      nota(
+        `Pagos a quien no está en el reparto: ${nameOf(cfg, part.beneficiaryId, names)} · ` +
+          partText(part, currency),
+      ),
+    );
   // Solo cuenta lo que de verdad recibió (con un reembolso total o un fallido, nada).
   const received = (retentionOf(b)?.shares ?? []).filter((share) => !isZero(share.amount));
   const shareOf = new Map(received.map((share) => [share.beneficiaryId, share]));
@@ -211,7 +283,7 @@ function allocationRows(b: Breakdown): PdfRow[] {
           "este cobro: es un adelanto y su saldo baja.",
       ),
     );
-  if (alloc.baseKind === null) return [nota("Este cobro no se reparte."), ...outside];
+  if (alloc.baseKind === null) return [nota("Este cobro no se reparte."), ...outside, ...paidOutside];
   const spared = alloc.lines.filter((line) => line.feeExempt);
   const buyerNote =
     b.state.feesPaidBy !== "comprador"
@@ -231,10 +303,17 @@ function allocationRows(b: Breakdown): PdfRow[] {
       const marks = [line.isRemainder ? "Resto" : null, line.feeExempt ? "no paga comisión" : null];
       const label = [`${line.name} (${formatPct(line.pct)})`, ...marks].filter((part) => part !== null).join(" · ");
       const share = shareOf.get(line.beneficiaryId);
-      const detail = share === undefined ? {} : { detail: receivedText(line.amount, share.amount, currency) };
-      return monto(label, line.amount, { indent: true, ...detail });
+      const part = partOf.get(line.beneficiaryId);
+      const detail = [
+        share === undefined ? null : `ya recibió ${formatMoney(share.amount, currency)} de la retención`,
+        part === undefined ? null : partText(part, currency),
+      ]
+        .filter((text) => text !== null)
+        .join(" · ");
+      return monto(label, line.amount, { indent: true, ...(detail === "" ? {} : { detail }) });
     }),
     ...outside,
+    ...paidOutside,
   ];
 }
 
@@ -247,7 +326,7 @@ function windowText(window: DateWindow, past: boolean): string {
 
 /**
  * El estado visible con sus marcas (reembolso parcial, atrasado) y la fecha del depósito: la real si se depositó; si
- * no, la estimada, como en el detalle («se estimaba» si falló).
+ * no, la estimada, como en el detalle («se estimaba» si falló; reembolsado del todo, que no hay depósito).
  */
 function statusText(tx: TxSnapshot, today: ISODate): string {
   const shown = displayStatus(tx);
@@ -260,7 +339,7 @@ function statusText(tx: TxSnapshot, today: ISODate): string {
     STATUS_LABEL[shown],
     isPartialRefund(tx) ? "reembolso parcial" : null,
     isOverdue(tx, today) ? "atrasado" : null,
-    window === null ? null : windowText(window, tx.status === "fallido"),
+    refundedInFull(tx) ? "no hay depósito" : window === null ? null : windowText(window, tx.status === "fallido"),
   ]
     .filter((part) => part !== null)
     .join(" · ");
@@ -278,7 +357,7 @@ function namesOf(tx: TxSnapshot, cfg: PayConfig) {
   return { company, channel, gateway };
 }
 
-function pdfTx(tx: TxSnapshot, cfg: PayConfig, today: ISODate): PdfTx {
+function pdfTx(tx: TxSnapshot, status: PayoutStatus | null, cfg: PayConfig, today: ISODate): PdfTx {
   const names = namesOf(tx, cfg);
   return {
     id: tx.id,
@@ -290,7 +369,7 @@ function pdfTx(tx: TxSnapshot, cfg: PayConfig, today: ISODate): PdfTx {
       .join(" · "),
     status: statusText(tx, today),
     breakdown: { title: "Desglose", rows: breakdownRows(tx) },
-    allocation: { title: "Reparto", rows: allocationRows(tx.breakdown) },
+    allocation: { title: "Reparto", rows: allocationRows(tx.breakdown, status, cfg) },
   };
 }
 
@@ -303,33 +382,90 @@ function byCurrency(txs: readonly TxSnapshot[]): Map<Currency, TxSnapshot[]> {
   return groups;
 }
 
-/** Lo que le tocó a cada parte en esos cobros y lo que ya recibió de lo retenido, por nombre. */
-function partiesOf(txs: readonly TxSnapshot[], cfg: PayConfig): PartyTotal[] {
+const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name, "es");
+
+/**
+ * Lo de cada parte en esos cobros, sumado de su estado de pago en cada uno (reparto, retenido, pagado y lo que se le
+ * debe), y lo que recibió de lo retenido quien no es parte de un cobro (un adelanto). Cada lista, por nombre.
+ */
+function partiesOf(
+  txs: readonly TxSnapshot[],
+  payouts: PdfPayouts,
+  cfg: PayConfig,
+): { parties: PartyTotal[]; advances: PartyAdvance[] } {
   const parties = new Map<string, PartyTotal>();
-  const party = (beneficiaryId: string, frozenName: string): PartyTotal => {
-    const found = parties.get(beneficiaryId);
-    if (found !== undefined) return found;
-    const name = cfg.beneficiaries.find((item) => item.id === beneficiaryId)?.name ?? frozenName;
-    const created = { beneficiaryId, name, amount: ZERO, received: ZERO };
-    parties.set(beneficiaryId, created);
-    return created;
-  };
-  for (const { breakdown } of txs) {
-    for (const line of breakdown.alloc.lines) {
-      const total = party(line.beneficiaryId, line.name);
-      total.amount = add(total.amount, line.amount);
+  const advances = new Map<string, PartyAdvance>();
+  for (const tx of txs) {
+    const names = frozenNames(tx.breakdown);
+    const parts = payouts.get(tx.id)?.parts ?? [];
+    for (const part of parts) {
+      const id = part.beneficiaryId;
+      const total = parties.get(id) ?? {
+        beneficiaryId: id,
+        name: nameOf(cfg, id, names),
+        allocated: ZERO,
+        retained: ZERO,
+        paid: ZERO,
+        owed: ZERO,
+      };
+      parties.set(id, {
+        ...total,
+        allocated: add(total.allocated, part.allocated),
+        retained: add(total.retained, part.retained),
+        paid: add(total.paid, part.paid),
+        owed: add(total.owed, part.owed),
+      });
     }
-    for (const share of retentionOf(breakdown)?.shares ?? []) {
-      if (isZero(share.amount)) continue;
-      const total = party(share.beneficiaryId, share.name);
-      total.received = add(total.received, share.amount);
+    // Quien está en el reparto o tiene pagos ligados es una parte: lo retenido ya cuenta en lo suyo.
+    const inShare = new Set([...tx.breakdown.alloc.lines, ...parts].map((item) => item.beneficiaryId));
+    for (const share of retentionOf(tx.breakdown)?.shares ?? []) {
+      if (isZero(share.amount) || inShare.has(share.beneficiaryId)) continue;
+      const id = share.beneficiaryId;
+      const advance = advances.get(id) ?? { beneficiaryId: id, name: nameOf(cfg, id, names), amount: ZERO };
+      advances.set(id, { ...advance, amount: add(advance.amount, share.amount) });
     }
   }
-  return [...parties.values()].sort((a, b) => a.name.localeCompare(b.name, "es"));
+  return { parties: [...parties.values()].sort(byName), advances: [...advances.values()].sort(byName) };
+}
+
+const PARTY_COLUMNS: readonly PdfColumn[] = [
+  { title: "Reparto" },
+  { title: "Retenido" },
+  { title: "Pagado" },
+  { title: "Falta", strong: true },
+];
+
+/**
+ * La tabla de lo que se le debe a cada parte en esos cobros: reparto, retenido, pagado y lo que falta (una parte a la
+ * que se le pagó de más lo dice debajo de su nombre). Los adelantos y «Sin reparto.» van como notas.
+ */
+function partiesTable(parties: readonly PartyTotal[], advances: readonly PartyAdvance[], currency: Currency): PdfTable {
+  return {
+    title: "Reparto por parte",
+    columns: PARTY_COLUMNS,
+    rows: parties.map((total) => ({
+      label: total.name,
+      amounts: [total.allocated, total.retained, total.paid, total.owed],
+      ...(cmp(total.owed, ZERO) < 0 ? { detail: overpaidText(total.owed, currency) } : {}),
+    })),
+    notes: [
+      ...advances.map(
+        (advance) =>
+          `${advance.name} recibió ${formatMoney(advance.amount, currency)} de la retención sin estar en el reparto ` +
+          "de esos cobros: es un adelanto y su saldo baja.",
+      ),
+      ...(parties.length === 0 && advances.length === 0 ? ["Sin reparto."] : []),
+    ],
+  };
 }
 
 /** Los totales de los cobros de UNA moneda (sin los fallidos), con sus filas para dibujar. */
-function totalsOf(currency: Currency, group: readonly TxSnapshot[], cfg: PayConfig): PdfTotals | null {
+function totalsOf(
+  currency: Currency,
+  group: readonly TxSnapshot[],
+  payouts: PdfPayouts,
+  cfg: PayConfig,
+): PdfTotals | null {
   const counted = group.filter((tx) => tx.status !== "fallido");
   if (counted.length === 0) return null;
   const failed = group.length - counted.length;
@@ -339,7 +475,7 @@ function totalsOf(currency: Currency, group: readonly TxSnapshot[], cfg: PayConf
   const net = sum((b) => b.net);
   const retention = sum((b) => retentionOf(b)?.amount ?? ZERO);
   const payout = sum(payoutOf);
-  const parties = partiesOf(counted, cfg);
+  const { parties, advances } = partiesOf(counted, payouts, cfg);
   return {
     currency,
     count: counted.length,
@@ -350,6 +486,7 @@ function totalsOf(currency: Currency, group: readonly TxSnapshot[], cfg: PayConf
     retention,
     payout,
     parties,
+    advances,
     figures: {
       title: "Cifras",
       rows: [
@@ -362,36 +499,32 @@ function totalsOf(currency: Currency, group: readonly TxSnapshot[], cfg: PayConf
         monto("Llega al banco", payout, { strong: true }),
       ],
     },
-    allocation: {
-      title: "Reparto por parte",
-      rows:
-        parties.length === 0
-          ? [nota("Sin reparto.")]
-          : parties.map((total) =>
-              monto(
-                total.name,
-                total.amount,
-                isZero(total.received) ? {} : { detail: receivedText(total.amount, total.received, currency) },
-              ),
-            ),
-    },
+    allocation: partiesTable(parties, advances, currency),
   };
 }
 
 /**
- * El PDF de esos cobros, en el orden en que llegan: cada uno con su desglose y su reparto, y al final los totales
- * por moneda (cobros, bruto, comisiones, neto, retenido, lo que llega al banco y el reparto por parte).
- * `scope` dice qué abarca; `now`, cuándo se generó (y qué día es hoy en Nueva York, para lo atrasado).
+ * El PDF de esos cobros, en el orden en que llegan: cada uno con su desglose y su reparto (con lo ya pagado a cada
+ * parte), y al final los totales por moneda (cobros, bruto, comisiones, neto, retenido, lo que llega al banco y, por
+ * parte, lo que falta pagarle). `payouts` trae el estado de pago de cada cobro (`payoutStatuses`); un cobro que no
+ * esté ahí no dice lo pagado. `scope` dice qué abarca; `now`, cuándo se generó (y qué día es hoy en Nueva York, para
+ * lo atrasado).
  */
-export function pdfModel(input: { txs: readonly TxSnapshot[]; cfg: PayConfig; scope: string; now: Date }): PdfModel {
-  const { txs, cfg, scope, now } = input;
+export function pdfModel(input: {
+  txs: readonly TxSnapshot[];
+  payouts: PdfPayouts;
+  cfg: PayConfig;
+  scope: string;
+  now: Date;
+}): PdfModel {
+  const { txs, payouts, cfg, scope, now } = input;
   const today = todayNY(now);
   return {
     scope,
     generatedAt: `Generado el ${formatDateTime(now.toISOString())} (hora de Nueva York)`,
-    transactions: txs.map((tx) => pdfTx(tx, cfg, today)),
+    transactions: txs.map((tx) => pdfTx(tx, payouts.get(tx.id) ?? null, cfg, today)),
     totals: [...byCurrency(txs)].flatMap(([currency, group]) => {
-      const totals = totalsOf(currency, group, cfg);
+      const totals = totalsOf(currency, group, payouts, cfg);
       return totals === null ? [] : [totals];
     }),
   };

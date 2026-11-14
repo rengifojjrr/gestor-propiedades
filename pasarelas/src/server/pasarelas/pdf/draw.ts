@@ -1,7 +1,7 @@
 import PDFDocument from "pdfkit";
 import { formatMoney } from "@/lib/pasarelas/money";
 import type { Currency } from "@/lib/pasarelas/types";
-import type { PdfModel, PdfRow, PdfSection } from "./model";
+import type { PdfColumn, PdfModel, PdfRow, PdfSection, PdfTable } from "./model";
 
 /*
  * El dibujo del PDF de cobros con pdfkit: página Carta vertical, el encabezado en la primera, cada cobro como un
@@ -23,6 +23,8 @@ const COLUMN_GAP = 20;
 const COLUMN = (WIDTH - COLUMN_GAP) / 2;
 const INDENT = 10;
 const AMOUNT_GAP = 10;
+/** Lo que separa dos columnas de una tabla. */
+const CELL_GAP = 14;
 const ROW_GAP = 3;
 
 const REGULAR = "Helvetica";
@@ -122,6 +124,54 @@ function sectionPieces(doc: Doc, section: PdfSection, width: number, currency: C
   return [titlePiece(doc, section.title, width), ...section.rows.map((row) => rowPiece(doc, row, width, currency))];
 }
 
+/**
+ * Las piezas de una tabla en `width`: su título, la fila de los títulos de las columnas, una fila por línea y sus
+ * notas. Cada columna de montos mide lo que su texto más ancho y alinea sus montos a la derecha; lo que es cada fila
+ * se queda con el ancho que sobra, a la izquierda, con su detalle en letra chica debajo. Sin filas, solo el título y
+ * las notas.
+ */
+function tablePieces(doc: Doc, table: PdfTable, width: number, currency: Currency): Piece[] {
+  const header: Style = { font: BOLD, size: SIZE.section, color: SOFT };
+  const styleOf = (column: PdfColumn): Style => (column.strong ? STRONG : TEXT);
+  const cells = table.rows.map((row) => row.amounts.map((amount) => formatMoney(amount, currency)));
+  const widths = table.columns.map(
+    (column, i) =>
+      Math.max(widthOf(doc, column.title, header), ...cells.map((row) => widthOf(doc, row[i] ?? "", styleOf(column)))) +
+      1,
+  );
+  const labelWidth = width - widths.reduce((sum, columnWidth) => sum + CELL_GAP + columnWidth, 0);
+  // Dónde termina cada columna, desde el borde izquierdo de la tabla: la última, en el derecho.
+  const rights = widths.map((_, i) => width - widths.slice(i + 1).reduce((sum, next) => sum + CELL_GAP + next, 0));
+  /** Escribe `text` terminando en el borde derecho de la columna `i`. */
+  const cell = (text: string, style: Style, i: number, x: number, y: number) => {
+    const textWidth = widthOf(doc, text, style);
+    write(doc, text, style, x + (rights[i] ?? width) - textWidth, y, { width: textWidth + 1, lineBreak: false });
+  };
+  const lineHeight = heightOf(doc, "0", TEXT, width);
+  const titles: Piece = {
+    height: heightOf(doc, "0", header, width) + 5,
+    draw: (x, y) => {
+      table.columns.forEach((column, i) => cell(column.title, header, i, x, y));
+      const under = y + heightOf(doc, "0", header, width) + 1.5;
+      doc.moveTo(x, under).lineTo(x + width, under).lineWidth(0.5).strokeColor(RULE).stroke();
+    },
+  };
+  const rows = table.rows.map((row, r): Piece => {
+    const labelHeight = heightOf(doc, row.label, TEXT, labelWidth);
+    const detailHeight = row.detail === undefined ? 0 : heightOf(doc, row.detail, SMALL, labelWidth) + 1;
+    return {
+      height: Math.max(labelHeight, lineHeight) + detailHeight + ROW_GAP,
+      draw: (x, y) => {
+        write(doc, row.label, TEXT, x, y, { width: labelWidth });
+        table.columns.forEach((column, i) => cell(cells[r]?.[i] ?? "", styleOf(column), i, x, y));
+        if (row.detail !== undefined) write(doc, row.detail, SMALL, x, y + labelHeight + 1, { width: labelWidth });
+      },
+    };
+  });
+  const notes = table.notes.map((text) => rowPiece(doc, { kind: "nota", text }, width, currency));
+  return [titlePiece(doc, table.title, width), ...(rows.length === 0 ? [] : [titles, ...rows]), ...notes];
+}
+
 /** Lo que mide una lista de piezas puestas una debajo de otra, y cómo se dibuja. */
 function stacked(pieces: readonly Piece[]): Piece {
   return {
@@ -138,14 +188,21 @@ function stacked(pieces: readonly Piece[]): Piece {
 
 // ─── Los bloques ────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Un cobro o los totales de una moneda: un encabezado (con la fecha a la derecha, si hay), líneas y dos secciones. */
+/**
+ * Un cobro o los totales de una moneda: un encabezado (con la fecha a la derecha, si hay), líneas, una o dos secciones
+ * lado a lado (una sola va en la columna de la izquierda) y, si hay, una tabla a todo el ancho debajo.
+ */
 type Block = {
   heading: string;
   when: string | null;
   lines: string[];
-  sections: [PdfSection, PdfSection];
+  sections: readonly [PdfSection] | readonly [PdfSection, PdfSection];
+  table?: PdfTable;
   currency: Currency;
 };
+
+/** El aire entre las secciones de un bloque y su tabla. */
+const TABLE_GAP = 8;
 
 /** La línea gris que separa un bloque del anterior, con su aire. */
 function rulePiece(doc: Doc): Piece {
@@ -185,18 +242,24 @@ function headPieces(doc: Doc, block: Block): Piece[] {
   return [rulePiece(doc), first, ...lines, { height: 5, draw: () => undefined }];
 }
 
-/** El bloque entero, con las dos secciones lado a lado. */
+/** La tabla de un bloque a todo el ancho, con su aire arriba; nada si no tiene. */
+function tableOf(doc: Doc, block: Block, width: number): Piece[] {
+  if (block.table === undefined) return [];
+  return [{ height: TABLE_GAP, draw: () => undefined }, ...tablePieces(doc, block.table, width, block.currency)];
+}
+
+/** El bloque entero, con las secciones lado a lado y la tabla debajo. */
 function blockPiece(doc: Doc, block: Block): Piece {
   const head = stacked(headPieces(doc, block));
-  const [left, right] = block.sections.map((section) =>
-    stacked(sectionPieces(doc, section, COLUMN, block.currency)),
-  ) as [Piece, Piece];
+  const columns = block.sections.map((section) => stacked(sectionPieces(doc, section, COLUMN, block.currency)));
+  const columnsHeight = Math.max(...columns.map((column) => column.height));
+  const table = stacked(tableOf(doc, block, WIDTH));
   return {
-    height: head.height + Math.max(left.height, right.height) + 6,
+    height: head.height + columnsHeight + table.height + 6,
     draw: (x, y) => {
       head.draw(x, y);
-      left.draw(x, y + head.height);
-      right.draw(x + COLUMN + COLUMN_GAP, y + head.height);
+      columns.forEach((column, i) => column.draw(x + i * (COLUMN + COLUMN_GAP), y + head.height));
+      table.draw(x, y + head.height + columnsHeight);
     },
   };
 }
@@ -233,6 +296,7 @@ class Layout {
     const pieces = [
       ...headPieces(this.doc, block),
       ...block.sections.flatMap((section) => sectionPieces(this.doc, section, WIDTH, block.currency)),
+      ...tableOf(this.doc, block, WIDTH),
     ];
     for (const piece of pieces) this.place(piece);
   }
@@ -308,7 +372,8 @@ export async function drawPdf(model: PdfModel): Promise<Uint8Array<ArrayBuffer>>
       heading: `Totales en ${totals.currency}`,
       when: null,
       lines: [],
-      sections: [totals.figures, totals.allocation],
+      sections: [totals.figures],
+      table: totals.allocation,
       currency: totals.currency,
     });
   }

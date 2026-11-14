@@ -55,6 +55,9 @@ const RECEIPT_LABEL: Record<NonNullable<TxFilters["receipt"]>, string> = {
   sin: "Sin comprobante",
 };
 
+/** Como la opción del filtro «Reparto» de la lista. */
+const PAYOUT_LABEL: Record<NonNullable<TxFilters["payout"]>, string> = { pendiente: "Reparto pendiente" };
+
 /** «Empresa: Tienda Demo», o «Empresa que ya no existe» si no está en la configuración. */
 function named(items: readonly { id: string; name: string }[], id: string, label: string, gone: string): string {
   const name = items.find((item) => item.id === id)?.name;
@@ -76,6 +79,7 @@ function filterTexts(f: TxFilters, cfg: PayConfig): string[] {
     f.currency === undefined ? null : `Moneda: ${f.currency}`,
     f.status === undefined ? null : `Estado: ${STATUS_FILTER_LABEL[f.status]}`,
     f.receipt === undefined ? null : RECEIPT_LABEL[f.receipt],
+    f.payout === undefined ? null : PAYOUT_LABEL[f.payout],
     f.estimatedOn === undefined ? null : `Caen el ${formatDate(f.estimatedOn)}`,
     f.q === undefined ? null : `Búsqueda: «${f.q}»`,
   ].filter((text) => text !== null);
