@@ -160,7 +160,7 @@ export default async function ResumenPage({ searchParams }: PageProps<"/pasarela
                   group.part === null
                     ? accountName(group.bankAccountId)
                     : `${accountName(group.bankAccountId)} · parte ${group.part.index} de ${group.part.of}`,
-                net: group.net,
+                payout: group.payout,
                 count: group.count,
                 ids: group.ids,
                 overdue: group.overdue,

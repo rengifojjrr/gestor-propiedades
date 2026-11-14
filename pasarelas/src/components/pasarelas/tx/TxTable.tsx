@@ -92,6 +92,16 @@ export function BuyerPaidMark({ tx }: { tx: TxRowView }) {
   );
 }
 
+/** La marca discreta de lo que retuvo la pasarela de un cobro: «$50,00 retenido». Nada si no retuvo. */
+export function RetainedMark({ tx }: { tx: TxRowView }) {
+  if (isZero(tx.retention)) return null;
+  return (
+    <span className="text-sm text-ink-soft">
+      <Money value={tx.retention} currency={tx.currency} /> retenido
+    </span>
+  );
+}
+
 /**
  * La lista de cobros como tabla (desde 768 px), con una casilla por fila para elegir y, bajo el estado, «Cambiar
  * estado».
@@ -147,7 +157,10 @@ export function TxTable({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
               </span>
             </Td>
             <Td numeric>
-              <Money value={tx.net} currency={tx.currency} />
+              <span className="flex flex-col items-end">
+                <Money value={tx.net} currency={tx.currency} />
+                <RetainedMark tx={tx} />
+              </span>
             </Td>
             <Td>
               <DepositDate tx={tx} />

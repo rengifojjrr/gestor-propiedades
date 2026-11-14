@@ -1,4 +1,5 @@
 import { Badge, Card, CardBody, CardHeader, CardTitle, Money, Stat } from "@/components/ui";
+import { cmp } from "@/lib/pasarelas/money";
 import type { BankAccountTotals, BankAccountView } from "@/server/pasarelas/queries/accounts";
 import { AccountActions } from "./AccountActions";
 import { formatDays } from "./days";
@@ -11,8 +12,13 @@ function lagText(totals: BankAccountTotals): string {
   return `Tarda ${formatDays(totals.avgDays)} en promedio · mediana ${formatDays(totals.medianDays)}.`;
 }
 
-/** Lo de la cuenta en una moneda: lo depositado, lo que está por caer y cuánto tarda. */
+/**
+ * Lo de la cuenta en una moneda: lo depositado, lo que está por caer y cuánto tarda. Lo que cae es lo que llega al
+ * banco: el neto menos lo que retienen las pasarelas (si alguna retuvo algo, lo dice).
+ */
 function CurrencyTotals({ totals, showCurrency }: { totals: BankAccountTotals; showCurrency: boolean }) {
+  const retained =
+    cmp(totals.depositedPayout, totals.depositedNet) !== 0 || cmp(totals.pendingPayout, totals.pendingNet) !== 0;
   return (
     <div className="flex flex-col gap-3">
       {showCurrency ? <p className="text-sm font-semibold text-ink-soft">{totals.currency}</p> : null}
@@ -20,15 +26,20 @@ function CurrencyTotals({ totals, showCurrency }: { totals: BankAccountTotals; s
       <div className="flex flex-wrap gap-x-10 gap-y-3">
         <Stat
           label="Depositado"
-          value={<Money value={totals.depositedNet} currency={totals.currency} />}
+          value={<Money value={totals.depositedPayout} currency={totals.currency} />}
           hint={count(totals.depositedCount)}
         />
         <Stat
           label="Por caer"
-          value={<Money value={totals.pendingNet} currency={totals.currency} />}
+          value={<Money value={totals.pendingPayout} currency={totals.currency} />}
           hint={count(totals.pendingCount)}
         />
       </div>
+      {retained ? (
+        <p className="text-sm text-ink-soft">
+          Sin lo que retienen las pasarelas: eso le cae a otras personas, no a esta cuenta.
+        </p>
+      ) : null}
       <p className="text-sm text-ink-soft">{lagText(totals)}</p>
     </div>
   );

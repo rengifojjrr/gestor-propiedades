@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Card, Money, Stat } from "@/components/ui";
+import { isZero } from "@/lib/pasarelas/money";
 import { cobros } from "@/components/pasarelas/tx/plural";
 import { BuyerFeesNote, feesHint } from "./fees";
 import type { Totals } from "@/lib/pasarelas/stats";
@@ -24,8 +25,10 @@ function StatCard({ label, value, hint, total }: { label: string; value: ReactNo
 
 /**
  * Las cifras del período en una moneda: bruto (todo lo cobrado), comisiones (las del negocio, y su parte del
- * bruto), neto, cobros, ticket promedio, lo que está por caer (con el enlace a esos cobros) y lo ya depositado.
- * Debajo, si hubo, las comisiones que pagaron los compradores: no son un costo del negocio.
+ * bruto), neto, cobros, ticket promedio, lo que está por caer (con el enlace a esos cobros) y lo ya depositado. «Por
+ * caer» y «Depositado» son lo que llega al banco: el neto menos lo que retienen las pasarelas. Si alguna retuvo
+ * algo en el período, una tarjeta más lo dice. Debajo, si hubo, las comisiones que pagaron los compradores: no son
+ * un costo del negocio.
  */
 export function StatCards({ totals, currency, pendingHref }: StatCardsProps) {
   return (
@@ -42,7 +45,7 @@ export function StatCards({ totals, currency, pendingHref }: StatCardsProps) {
         <StatCard label="Ticket promedio" value={<Money value={totals.avgTicket} currency={currency} />} />
         <StatCard
           label="Por caer"
-          value={<Money value={totals.pendingNet} currency={currency} />}
+          value={<Money value={totals.pendingPayout} currency={currency} />}
           hint={
             totals.pendingCount === 0 ? (
               "Nada pendiente"
@@ -55,9 +58,16 @@ export function StatCards({ totals, currency, pendingHref }: StatCardsProps) {
         />
         <StatCard
           label="Depositado"
-          value={<Money value={totals.depositedNet} currency={currency} />}
+          value={<Money value={totals.depositedPayout} currency={currency} />}
           hint={cobros(totals.depositedCount)}
         />
+        {isZero(totals.retention) ? null : (
+          <StatCard
+            label="Retenido"
+            value={<Money value={totals.retention} currency={currency} />}
+            hint="Lo retienen las pasarelas: le cae a ciertas personas, no al banco"
+          />
+        )}
       </div>
       <BuyerFeesNote amount={totals.buyerFees} currency={currency} />
     </div>

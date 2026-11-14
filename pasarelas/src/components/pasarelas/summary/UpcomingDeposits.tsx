@@ -15,7 +15,8 @@ export type DepositGroupView = {
   /** Desde cuándo puede caer: la más temprana de sus ventanas (`date` si todas son de un solo día). */
   from: ISODate;
   accountName: string;
-  net: MoneyValue;
+  /** Lo que llega al banco: el neto menos lo que retienen las pasarelas. */
+  payout: MoneyValue;
   count: number;
   ids: string[];
   overdue: boolean;
@@ -110,7 +111,7 @@ function DepositGroupCard({
       </div>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="flex flex-col">
-          <Money value={group.net} currency={currency} className="text-xl font-semibold" />
+          <Money value={group.payout} currency={currency} className="text-xl font-semibold" />
           <span className="text-sm text-ink-soft">{cobros(group.count)}</span>
         </p>
         <Button onClick={onDeposit}>Marcar depositado</Button>

@@ -17,9 +17,10 @@ const HEADING_ID = "resumen-repartos";
 
 /**
  * Lo de cada beneficiario en una moneda: lo asignado por los cobros del período, lo liquidado en el período y el
- * saldo de toda la historia (asignado menos liquidado). Un saldo negativo es lo que el beneficiario recibió de más:
- * está a favor de la empresa. En el celular, cada beneficiario va en su tarjeta, como en Repartos: con tres columnas
- * de montos la tabla no cabe en 390 px y el saldo quedaría fuera de la vista.
+ * saldo de toda la historia (asignado menos liquidado, menos lo que una pasarela ya le pagó de lo que retuvo). Un
+ * saldo negativo es lo que el beneficiario recibió de más: está a favor de la empresa. En el celular, cada
+ * beneficiario va en su tarjeta, como en Repartos: con tres columnas de montos la tabla no cabe en 390 px y el saldo
+ * quedaría fuera de la vista.
  */
 export function SplitsTable({ rows, currency, nameOf }: SplitsTableProps) {
   return (
@@ -29,8 +30,8 @@ export function SplitsTable({ rows, currency, nameOf }: SplitsTableProps) {
           {CAPTION}
         </h2>
         <p className="text-ink-soft">
-          Asignado y liquidado en el período; el saldo es de toda la historia. Lo liquidado y el saldo no se separan
-          por empresa ni por pasarela.
+          Asignado y liquidado en el período; el saldo es de toda la historia y descuenta lo que una pasarela ya le
+          pagó de lo que retuvo. Lo liquidado y el saldo no se separan por empresa ni por pasarela.
         </p>
       </div>
       {rows.length === 0 ? (

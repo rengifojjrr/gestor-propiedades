@@ -4,7 +4,7 @@ import { DateText, Money } from "@/components/ui";
 import type { ISODate } from "@/lib/pasarelas/types";
 import { StatusBadge } from "./StatusBadge";
 import { SelectAllCheckbox } from "./TxBulkBar";
-import { BuyerPaidMark, DepositDate, TxCheckbox, TxLink, type TxRowView } from "./TxTable";
+import { BuyerPaidMark, DepositDate, RetainedMark, TxCheckbox, TxLink, type TxRowView } from "./TxTable";
 import { TxStatusMenu } from "./TxStatusMenu";
 
 /**
@@ -33,9 +33,12 @@ export function TxCards({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
                   <StatusBadge tx={tx} today={today} />
                   <TxStatusMenu tx={tx} today={today} placement="bottom" className="-my-2" />
                 </div>
-                <p className="shrink-0 text-sm">
-                  <span className="text-ink-soft">Neto </span>
-                  <Money value={tx.net} currency={tx.currency} />
+                <p className="flex shrink-0 flex-col items-end text-sm">
+                  <span>
+                    <span className="text-ink-soft">Neto </span>
+                    <Money value={tx.net} currency={tx.currency} />
+                  </span>
+                  <RetainedMark tx={tx} />
                 </p>
               </div>
               <div className="flex flex-wrap justify-between gap-2 text-sm">
