@@ -15,7 +15,7 @@ como está guardado, con punto (`"90.30"`).
 2. [Cómo se usa](#cómo-se-usa)
 3. [Las piezas](#las-piezas)
 4. [Las reglas del dinero](#las-reglas-del-dinero)
-5. [Cómo se calcula un cobro](#cómo-se-calcula-un-cobro) (ejemplos E1 a E9)
+5. [Cómo se calcula un cobro](#cómo-se-calcula-un-cobro) (ejemplos E1 a E10)
 6. [Cuándo cae el dinero](#cuándo-cae-el-dinero) (ejemplos F1 a F3)
 7. [Lo que se congela y lo que lo cambia](#lo-que-se-congela-y-lo-que-lo-cambia)
 8. [Estados de un cobro](#estados-de-un-cobro)
@@ -86,10 +86,10 @@ código QR con una app de autenticación (o se escribe la clave), se escribe el 
 activar»**. Desde ahí, cada entrada pide el código. Conviene **«Agregar otro dispositivo»**: no hay códigos de
 respaldo. Mientras no esté activo, todas las pantallas lo avisan.
 
-**Mirar el Resumen.** Es la primera pantalla: bruto, comisiones, neto, «Por caer» y «Depositado» del período, los
-avisos (atrasados, disputas abiertas, cobros sin comprobante, empresas sin esquema de reparto activo por defecto,
-feriados que faltan) y los próximos depósitos, en una moneda a la vez (ver la fila
-[(x)](#decisiones-tomadas-y-por-confirmar)). En el celular, los filtros van plegados tras «Filtros» para que las
+**Mirar el Resumen.** Es la primera pantalla: bruto, comisiones, neto, «Por caer» y «Depositado» del período (lo que
+llega al banco) y, si una pasarela retuvo algo, «Retenido»; los avisos (atrasados, disputas abiertas, cobros sin
+comprobante, empresas sin esquema de reparto activo por defecto, feriados que faltan) y los próximos depósitos, en
+una moneda a la vez (ver la fila [(x)](#decisiones-tomadas-y-por-confirmar)). En el celular, los filtros van plegados tras «Filtros» para que las
 cifras se vean primero.
 
 **Crear una pasarela con su pago rápido.** Pasarelas → **«Agregar pasarela»**:
@@ -100,7 +100,8 @@ cifras se vean primero.
 3. Opciones → **«Agregar opción»**: «Pago rápido», porcentaje 1,5, «Sobre el bruto», días al depósito con esta
    opción 0 y, si se usa casi siempre, «Encendida por defecto».
 4. **«Crear pasarela»**. Si la tarifa cambia después, en su ficha se agrega otra en «Tarifas», con su «Vigente
-   desde»: lo ya registrado no cambia.
+   desde»: lo ya registrado no cambia. Lo que retiene la pasarela se fija después, en su ficha, en «Retención» (ver
+   «La pasarela retiene una parte para ciertas personas», más abajo).
 
 **Preparar una empresa.** Cuentas destino → **«Agregar cuenta»** (alias y últimos 4 dígitos). Empresas → **«Nueva
 empresa»** → **«Crear empresa»**. En su ficha: «Canales de venta» → **«Agregar canal»** (lo que cobra la
@@ -156,6 +157,46 @@ el bruto», la marca no cambia nada.
 - **Alguien tiene que pagarla.** Con todas las líneas marcadas no se guarda ni el esquema ni el cobro: «Alguien tiene
   que pagar la comisión: deja al menos una parte sin marcar.» Si el esquema tiene «Resto» y le toca algo, la paga el
   «Resto».
+
+**La pasarela retiene una parte para ciertas personas.** Hay pasarelas que, además de su comisión, se quedan un % de
+cada cobro unos días y después se lo pagan a ciertas personas (por ejemplo, a los titulares de la cuenta), no al
+banco del negocio. Lo retenido cuenta como un pago que esas personas ya recibieron de su parte del reparto. No es una
+comisión: el neto, las comisiones y el reparto no cambian (ver
+[E10](#e10--la-pasarela-retiene-una-parte-para-ciertas-personas)).
+
+- **Configurarla.** Pasarelas → la pasarela → sección **«Retención»**:
+  - «% que retiene»: 0 = no retiene;
+  - «Días que la retiene»: corridos, de 0 a 365;
+  - «¿A quién le cae?»: **«Agregar persona»** por cada una, con su beneficiario y su porcentaje. Se eligen entre los
+    beneficiarios activos.
+
+  Los porcentajes de las personas suman exactamente 100: la suma se ve al escribir («Suman 90 %»). Con 0 % no hay
+  personas; con más, al menos una. Mientras algo no cumpla, «Guardar retención» queda apagado y la tarjeta dice por
+  qué («Elige a quién le cae lo retenido.»). Guardada, una frase la resume: «Retiene el 5 % de cada cobro durante 30
+  días corridos y se lo paga a Titular A (50 %) y Titular B (50 %)». Al crear una pasarela no se pide: se fija en la
+  ficha.
+- **En Registrar y en el detalle.** Al final del desglose: «Retiene OTF Demo (5 %)» $50,00, a quién le cae y cuánto
+  (Titular A $25,00 · Titular B $25,00), «Se libera hacia el jue 10 dic 2026» y **«Llega al banco»** $920,80: el
+  neto menos lo retenido. Con un reembolso total retiene $0,00 y dice «Sin nada cobrado, no retiene nada.»
+- **En el reparto.** A cada persona que recibe retención: «ya recibió $25,00 de la retención · falta $25,00». Si lo
+  retenido pasa de su parte, lo de más es un adelanto: «ya recibió $50,00 de la retención · $31,94 de adelanto». Si
+  recibe retención sin estar en el reparto de ese cobro, la vista previa y el detalle lo advierten: «Grupo C recibe
+  $50,00 de la retención pero no está en el reparto de este cobro: es un adelanto y su saldo baja.»
+- **En la ficha del beneficiario y en Repartos.** «Retenido» va junto a «Asignado» y «Liquidado», y el saldo ya lo
+  descuenta: «Retenido: lo que una pasarela ya le pagó de lo que retuvo. El saldo lo descuenta.» Sin nada retenido,
+  esa fila no sale.
+- **En Cuentas destino y en el Resumen.** «Por caer» y «Depositado» son lo que llega al banco: neto − retenido. Si
+  alguna pasarela retuvo algo, la cuenta lo dice: «Sin lo que retienen las pasarelas: eso le cae a otras personas, no
+  a esta cuenta.» El Resumen suma además la tarjeta **«Retenido»** del período, si lo hay, y cada grupo de «Próximos
+  depósitos» dice lo que llega al banco.
+- **En la lista de Cobros.** Bajo el neto, una marca pequeña: «$50,00 retenido».
+- **Lo ya guardado no cambia.** Cada cobro congela la retención con la que se calculó, como la tarifa. Cambiar la
+  retención de la pasarela vale para los cobros que se registren o se importen después. Para que uno ya guardado
+  tome la vigente, se le da **«Recalcular»**: en su detalle («Más acciones» → «Recalcular») o, con varios marcados,
+  en la lista de Cobros. En «Ver el antes y el después» salen «Retenido» y lo de cada persona («Retenido · Titular
+  A»), de «—» a su monto.
+- **Exportar.** El CSV de Cobros lleva al final «Retenido» y «Retenido para» («Titular A 25,00 · Titular B 25,00»).
+  «Exportar todo» lleva las personas de cada pasarela y lo que recibió cada una en cada cobro.
 
 **Cambiar el estado de un cobro desde la lista.** En Cobros, cada cobro tiene el botón **«Cambiar estado ▾»**. Abre
 un menú con solo los cambios que ese cobro admite, los mismos que en su detalle salvo uno: la fecha de un depósito
@@ -222,7 +263,7 @@ con su propio `package.json`. No comparte código con el otro proyecto que está
 | Pieza | Qué hace |
 |---|---|
 | **Motor** | Funciones puras que hacen todas las cuentas. No tocan la red, la base ni el reloj: la fecha de «hoy» les llega como parámetro. Por eso se prueban solas y dan lo mismo en el servidor y en el navegador |
-| **Base** | Postgres en Supabase: 17 tablas `pay_*`, sus reglas, tres funciones que guardan varias tablas a la vez y cuatro vistas de totales |
+| **Base** | Postgres en Supabase: 19 tablas `pay_*`, sus reglas, cuatro funciones que guardan varias tablas a la vez y cuatro vistas de totales |
 | **Capa de servidor** | Lee con la sesión del usuario y escribe llamando al motor y a las funciones de la base. Es la que manda: no se fía de lo que calculó el navegador |
 | **Pantallas** | Formularios y listas, pensadas primero para el celular. Usan el motor para la vista previa |
 | **Pruebas** | Del motor (junto al código), de la base y de la capa de servidor (contra el Supabase local) y de punta a punta (con un navegador) |
@@ -232,12 +273,14 @@ con su propio `package.json`. No comparte código con el otro proyecto que está
 1. **Pantalla.** El dueño llena el formulario. El navegador le enseña una vista previa calculada con el motor.
 2. **Acción del servidor.** Verifica la sesión y valida lo que llegó.
 3. **Motor.** El servidor vuelve a leer la configuración (tarifas, opciones, esquema, feriados) y calcula de nuevo.
-   El resultado es una «escritura» lista para guardar: las columnas del cobro, su reparto y el evento del historial.
-4. **Base.** La función `pay_save_transactions` guarda el cobro, el reparto y el evento en una sola transacción.
+   El resultado es una «escritura» lista para guardar: las columnas del cobro, su reparto, lo que recibe cada
+   persona de lo retenido y el evento del historial.
+4. **Base.** La función `pay_save_transactions` guarda el cobro, el reparto, las partes de lo retenido y el evento
+   en una sola transacción.
 5. **La base vuelve a comprobar los cuadres.** Dos se comprueban en el momento de escribir la fila: que el neto
-   sea el bruto vigente menos las comisiones, y que la base del reparto sea ese neto (o ese bruto vigente). El
-   tercero, que el reparto sume exactamente su base, se comprueba al confirmar la transacción. El resultado es el
-   mismo: si algo no cuadra, no se guarda nada. El detalle está en
+   sea el bruto vigente menos las comisiones, y que la base del reparto sea ese neto (o ese bruto vigente). Otros
+   dos, que el reparto sume exactamente su base y que las partes de lo retenido sumen lo retenido, se comprueban al
+   confirmar la transacción. El resultado es el mismo: si algo no cuadra, no se guarda nada. El detalle está en
    [Lo que la base hace cumplir](#lo-que-la-base-hace-cumplir).
 6. La pantalla dice «Cobro guardado.» y deja el formulario listo para el siguiente.
 
@@ -258,7 +301,7 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 | `src/app/` | La entrada (`/login`), Ajustes (con «Exportar todo»), la galería del kit y las pantallas del libro, bajo `/pasarelas` |
 | `src/components/ui/`, `src/components/shell/` | Kit propio de interfaz y marco de navegación |
 | `src/components/pasarelas/` | Las piezas de cada pantalla del libro |
-| `supabase/migrations/` | El esquema de la base: cinco migraciones aditivas, de `20261110120000_las_pasarelas_de_pago.sql` a `20261114120000_pasarelas_5_partes_sin_comision.sql` |
+| `supabase/migrations/` | El esquema de la base: seis migraciones aditivas, de `20261110120000_las_pasarelas_de_pago.sql` a `20261115120000_pasarelas_6_retencion.sql` |
 | `supabase/config.toml` | El Supabase local: registro público apagado, segundo factor TOTP encendido |
 | `scripts/` | El arranque del Supabase local (`stack.sh`), la semilla de ejemplo (`npm run seed`) y las capturas |
 | `tests/integration/` | Pruebas contra el Supabase local: RLS, cuadres, funciones, Storage, sesiones, borrado de usuario y cada parte del libro |
@@ -273,13 +316,13 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 | `decimal.ts` | La única puerta a decimal.js: redondeo y montos canónicos |
 | `money.ts` | Leer lo que escribe una persona, mostrar, sumar por moneda |
 | `allocate.ts` | El reparto por mayor resto: sobre el 100 % (`allocate`) o en proporción a unos pesos (`allocateInProportion`) |
-| `breakdown.ts` | El cálculo de un cobro y el desglose que se congela |
-| `rules.ts` | De la configuración a las reglas de un cobro, y los días que tarda el depósito |
+| `breakdown.ts` | El cálculo de un cobro y el desglose que se congela. Lo que retiene la pasarela (`retentionOf`), lo que llega al banco (`payoutOf`) y cuándo se libera (`retentionReleaseOn`) |
+| `rules.ts` | De la configuración a las reglas de un cobro, y los días que tarda el depósito. Valida la retención de una pasarela (`validateRetention`) |
 | `versions.ts` | Qué versión (tarifa o esquema) rige en una fecha |
 | `dates.ts`, `holidays.ts` | Fechas, días hábiles y feriados bancarios |
 | `status.ts` | El estado que se muestra, «por caer» y «atrasado» |
 | `write.ts` | Cada cambio sobre un cobro (crear, editar, reembolsar, disputar, depositar…), planeado como una escritura |
-| `stats.ts` | Resumen por moneda, tiempos reales de depósito y próximos depósitos |
+| `stats.ts` | Resumen por moneda (con lo retenido y lo que llega al banco), tiempos reales de depósito y próximos depósitos |
 | `schemes.ts` | Validar un esquema de reparto antes de guardarlo |
 | `guards.ts` | Guardas para textos libres: tarjetas, números largos y enlaces |
 | `csv.ts` | Armar un CSV para descargar, protegido contra fórmulas |
@@ -299,7 +342,7 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 | `queries/…` | Una lectura por pantalla: resumen, empresas, pasarelas, cuentas, feriados, repartos, liquidaciones, importar y exportar |
 | `ops/transactions.ts` | Registrar, editar, reembolsar, disputar, depositar, recalcular, fechas estimadas, papelera y borrado definitivo |
 | `ops/receipts.ts` | Registrar y quitar un comprobante, y firmar su URL |
-| `ops/…` | Las escrituras de cada parte: empresas, pasarelas, cuentas, feriados, repartos, liquidaciones e importar |
+| `ops/…` | Las escrituras de cada parte: empresas, pasarelas (con su retención), cuentas, feriados, repartos, liquidaciones e importar |
 | `actions/…` | Las acciones del servidor que llaman las pantallas, cada una con su esquema de validación. Delgadas: sesión, validación y la `op` que toca |
 
 ## Las reglas del dinero
@@ -330,7 +373,8 @@ mil.
 
 ## Cómo se calcula un cobro
 
-El cálculo recibe tres cosas: las **reglas** (tarifa de la pasarela, opciones encendidas, plataforma y esquema), el
+El cálculo recibe tres cosas: las **reglas** (tarifa y retención de la pasarela, opciones encendidas, plataforma y
+esquema), el
 **estado** (lo cobrado, lo reembolsado, la disputa, si falló y quién pagó la comisión) y la moneda. Devuelve el
 **desglose**.
 
@@ -374,6 +418,10 @@ Los nombres que se usan en todo el documento:
    siempre el neto ([E7](#e7--la-comisión-la-pagó-el-comprador)). Si la pagamos nosotros, el esquema va sobre el neto
    y una parte no paga comisión, esa parte sale del bruto vigente y las demás se reparten lo que queda del neto; la
    base sigue siendo el neto ([E9](#e9--una-parte-que-no-paga-comisión)). Sin esquema no hay reparto.
+10. **Retención.** Si las reglas traen la retención de la pasarela, lo retenido es bruto vigente × su porcentaje,
+    redondeado, y se reparte entre sus personas por mayor resto. No es una línea ni cambia nada de lo anterior.
+    **Llega al banco** = neto − retenido ([E10](#e10--la-pasarela-retiene-una-parte-para-ciertas-personas)). Sin
+    retención, llega el neto.
 
 Las líneas quedan siempre en este orden: pasarela, costo del reembolso, opciones, plataforma, disputa.
 
@@ -393,6 +441,9 @@ rechaza, y la base tampoco deja guardarlo.
 
 Si una parte no paga comisión, el mayor resto se usa dos veces: sobre el bruto, para esa parte, y sobre lo que queda
 del neto, para las demás ([E9](#e9--una-parte-que-no-paga-comisión)).
+
+Lo que retiene la pasarela se reparte igual entre sus personas: lo retenido en centavos, por sus porcentajes, que
+suman 100 ([E10](#e10--la-pasarela-retiene-una-parte-para-ciertas-personas)).
 
 ### Límites del modelo
 
@@ -624,6 +675,62 @@ editar el cobro.
 - El reparto suma siempre exactamente el neto, y su base sigue siendo el neto.
 - Si hay «Resto» y le toca algo, él paga la comisión aunque todas las líneas estén marcadas.
 
+### E10 · La pasarela retiene una parte para ciertas personas
+
+Entrada: «OTF Demo», 2,9 % + 0,20, sin opciones ni plataforma (no devuelve la comisión al reembolsar). Retiene el
+**5 %** de cada cobro durante **30 días**, para Titular A (50 %) y Titular B (50 %). Se cobran **1000,00** USD el
+10/11/2026 y la comisión la pagamos «Nosotros». El esquema es «Sobre el neto»: Grupo A 60 %, Grupo B 30 %, Titular A
+5 % y Titular B 5 %, los dos titulares marcados «No paga comisión» ([E9](#e9--una-parte-que-no-paga-comisión)).
+
+- Comisión: 1000 × 2,9 % + 0,20 = **29,20**. Neto: 1000,00 − 29,20 = **970,80**.
+- Retenido: 1000,00 × 5 % = **50,00**. Por mayor resto, mitad y mitad: **25,00 · 25,00**. Se libera el 10/11 más 30
+  días corridos: el **10/12/2026**.
+- Llega al banco: 970,80 − 50,00 = **920,80**.
+- Reparto, como en E9: cada titular, el 5 % del bruto, **50,00**. A y B se reparten 970,80 − 100,00 = 870,80 en
+  proporción 60:30: 580,5333 y 290,2666. Truncados suman 870,79, y el centavo que falta va al de mayor resto
+  (290,2666). Resultado: **580,53 · 290,27 · 50,00 · 50,00**, que suma 970,80.
+- Sin la retención, comisión, neto y reparto son los mismos. Solo cambia lo que llega al banco: 970,80.
+- Saldo de cada titular por este cobro: 50,00 asignado − 25,00 que ya le pagó la pasarela = **25,00**.
+
+**E10b**, el mismo cobro reembolsado del todo. El bruto vigente queda en 0,00 y la pasarela se queda los 29,20 (costo
+del reembolso). Neto: **−29,20**.
+
+- Retenido: 0,00 × 5 % = **0,00** (0,00 · 0,00). Llega al banco lo mismo que el neto: **−29,20**.
+- Reparto, como en E9b: los titulares, su parte de un bruto de 0,00, **0,00**. A y B cargan toda la pérdida, en
+  proporción 60:30. Como en E4, se reparten 2920 centavos (el valor absoluto) y se cambia el signo: 2920 × 60/90 =
+  1946,666… y × 30/90 = 973,333…. Truncados suman 2919, y el centavo que falta va al de mayor resto (1946,666…).
+  Resultado: **−19,47 · −9,73 · 0,00 · 0,00**.
+- Saldo de cada titular por este cobro: **0,00**. No tiene nada asignado y no recibió nada.
+
+**E10c**, el mismo cobro con un reembolso parcial de **400,00**. Bruto vigente: **600,00**.
+
+- Pasarela: 600 × 2,9 % + 0,20 = 17,60. Costo del reembolso: 29,20 − 17,60 = 11,60. Comisiones: **29,20**. Neto:
+  600,00 − 29,20 = **570,80**.
+- Retenido: 600,00 × 5 % = **30,00** (15,00 · 15,00). Llega al banco: 570,80 − 30,00 = **540,80**.
+- Reparto: cada titular, 600,00 × 5 % = **30,00**. A y B se reparten 570,80 − 60,00 = 510,80 en proporción 60:30:
+  340,5333 y 170,2666. El centavo que falta va al de mayor resto. Resultado: **340,53 · 170,27 · 30,00 · 30,00**.
+- Saldo de cada titular: 30,00 − 15,00 = **15,00**.
+
+**E10d**, el mismo cobro marcado fallido. Bruto vigente 0,00: retenido **0,00** y llega al banco 0,00. Como el
+reparto, no cuenta en ningún saldo: los titulares no tienen nada por este cobro. Si se reabre, vuelve a retener
+50,00.
+
+**Quien recibe sin estar en el reparto.** Si lo retenido de E10 le cae entero al Grupo C, que no está en el esquema,
+el Grupo C no tiene nada asignado y ya recibió 50,00: su saldo queda en **−50,00**, un adelanto. La vista previa y el
+detalle lo advierten.
+
+**La regla**, en cada cobro:
+
+- Retenido = bruto vigente × el % de la retención, redondeado al centavo, mitad hacia arriba, como una línea de
+  comisión. Por ejemplo, 10,10 × 5 % = 0,505 da **0,51**. Nunca pasa del bruto vigente.
+- Con reembolso, se calcula sobre lo que queda cobrado. Un fallido retiene 0,00.
+- Se reparte entre sus personas por mayor resto: las partes suman exactamente lo retenido.
+- Se libera el día del cobro más los días de la retención, corridos, aunque caiga en fin de semana o feriado.
+- No es una comisión: el neto, las comisiones, lo facturado, lo que pagaron los compradores y el reparto no cambian.
+  **Llega al banco** = neto − retenido.
+- Cuenta como un pago que esas personas ya recibieron: su saldo baja en lo que recibieron.
+- Un desglose sin retención no retiene nada: así quedan los cobros de antes y los de una pasarela que no retiene.
+
 ## Cuándo cae el dinero
 
 La fecha estimada de depósito se calcula al registrar el cobro. Se puede corregir a mano.
@@ -802,11 +909,23 @@ Cómo leerlo:
 - `feeExempt` en `rules.scheme.lines` es la marca «No paga comisión» congelada en ese cobro. Puede ser otra que la
   del esquema, si se cambió al registrar o al editar. En `alloc.lines`, `feeExempt` dice si la marca se aplicó (solo
   con «Nosotros» y sobre el neto: ver [E9](#e9--una-parte-que-no-paga-comisión)).
+- `retention` en `rules.gateway` es la retención de la pasarela congelada en ese cobro. Solo está si la pasarela
+  retenía más de 0 % al congelarlo. La de E10:
+
+  ```json
+  "retention": { "pct": "5", "days": 30,
+                 "recipients": [ { "beneficiaryId": "ben-ta", "name": "Titular A", "pct": "50" },
+                                 { "beneficiaryId": "ben-tb", "name": "Titular B", "pct": "50" } ] }
+  ```
+
+  Lo retenido no se guarda dentro: lo calcula `retentionOf` con esa regla y el bruto vigente
+  ([E10](#e10--la-pasarela-retiene-una-parte-para-ciertas-personas)).
 - Todo el dinero va como texto. Al leer un desglose guardado, `parseBreakdown` lo valida y rechaza otra versión o
   montos escritos como número. A uno guardado antes de existir `feeExempt` o `feesPaidBy` le pone `false` y
-  `nosotros`.
-- Las columnas del cobro (`gross_amount`, `fees_total`, `net_amount`, `alloc_base_amount`) y las filas de
-  `pay_allocations` repiten estas cifras para poder filtrar y sumar. Salen siempre del desglose.
+  `nosotros`. A uno sin `retention` no le pone nada: no retiene.
+- Las columnas del cobro (`gross_amount`, `fees_total`, `net_amount`, `alloc_base_amount`, `buyer_fees`,
+  `retention_amount`) y las filas de `pay_allocations` y `pay_retention_shares` repiten estas cifras para poder
+  filtrar y sumar. Salen siempre del desglose.
 
 **Por qué las reglas viajan dentro.** Un reembolso o una disputa pueden llegar meses después. Se calculan con la
 tarifa que regía al cobrar, sin consultar nada: está en el propio cobro. Cambiar una tarifa o un esquema no
@@ -843,6 +962,9 @@ de hoy no interviene.
 | Corregir el monto (o la moneda) | lo cobrado |
 | Marcar como fallido, o reabrir | si falló |
 
+Lo retenido también se vuelve a calcular, con la retención congelada: un reembolso lo baja
+([E10c](#e10--la-pasarela-retiene-una-parte-para-ciertas-personas)) y un fallido lo deja en 0,00.
+
 ### Qué vuelve a resolver reglas
 
 **Editar** un cobro solo vuelve a leer de la configuración la pieza que cambió. Lo demás conserva lo congelado,
@@ -850,10 +972,10 @@ aunque la configuración ya sea otra.
 
 | Si cambia… | Se vuelve a resolver… | Y además se mueve… |
 |---|---|---|
-| la pasarela | la pasarela entera, con la tarifa de la fecha del cobro, y sus opciones (hay que decir cuáles lleva) | la fecha estimada y la cuenta destino |
+| la pasarela | la pasarela entera, con la tarifa de la fecha del cobro y la retención de hoy, y sus opciones (hay que decir cuáles lleva) | la fecha estimada y la cuenta destino |
 | la empresa | la plataforma: el canal tiene que ser de la empresa nueva | la fecha estimada y la cuenta destino |
 | las opciones | las opciones | la fecha estimada |
-| la fecha (a otro día) | solo la tarifa de la pasarela y la versión del esquema que rigen ese día | la fecha estimada |
+| la fecha (a otro día) | solo la tarifa de la pasarela y la versión del esquema que rigen ese día (la retención congelada se queda) | la fecha estimada |
 | el canal | la plataforma | nada |
 | el esquema | el esquema, con la versión de la fecha del cobro | nada |
 | quién no paga comisión | solo las marcas «No paga comisión» del esquema congelado (las de la edición, no las de la configuración), y con ellas el reparto | nada |
@@ -886,6 +1008,13 @@ descarta la comisión informada y se omiten las opciones que ya no existen. La f
 salvo que esté puesta a mano. Antes de guardar se puede ver el antes y el después, fila por fila. En el ejemplo de
 las tarifas, recalcular con la tarifa de hoy el cobro del viernes 13 lo pasa de 3,20 a 3,80 de pasarela, de 9,70 a
 10,30 de comisiones, de 90,30 a 89,70 de neto, y el reparto a 44,85 · 26,91 · 17,94.
+
+**Recalcular trae la retención vigente.** La retención de una pasarela no tiene versiones: en los dos modos vale la
+de ahora, o ninguna si ya no retiene. Es la forma de dársela a cobros registrados antes de configurarla, uno desde su
+detalle o varios desde la lista de Cobros. E10 registrado antes de que OTF Demo retuviera no retiene nada.
+Recalculado, el antes y el después dicen «Retenido» de «—» a 50,00 y «Retenido · Titular A» y «Retenido · Titular B»
+de «—» a 25,00. Con la misma tarifa y el mismo esquema, el neto (970,80) y el reparto no cambian. Un cobro ya al día
+no cambia al recalcularlo otra vez.
 
 Marcar en tránsito, depositar, revertir un depósito, fijar la fecha estimada, mandar a la papelera y restaurar no
 tocan ningún número.
@@ -933,13 +1062,20 @@ como «en disputa».
 
 ### Por caer y depositado
 
-- **Por caer** suma el neto de los cobros que **se ven** como «Registrado» o «En tránsito» (el
-  [estado que se muestra](#el-estado-que-se-muestra)). Un cobro recién registrado también está por caer. Uno con
-  la disputa abierta no lo está: la pasarela retiene ese dinero. Uno reembolsado por completo tampoco: ya se
-  devolvió. Uno con reembolso parcial sí, con su neto ya rebajado. Así, lo que está por caer siempre tiene bruto
-  vigente mayor que cero.
-- **Depositado** suma el neto de los cobros cuyo ciclo es `depositado`, tengan o no reembolso o disputa.
+- **Por caer** suma lo que llega al banco de los cobros que **se ven** como «Registrado» o «En tránsito» (el
+  [estado que se muestra](#el-estado-que-se-muestra)): su neto menos lo que retuvo la pasarela. Sin retención, el
+  neto. Un cobro recién registrado también está por caer. Uno con la disputa abierta no lo está: la pasarela tiene
+  ese dinero detenido. Uno reembolsado por completo tampoco: ya se devolvió. Uno con reembolso parcial sí, con su
+  neto ya rebajado. Así, lo que está por caer siempre tiene bruto vigente mayor que cero.
+- **Depositado** suma lo que llegó al banco de los cobros cuyo ciclo es `depositado`, tengan o no reembolso o
+  disputa: también su neto menos lo retenido.
 - **Los fallidos** no cuentan en ningún total: el motor los deja fuera.
+
+Con retención, E10 sin depositar suma **920,80** en «Por caer», no 970,80: los 50,00 retenidos le caen a los
+titulares, no a la cuenta ([E10](#e10--la-pasarela-retiene-una-parte-para-ciertas-personas)). Lo dicen igual la
+tarjeta del Resumen, la cuenta destino y los próximos depósitos. El motor da las dos cifras (`pendingNet` y
+`pendingPayout`, `depositedNet` y `depositedPayout`), y la vista de cuentas también; las pantallas enseñan las de lo
+que llega al banco. La lista de cobros sigue enseñando el neto, con lo retenido debajo.
 
 Es **una sola definición** (`isPending`, en `status.ts`) y la usan todos: la tarjeta «Por caer», el filtro «por
 caer» de la lista de cobros, los próximos depósitos, lo [atrasado](#atrasado-y-tiempo-real) y la vista
@@ -951,10 +1087,11 @@ Con los ejemplos, sin depositar: E5 (reembolso parcial) suma 52,90 en «Por caer
 
 Por eso el neto total del período ya no es siempre «por caer» más «depositado»: los cobros sin depositar con la
 disputa abierta o reembolsados del todo quedan fuera de los dos. Es la fila (q) de las
-[decisiones](#decisiones-tomadas-y-por-confirmar).
+[decisiones](#decisiones-tomadas-y-por-confirmar). Lo retenido tampoco está en ninguno de los dos: no llega al banco.
 
 Los **próximos depósitos** agrupan por fecha estimada, cuenta destino y moneda los cobros por caer que tienen fecha
-estimada: todo lo atrasado, más lo que cae en una ventana de 14 días **contando hoy** (de hoy a hoy + 13).
+estimada: todo lo atrasado, más lo que cae en una ventana de 14 días **contando hoy** (de hoy a hoy + 13). Cada grupo
+dice lo que llega al banco.
 
 **La papelera.** El motor no sabe si un cobro está en la papelera: la fila mínima que recibe para sumar no trae
 ese dato. La dejan fuera quienes le pasan las filas:
@@ -1042,7 +1179,14 @@ La vista `pay_beneficiary_balances` da, por beneficiario **y por moneda**:
 
 - **Asignado:** la suma de lo que le tocó en cada cobro. No cuentan los cobros de la papelera ni los fallidos.
 - **Liquidado:** la suma de sus liquidaciones.
-- **Saldo:** asignado menos liquidado. Positivo: se le debe. Negativo: recibió de más y debe devolver.
+- **Retenido** (`retained`): lo que ya le pagó una pasarela de lo que retuvo
+  ([E10](#e10--la-pasarela-retiene-una-parte-para-ciertas-personas)). Tampoco cuentan los cobros de la papelera ni los
+  fallidos.
+- **Saldo:** asignado menos liquidado menos retenido. Positivo: se le debe. Negativo: recibió de más y debe devolver.
+
+Con E10, cada titular tiene 50,00 asignado, 0,00 liquidado y 25,00 retenido: saldo **25,00**. Quien recibe retención
+sin estar en el reparto de ese cobro queda con saldo negativo: si lo retenido de E10 le cae entero al Grupo C, que no
+está en el esquema, su saldo es **−50,00**, un adelanto.
 
 La moneda de lo asignado es la del cobro. Los saldos nunca mezclan monedas: un beneficiario con cobros en dos
 monedas tiene dos saldos.
@@ -1061,28 +1205,29 @@ Lo liquidado pasa a 45,15 − 46,75 = −1,60, igual que lo asignado, y el saldo
 
 ## La base de datos
 
-Todo está en migraciones aditivas (cinco, de `20261110120000` a `20261114120000`): solo crean o cambian objetos con
+Todo está en migraciones aditivas (seis, de `20261110120000` a `20261115120000`): solo crean o cambian objetos con
 prefijo `pay_` y, la primera, además el esquema `private`, el bucket `comprobantes` y sus políticas. Si el proyecto
 ya tiene un esquema `private` o un bucket `comprobantes`, la primera los reutiliza y les cambia permisos y políticas
 (el paso 1 de [«Pasar a producción»](../README.md#pasar-a-producción) dice qué mirar antes).
 
-Columnas comunes de las 17 tablas:
+Columnas comunes de las 19 tablas:
 
 - Todas tienen `id` (uuid) y `user_id` (el dueño de la fila, que se borra en cascada con el usuario).
 - Todas menos `pay_transaction_events` tienen `created_at`. El historial guarda su fecha en la columna `at`.
 - Diez tienen `updated_at`, que mueve un disparador: `pay_bank_accounts`, `pay_beneficiaries`, `pay_schemes`,
   `pay_companies`, `pay_channels`, `pay_gateways`, `pay_gateway_extras`, `pay_company_gateways`, `pay_settlements`
   y `pay_transactions`.
-- `pay_allocations`, `pay_transaction_receipts` y `pay_holidays` admiten actualizaciones y **no** tienen
-  `updated_at`.
+- `pay_allocations`, `pay_transaction_receipts`, `pay_holidays`, `pay_gateway_retention_recipients` y
+  `pay_retention_shares` admiten actualizaciones y **no** tienen `updated_at`.
 
-### Las 17 tablas
+### Las 19 tablas
 
 | Tabla | Qué guarda |
 |---|---|
 | `pay_companies` | Las empresas: nombre, web, moneda, esquema de reparto por defecto, notas y la ruta de su logo (el archivo está en Storage) |
 | `pay_channels` | Los canales o páginas de venta de una empresa, con lo que cobra su plataforma (porcentaje y cuota fija) |
-| `pay_gateways` | Las pasarelas: días al depósito (0–60), hábiles o corridos, si devuelve la comisión al reembolsar, costo de disputa |
+| `pay_gateways` | Las pasarelas: días al depósito (0–60), hábiles o corridos, si devuelve la comisión al reembolsar, costo de disputa y lo que retiene (`retention_pct`, `retention_days`) |
+| `pay_gateway_retention_recipients` | A quién le cae lo que retiene cada pasarela: beneficiario, porcentaje y orden |
 | `pay_gateway_fee_versions` | Las tarifas de cada pasarela (porcentaje y cuota fija) con su «vigente desde» |
 | `pay_gateway_extras` | Las opciones de una pasarela: porcentaje, cuota fija, base, si viene encendida y los días que impone |
 | `pay_bank_accounts` | Las cuentas destino: alias, banco, últimos 4 dígitos, moneda |
@@ -1091,8 +1236,9 @@ Columnas comunes de las 17 tablas:
 | `pay_schemes` | Los esquemas de reparto (nombre) |
 | `pay_scheme_versions` | Las versiones de cada esquema: base, «Resto» y «vigente desde» |
 | `pay_scheme_lines` | Las líneas de cada versión: beneficiario, porcentaje y si no paga comisión (`fee_exempt`) |
-| `pay_transactions` | **Los cobros**, con sus montos, su estado y el desglose congelado |
+| `pay_transactions` | **Los cobros**, con sus montos (también lo retenido, `retention_amount`), su estado y el desglose congelado |
 | `pay_allocations` | Lo que le toca a cada beneficiario de cada cobro, con su porcentaje y su base (`neto` o `bruto`) |
+| `pay_retention_shares` | Lo que recibe cada persona de lo retenido en cada cobro |
 | `pay_transaction_receipts` | Los comprobantes de un cobro (el archivo está en Storage; aquí, su ruta, tipo y tamaño) |
 | `pay_transaction_events` | El historial de cada cobro, con el antes y el después |
 | `pay_settlements` | Las liquidaciones a beneficiarios |
@@ -1116,14 +1262,18 @@ Columnas comunes de las 17 tablas:
   el reparto no puede ir sobre el bruto (`pay_transactions_fees_paid_by_alloc_check`). Lo que pagaron los
   compradores (`buyer_fees`) no es negativo y es 0 si la comisión la pagamos nosotros
   (`pay_transactions_buyer_fees_check`).
+- **Lo retenido** (`retention_amount`) no es negativo ni pasa del bruto vigente
+  (`pay_transactions_retention_amount_check`). En un fallido el bruto vigente es cero, así que lo retenido también.
 - La moneda son tres letras mayúsculas. La referencia tiene de 1 a 120 caracteres y la nota hasta 280. El resumen
   de un evento del historial, de 1 a 300.
 
 **Cuadres que se comprueban al confirmar** (disparadores diferidos). Se miran al final de la transacción, no fila
-por fila, para poder guardar el cobro y su reparto juntos:
+por fila, para poder guardar el cobro, su reparto y las partes de lo retenido juntos:
 
 - La suma de `pay_allocations` de un cobro es exactamente su `alloc_base_amount`. Borrar o cambiar a mano una fila
   del reparto se rechaza.
+- La suma de `pay_retention_shares` de un cobro es exactamente su `retention_amount` (`pay_retention_sum_mismatch`).
+  Un cobro con retenido 0,00 y sin partes cuadra. Agregar, cambiar o borrar a mano una parte suelta se rechaza.
 - Un esquema válido: las líneas no pasan de 100 %; si suman menos hay «Resto»; el «Resto» no es además una línea.
 
 **Partes que no pagan comisión** (migración 5, `20261114120000_pasarelas_5_partes_sin_comision.sql`):
@@ -1136,6 +1286,23 @@ por fila, para poder guardar el cobro y su reparto juntos:
 - En `pay_allocations`, la fila de una parte que no pagó comisión lleva `base = 'bruto'`, y las demás `'neto'`.
   Cada una lleva el porcentaje del esquema. La suma sigue siendo `alloc_base_amount`, que es el neto. Las
   restricciones y los disparadores de antes lo admiten tal cual: la migración no los toca.
+
+**La retención de la pasarela** (migración 6, `20261115120000_pasarelas_6_retencion.sql`):
+
+- `pay_gateways.retention_pct` (`numeric(7,4)`, de 0 a 100) y `retention_days` (de 0 a 365). Valen 0 por defecto:
+  las pasarelas de antes no retienen.
+- `pay_gateway_retention_recipients`: una fila por persona, con su `pct` (mayor que 0 y hasta 100) y su orden
+  (`sort`). Una persona va una sola vez por pasarela. Que sumen 100, que haya personas si y solo si el % es mayor que
+  0 y que cada una sea un beneficiario activo lo comprueba `pay_save_gateway_retention`, no una restricción: la app
+  no escribe filas sueltas.
+- `pay_transactions.retention_amount` (`numeric(14,2)`, 0 por defecto): lo retenido del cobro. Los cobros de antes
+  quedan en 0,00 y dan exactamente lo mismo.
+- `pay_retention_shares`: lo que recibe cada persona de lo retenido en un cobro (`amount` de 0 o más). Una persona
+  va una sola vez por cobro. Un fallido o un reembolso total guardan sus partes en 0,00.
+- Las dos tablas nuevas llevan lo mismo que `pay_allocations`: `user_id`, `unique (id, user_id)`, claves foráneas
+  compuestas con `user_id`, RLS por usuario, la política restrictiva del segundo factor y permisos explícitos.
+- La cuenta no la hace la base: la hace el motor (`retentionOf`) con la regla congelada en el desglose
+  (`rules.gateway.retention`). La base guarda el resultado y comprueba que cuadre.
 
 **Nada apunta a datos de otro usuario.** Cada tabla tiene `unique (id, user_id)` y las claves foráneas son
 compuestas, con `user_id`. Tres van más lejos:
@@ -1159,6 +1326,7 @@ importar.
 - una cuenta de la misma pasarela en la misma empresa;
 - un feriado del mismo usuario en el mismo día (por eso `ensureHolidays` ignora los repetidos al sembrar);
 - un beneficiario en el reparto de un mismo cobro, o en las líneas de una misma versión de esquema;
+- una persona en la retención de una misma pasarela, o en lo retenido de un mismo cobro;
 - la ruta de un comprobante.
 
 **Tablas de solo añadir:**
@@ -1208,21 +1376,23 @@ disputa que se anula.
 
 **La migración se revisa a sí misma.** Al final falla si alguna tabla `pay_*` quedó sin RLS, sin la política del
 segundo factor o sin su `unique (id, user_id)`, o si el bucket `comprobantes` quedó sin sus dos políticas
-restrictivas.
+restrictivas. Las migraciones 2, 3, 4 y 6 repiten al final la comprobación de RLS y de la política del segundo
+factor.
 
 Un detalle para quien mantenga: `pay_company_gateways.default_extra_ids` es un arreglo de ids sin clave foránea. El
 motor ignora los ids que ya no existen o están inactivos.
 
 ### Funciones atómicas
 
-Las tres corren con los permisos de quien llama (`security invoker`): la RLS y el segundo factor siguen aplicando.
+Las cuatro corren con los permisos de quien llama (`security invoker`): la RLS y el segundo factor siguen aplicando.
 Exigen una sesión de usuario.
 
 | Función | Qué hace |
 |---|---|
-| `pay_save_transactions(p_items, p_skip_duplicates)` | Crea o actualiza de 1 a 500 cobros, cada uno con su reparto y su evento. Si uno falla, no queda nada de ninguno |
+| `pay_save_transactions(p_items, p_skip_duplicates)` | Crea o actualiza de 1 a 500 cobros, cada uno con su reparto, las partes de lo retenido y su evento. Si uno falla, no queda nada de ninguno |
 | `pay_save_scheme(p)` | Si no llega `scheme_id`, crea el esquema. Si llega, le cambia el nombre (si viene `name`) y las notas (si viene la clave `notes`). En los dos casos le agrega una versión con sus líneas. Cada línea trae `beneficiary_id`, `pct` y, desde la migración 5, `fee_exempt` (si no viene, `false`). Devuelve el esquema, la versión y su número |
 | `pay_create_gateway(p)` | Crea una pasarela con su primera tarifa («desde el inicio») y sus opciones |
+| `pay_save_gateway_retention(p)` | Desde la migración 6. Fija el % y los días de la retención de una pasarela y reemplaza a sus personas. `p`: `gateway_id`, `pct`, `days` y `recipients` (`beneficiary_id`, `pct`). Valida: con 0 % no hay personas; con más, al menos una; cada una es un beneficiario activo del usuario, una sola vez; los % suman exactamente 100. Si algo falla, no cambia nada |
 
 Quien llame a `pay_save_scheme` solo para agregar una versión no debe mandar `name` ni `notes`, salvo que quiera
 cambiarlos.
@@ -1244,6 +1414,10 @@ Más sobre `pay_save_transactions`:
   cambio no toca nada, no se escribe y no hay conflicto. Las acciones **en lote** comparan contra lo que el servidor
   acaba de leer: solo frenan un choque de milisegundos.
 - El reparto se reemplaza solo si llega uno nuevo. Si no llega, no se toca.
+- Desde la migración 6, cada cobro acepta `retention_shares` (`beneficiary_id`, `amount`), igual que `allocations`:
+  si es nulo o falta, las partes no se tocan; si viene, se reemplazan (una lista vacía las borra). Un alta que no
+  dice `retention_amount` queda en 0,00. La función es la misma de la migración 4 con eso agregado
+  (`create or replace`, con los mismos permisos): acepta exactamente lo de antes.
 - Con `p_skip_duplicates`, un cobro nuevo cuya referencia ya existe en esa pasarela se salta, y se devuelve el id
   del que ya estaba. Es para importar.
 - Devuelve, por cada cobro y en el mismo orden: su id, si se insertó y si se saltó.
@@ -1257,14 +1431,28 @@ lo suyo. Ninguna cuenta los cobros de la papelera ni los fallidos. Todas van por
 
 | Vista | Qué da |
 |---|---|
-| `pay_beneficiary_balances` | Asignado, liquidado y saldo por beneficiario |
-| `pay_company_totals` | Por empresa: cobros, bruto vigente, comisiones, neto, y la primera y la última fecha de cobro; al final, `buyer_fees` (lo que pagaron los compradores) |
-| `pay_gateway_totals` | Por pasarela: cobros, bruto vigente, comisiones y neto (sin primera ni última fecha), más cuántos depositados y el promedio y la mediana de días al depósito; al final, `buyer_fees` |
-| `pay_bank_account_totals` | Por cuenta destino: lo depositado, lo que está [por caer](#por-caer-y-depositado) (con la misma definición del motor) y los días al depósito. No salen los cobros sin cuenta destino |
+| `pay_beneficiary_balances` | Asignado, liquidado y saldo por beneficiario; al final, `retained` (lo que ya le pagó una pasarela de lo que retuvo). El saldo ya lo descuenta |
+| `pay_company_totals` | Por empresa: cobros, bruto vigente, comisiones, neto, y la primera y la última fecha de cobro; al final, `buyer_fees` (lo que pagaron los compradores) y `retention` (lo retenido) |
+| `pay_gateway_totals` | Por pasarela: cobros, bruto vigente, comisiones y neto (sin primera ni última fecha), más cuántos depositados y el promedio y la mediana de días al depósito; al final, `buyer_fees` y `retention` |
+| `pay_bank_account_totals` | Por cuenta destino: lo depositado, lo que está [por caer](#por-caer-y-depositado) (con la misma definición del motor) y los días al depósito. Al final, `deposited_payout` y `pending_payout`: lo mismo que `deposited_net` y `pending_net`, pero con lo que llega al banco (neto − retenido). No salen los cobros sin cuenta destino |
 
 En las dos de totales, `gross` y `fees` son todo lo cobrado y todas las comisiones, como desde la migración 1. Lo
 facturado (`gross − buyer_fees`) y las comisiones del negocio (`fees − buyer_fees`) se derivan en el servidor (ver
-[E7](#e7--la-comisión-la-pagó-el-comprador)).
+[E7](#e7--la-comisión-la-pagó-el-comprador)). `retention` no es una comisión: `net` lo incluye.
+
+Desde la migración 6, `balance` de `pay_beneficiary_balances` es asignado − liquidado − retenido: sigue siendo «lo
+que se le debe». Las demás columnas de las cuatro vistas conservan nombre, orden y significado, y las nuevas van al
+final. Con todo en 0, cada vista da exactamente lo de antes. Con E1 y 5,00 retenidos (2,50 al Grupo A y 2,50 a un
+titular que no está en el reparto), y 10,00 liquidados al Grupo A:
+
+| Beneficiario | `assigned` | `settled` | `retained` | `balance` |
+|---|---|---|---|---|
+| Grupo A | 45,15 | 10,00 | 2,50 | **32,65** |
+| Grupo B | 27,09 | 0,00 | 0,00 | **27,09** |
+| Grupo C | 18,06 | 0,00 | 0,00 | **18,06** |
+| Titular B | 0,00 | 0,00 | 2,50 | **−2,50** |
+
+Y en su cuenta destino, sin depositar: `pending_net` 90,30 y `pending_payout` 85,30.
 
 Los totales **por período** (el Resumen, los totales de un filtro) no salen de estas vistas: los suma el motor sobre
 las filas del período, traídas por páginas (`leanTx`). La API tiene las agregaciones apagadas y un tope de 1000
@@ -1280,7 +1468,7 @@ pantalla.
 | Código | SQLSTATE | Cuándo | Mensaje para la persona |
 |---|---|---|---|
 | `pay_no_session` | 28000 | Se llamó a una función sin sesión de usuario | «Tu sesión terminó. Vuelve a entrar.» |
-| `pay_bad_payload` | 22023 | Lo que llegó no tiene la forma esperada. En `pay_save_transactions`: no es una lista, trae menos de 1 o más de 500 cobros, falta `tx`, modo desconocido. En `pay_save_scheme`: `lines` no es una lista. En `pay_create_gateway`: falta `fee` | El general: «No se pudo guardar. Inténtalo de nuevo.» |
+| `pay_bad_payload` | 22023 | Lo que llegó no tiene la forma esperada. En `pay_save_transactions`: no es una lista, trae menos de 1 o más de 500 cobros, falta `tx`, modo desconocido. En `pay_save_scheme`: `lines` no es una lista. En `pay_create_gateway`: falta `fee`. En `pay_save_gateway_retention`: `recipients` no es una lista | El general: «No se pudo guardar. Inténtalo de nuevo.» |
 | `pay_tx_not_found` | P0002 | El cobro que se quiere actualizar no existe (o no es del usuario) | «Ese cobro ya no existe.» |
 | `pay_tx_conflict` | 40001 | El cobro cambió mientras se editaba | «Este cobro cambió mientras lo editabas: vuelve a abrirlo» |
 | `pay_scheme_not_found` | P0002 | El esquema no existe (o no es del usuario) | «Ese esquema de reparto ya no existe.» |
@@ -1289,13 +1477,19 @@ pantalla.
 | `pay_scheme_over_100` | 23514 | Las líneas del esquema pasan de 100 % | «Las líneas del esquema suman más de 100 %.» |
 | `pay_scheme_under_100` | 23514 | Las líneas suman menos de 100 % y no hay «Resto» | «Las líneas del esquema suman menos de 100 %: elige quién recibe el resto.» |
 | `pay_scheme_remainder_in_lines` | 23514 | El «Resto» es además una línea | «Quien recibe el resto no puede ser además una línea del esquema.» |
+| `pay_gateway_not_found` | P0002 | La pasarela de la retención no existe (o no es del usuario) | «Esa pasarela ya no existe.» |
+| `pay_retention_without_recipients` | 23514 | La pasarela retiene más de 0 % y no hay personas | «Elige a quién le cae lo retenido.» |
+| `pay_retention_recipients_without_pct` | 23514 | Hay personas y la pasarela retiene 0 % | «Sin porcentaje retenido no hay a quién le caiga: quita a las personas o escribe el %.» |
+| `pay_retention_not_100` | 23514 | Las personas no suman exactamente 100 % | «Los porcentajes de las personas tienen que sumar exactamente 100 %.» |
+| `pay_retention_inactive_beneficiary` | 23514 | Una persona no es un beneficiario activo del usuario | «Cada persona tiene que ser un beneficiario activo.» |
+| `pay_retention_sum_mismatch` | 23514 | Las partes de lo retenido no suman lo retenido | «Lo retenido no suma lo que recibe cada persona. No se guardó nada.» |
 
 Otros rechazos llegan con el nombre de la restricción o del índice:
 
 | SQLSTATE | Qué es | Nombres | Mensaje para la persona |
 |---|---|---|---|
-| 23514 | Un cuadre o una regla de formato que no se cumple | `pay_transactions_net_check`, `pay_transactions_gross_check`, `pay_transactions_refund_range`, `pay_transactions_deposit_check`, `pay_transactions_scheme_check`, `pay_transactions_alloc_base_check`, `pay_transactions_alloc_base_kind_check`, `pay_transaction_receipts_path_check`, `pay_settlements_receipt_folder_check`, y los nombres automáticos de las demás | Propio solo para `pay_transactions_alloc_base_check`. Para los demás: «Algún dato no cumple las reglas del libro. Revísalo e inténtalo de nuevo.» |
-| 23505 | Algo repetido | `pay_transactions_reference_uq`, `pay_companies_name_uq`, `pay_gateways_name_uq`, `pay_beneficiaries_name_uq`, `pay_schemes_name_uq`, y los nombres automáticos de los [otros únicos](#lo-que-la-base-hace-cumplir) | Propio para esos cinco. Para los demás: «Ya existe un registro con esos datos.» |
+| 23514 | Un cuadre o una regla de formato que no se cumple | `pay_transactions_net_check`, `pay_transactions_gross_check`, `pay_transactions_refund_range`, `pay_transactions_deposit_check`, `pay_transactions_scheme_check`, `pay_transactions_alloc_base_check`, `pay_transactions_alloc_base_kind_check`, `pay_transaction_receipts_path_check`, `pay_settlements_receipt_folder_check`, los de la retención (`pay_gateways_retention_pct_check`, `pay_gateways_retention_days_check`, `pay_gateway_retention_recipients_pct_check`, `pay_transactions_retention_amount_check`, `pay_retention_shares_amount_check`), y los nombres automáticos de las demás | Propio para `pay_transactions_alloc_base_check` y para los cuatro primeros de la retención (por ejemplo, «Los días que la retiene van de 0 a 365.» o «Lo retenido no puede pasar de lo cobrado. No se guardó nada.»). Para los demás: «Algún dato no cumple las reglas del libro. Revísalo e inténtalo de nuevo.» |
+| 23505 | Algo repetido | `pay_transactions_reference_uq`, `pay_companies_name_uq`, `pay_gateways_name_uq`, `pay_beneficiaries_name_uq`, `pay_schemes_name_uq`, `pay_gateway_extras_internacional_uq`, `pay_gateway_retention_recipients_uq`, y los nombres automáticos de los [otros únicos](#lo-que-la-base-hace-cumplir) | Propio para esos siete (el de la retención: «Una persona está dos veces: déjala una sola vez.»). Para los demás: «Ya existe un registro con esos datos.» |
 | 23503 | Apunta a algo que no existe, o se quiso borrar algo en uso | claves foráneas | «Algo de lo elegido ya no existe. Vuelve a cargar la página.», o «No se puede borrar: todavía se usa en cobros o en otros registros.» |
 | 42501 | Sin permiso: sin sesión, o con segundo factor y sin haber escrito el código | | «Verifica tu segundo factor para seguir» |
 
@@ -1307,14 +1501,15 @@ Los rechazos de Storage se traducen por su código HTTP: sin segundo factor, arc
 repetido, más de 10 MB y tipo no admitido tienen cada uno su mensaje.
 
 El motor tiene además sus propios errores, que ya traen el mensaje en español: `PayStateError` (el cambio no
-corresponde al estado del cobro), `PayRuleError` (lo elegido no existe en la configuración, o nadie queda pagando la
-comisión: `nadie_paga_comision`) y los problemas de un esquema (`validateScheme`).
+corresponde al estado del cobro), `PayRuleError` (lo elegido no existe en la configuración; nadie queda pagando la
+comisión, `nadie_paga_comision`; o una persona de la retención ya no existe, `retencion`), los problemas de un
+esquema (`validateScheme`) y los de una retención (`validateRetention`, con los mismos textos que la base).
 
 ## Seguridad
 
 ### Cada fila es de un usuario (RLS)
 
-Las 17 tablas tienen seguridad por fila. Un usuario solo ve y escribe las filas cuyo `user_id` es el suyo. Quien no
+Las 19 tablas tienen seguridad por fila. Un usuario solo ve y escribe las filas cuyo `user_id` es el suyo. Quien no
 ha entrado (rol `anon`) no tiene ningún permiso. Los permisos están escritos uno por uno en la migración: no se
 depende de los que el proyecto dé por defecto.
 
@@ -1443,7 +1638,7 @@ ahí solo están las reglas de los alias (7 o más dígitos seguidos) y de los �
 
 ### Al borrar un usuario
 
-Borrar un usuario borra en cascada **todas sus filas** de las 17 tablas. Lo de los demás usuarios queda igual. Hay
+Borrar un usuario borra en cascada **todas sus filas** de las 19 tablas. Lo de los demás usuarios queda igual. Hay
 una prueba que lo comprueba.
 
 **No borra sus archivos de Storage.** Los comprobantes y los logos quedan en el bucket y hay que quitarlos por la
@@ -1504,7 +1699,9 @@ comprobación de la app sigue en pie, así que el ajuste queda como segunda barr
 Estas decisiones se tomaron sin preguntar, para no parar la construcción. Las filas (a) a (m) son lo que el encargo
 dejaba abierto o no se podía cumplir tal cual. Las filas (n) a (p) son límites del modelo frente a cómo trabajan hoy
 las pasarelas; lo que dicen de las pasarelas conviene confirmarlo en sus páginas de tarifas. La fila (q) es la
-definición de «por caer». Las filas (r) a (x) se tomaron al construir las pantallas y tras la revisión final.
+definición de «por caer». Las filas (r) a (x) se tomaron al construir las pantallas y tras la revisión final. Las
+filas (y) a (ac) son las de la retención de la pasarela
+([E10](#e10--la-pasarela-retiene-una-parte-para-ciertas-personas)).
 
 | Decisión | Por qué | Qué cambia si el dueño decide lo contrario |
 |---|---|---|
@@ -1524,7 +1721,7 @@ definición de «por caer». Las filas (r) a (x) se tomaron al construir las pan
 | **(n)** El costo de disputa es uno solo y desaparece si la disputa se gana | Así lo pide el encargo, y E6: al ganar, el cobro vuelve a las cifras de E1 | Según la documentación de Stripe consultada al construir (conviene confirmarla en su página de tarifas), desde junio de 2025 Stripe cobra un costo al recibir la disputa, que **no** devuelve aunque se gane, y otro al contestarla, que sí devuelve. Con Stripe, hoy el libro da por devuelto lo que no vuelve: cada disputa ganada deja el neto más alto que el real. Para reflejarlo, por pasarela: «el costo de disputa se devuelve si se gana» (sí o no), o partir el costo en dos. Es una migración aditiva, el motor y la pantalla de pasarelas, y E6 «ganada» ya no volvería a E1 |
 | **(o)** Las opciones no tienen monto mínimo | El encargo solo pedía porcentaje y cuota fija | Los depósitos instantáneos suelen tener una comisión mínima (0,50, por confirmar). En cobros chicos, el costo real del pago rápido sería mayor que el calculado. Hace falta un campo «mínimo» en la opción |
 | **(p)** Los días al depósito se cuentan desde la fecha del cobro en Nueva York | Es una sola regla para todas las pasarelas, y la fecha estimada se puede corregir a mano | Hay pasarelas que cuentan en UTC, que empiezan en el siguiente día hábil o que cuentan desde el retiro. Para afinar hace falta, por pasarela, la zona de corte y cómo trata un cobro en día inhábil |
-| **(q)** «Por caer» es lo que se ve como registrado o en tránsito. Un cobro sin depositar con la disputa abierta o reembolsado del todo no está por caer. Consecuencia: «neto total = por caer + depositado» deja de cuadrar exacto cuando hay cobros así | «Por caer» responde a «cuánto me va a llegar al banco». Con la disputa abierta la pasarela retiene el dinero, y un reembolso total ya se devolvió: contarlos prometería un depósito que no va a llegar. Así la tarjeta, el filtro, los próximos depósitos, lo atrasado y la vista de cuentas dan lo mismo | Si se quiere que «por caer» más «depositado» sume siempre el neto, esos cobros vuelven a contar en «por caer» (el neto de E4 restaría 3,20 a lo que se espera recibir) y hay que cambiar el motor, el filtro de la lista y la vista. La otra salida es enseñar la diferencia como una tercera cifra, «retenido o devuelto» |
+| **(q)** «Por caer» es lo que se ve como registrado o en tránsito. Un cobro sin depositar con la disputa abierta o reembolsado del todo no está por caer. Consecuencia: «neto total = por caer + depositado» deja de cuadrar exacto cuando hay cobros así | «Por caer» responde a «cuánto me va a llegar al banco». Con la disputa abierta la pasarela tiene el dinero detenido, y un reembolso total ya se devolvió: contarlos prometería un depósito que no va a llegar. Así la tarjeta, el filtro, los próximos depósitos, lo atrasado y la vista de cuentas dan lo mismo | Si se quiere que «por caer» más «depositado» sume siempre el neto, esos cobros vuelven a contar en «por caer» (el neto de E4 restaría 3,20 a lo que se espera recibir) y hay que cambiar el motor, el filtro de la lista y la vista. La otra salida es enseñar la diferencia como una tercera cifra, «detenido por una disputa o devuelto» (no es el «Retenido» de la retención: ver (ac)) |
 | **(r)** La primera tarifa de una pasarela y la primera versión de un esquema valen «desde el inicio» (`2000-01-01`). Una versión nueva, por defecto desde mañana; se puede elegir otra fecha | Así cualquier cobro, aunque sea viejo o se registre tarde, tiene tarifa y reparto | Si un esquema nuevo debe valer solo desde su fecha, al crearlo se elige «Desde una fecha». Sin eso, recalcular un cobro viejo «con la tarifa de la fecha del cobro» le aplicaría ese esquema |
 | **(s)** Al importar, cada pasarela recuerda el formato y las columnas usadas, y avisa («Ojo: puede duplicar cobros») si después llega otro formato. En el informe de saldo de Stripe la referencia es `source_id`, el id del cobro, cuando el archivo la trae | Los dos archivos de Stripe dan referencias distintas al mismo cobro (`txn_…` y `ch_…`): importar los dos lo registraría dos veces. Con `source_id`, la referencia es la misma que se suele teclear a mano (`ch_…`) | Si se cambia de formato a propósito, se marca «Son otros cobros: importar igual». Sin el aviso, ese error pasaría en silencio |
 | **(t)** Los encabezados de la exportación de **pagos** de Stripe no tienen fuente oficial: se tomaron de exportaciones de ejemplo. El informe de saldo y la actividad de PayPal sí la tienen | No se encontró una página de Stripe que los publique, y no se inventan | Si no coinciden, el archivo sale como no reconocido y se eligen las columnas a mano una vez (la pasarela lo recuerda). Con la fila de encabezados de una exportación real, sin datos, se ajusta el reconocimiento |
@@ -1532,6 +1729,11 @@ definición de «por caer». Las filas (r) a (x) se tomaron al construir las pan
 | **(v)** Una sesión cerrada deja de leer datos al instante: lo comprueba la base, no la app | La base defiende también a quien llame a la API directo, y no suma una llamada a Auth por cada página | Comprobarlo en la app con Auth en cada página es una llamada de red más por página, y la API directa seguiría abierta hasta una hora |
 | **(w)** «Marcar depositado» en lote solo marca lo que está por caer. La fecha de un depósito ya hecho se cambia solo desde el detalle del cobro | El lote pisaba en silencio fechas reales (y con ellas el tiempo real de depósito) y depositaba cobros con la disputa abierta | Si se quiere corregir fechas en lote, hoy se hace cobro por cobro |
 | **(x)** El Resumen abre en la moneda con más cobros del período (a igual número, la de más empresas). Se puede elegir otra | Comparar brutos de monedas distintas no tiene sentido: un cobro de 2 300 MXN ganaba a muchos en USD | Si se prefiere una moneda fija (por ejemplo, USD si hay), es un cambio chico en el Resumen |
+| **(y)** La retención se calcula sobre el bruto vigente, al centavo, como una línea de comisión. Un reembolso la baja: en E10c retiene 30,00, no 50,00 | La pasarela retiene una parte de lo que sigue cobrado: si devuelve parte del cobro, retiene menos | Si la pasarela retiene sobre lo cobrado y no devuelve lo retenido al reembolsar, E10b y E10c retendrían 50,00. Hay que calcularla sobre lo cobrado y quitar la restricción de la base que no deja que lo retenido pase del bruto vigente |
+| **(z)** Un fallido retiene 0,00. Un cobro en la papelera guarda lo suyo, pero no cuenta en ningún saldo ni total | Igual que el reparto: un fallido no cobró nada, y lo de la papelera no cuenta en nada | Si un fallido debiera retener igual, choca con la base: un fallido tiene el bruto vigente en 0, y lo retenido no puede pasar de él |
+| **(aa)** Es una configuración de la pasarela, sin versiones: un %, unos días y sus personas. Cada cobro la congela al registrarse o al importarse; uno ya guardado la toma solo con «Recalcular» | Lo pidió así el encargo. Congelarla es lo mismo que se hace con la tarifa: cambiarla no reescribe ningún cobro | Si cambia según la empresa, iría en la cuenta de la pasarela en cada empresa. Si cambia con el tiempo, haría falta un «vigente desde», como las tarifas: hoy un cambio vale para los cobros nuevos y para los que se recalculen |
+| **(ab)** Quien recibe retención sin estar en el reparto de ese cobro queda con saldo negativo, como un adelanto. La vista previa y el detalle lo advierten | Lo retenido ya le llegó, y el saldo es «lo que se le debe» | Si no debiera contar como adelanto, la vista de saldos tendría que dejar fuera lo retenido de quien no está en el reparto de cada cobro |
+| **(ac)** La retención no es una comisión: el neto, las comisiones, lo facturado y el reparto no cambian. «Llega al banco» = neto − retenido, y eso es lo que dicen «Por caer» y «Depositado» | Es una parte del neto que la pasarela le paga directo a esas personas: un pago de su parte del reparto, no un costo del negocio | Si fuera una comisión, bajaría el neto y con él el reparto de todos, y lo retenido dejaría de contar como un pago a esas personas. Cambiarían las cifras de E10 a E10d |
 
 ### Lo que el dueño tiene que decidir
 
@@ -1543,7 +1745,7 @@ Por orden de lo que más afecta al dinero:
 3. **Costos de un reembolso (a) y (b).** ¿La plataforma y las opciones devuelven lo suyo? ¿La pérdida la comparten
    los beneficiarios o solo la empresa?
 4. **Pago rápido y días (o) y (p).** ¿El pago rápido tiene un mínimo? ¿Cómo cuenta los días cada pasarela?
-5. **«Por caer» (q).** ¿Así, o con una tercera cifra para lo retenido o devuelto?
+5. **«Por caer» (q).** ¿Así, o con una tercera cifra para lo detenido por una disputa o devuelto?
 
 Lo que hay que decidir para la fase C está aparte, en su
 [§9](#9-lo-que-el-dueño-tiene-que-decidir).
@@ -1578,6 +1780,9 @@ están en [«Pasar a producción»](../README.md#pasar-a-producción), en el REA
   archivo: entra de nuevo y repite la descarga.
 - En la ficha de la empresa, la cuota fija de un canal se muestra con la moneda de la empresa, pero se cobra en la
   moneda de cada cobro (fila [(c)](#decisiones-tomadas-y-por-confirmar)).
+- No se anota cuándo la pasarela liberó de verdad lo retenido: la fecha que se ve es el día del cobro más los días
+  de la retención, corridos. Cambiar la retención de una pasarela no toca lo ya registrado: hay que recalcularlo
+  (fila [(aa)](#decisiones-tomadas-y-por-confirmar)).
 - Una cuenta destino desactivada se sigue usando en los cobros nuevos de las empresas que la tienen, hasta que se
   cambie en cada empresa. La pantalla lo avisa al desactivarla.
 - Solo se siembran los feriados de 2026 y 2027. Los años siguientes se cargan en Feriados (el Resumen avisa). Si se
@@ -2385,7 +2590,7 @@ Dar permisos por columna tampoco sirve: el dueño y el socio entran con el mismo
 (`authenticated`). Y una vista con `security_invoker`, como las de totales de hoy, respeta la RLS de quien
 consulta: el socio no vería nada.
 
-**Modelo propuesto.** No se toca ninguna política de las 17 tablas actuales. «Cada fila es de un usuario» sigue
+**Modelo propuesto.** No se toca ninguna política de las 19 tablas actuales. «Cada fila es de un usuario» sigue
 siendo verdad sin excepciones.
 
 1. **Tabla de accesos** `pay_partner_access`: fila **del dueño** (`user_id` del dueño, como todas), con el

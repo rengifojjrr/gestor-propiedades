@@ -39,6 +39,22 @@ Qué es y por qué: [`docs/PASARELAS.md`](docs/PASARELAS.md). Diseño: `docs/sup
       base no lo comprueba.
     - En `pay_allocations`, la fila exenta va con `base = 'bruto'` (`allocationsOf` de `write.ts`). No repitas la
       cuenta en un componente.
+11. **La retención de la pasarela** (`pay_gateways.retention_pct`, `retention_days` y
+    `pay_gateway_retention_recipients`). Se congela en `rules.gateway.retention`: la pone `rules.ts` con la
+    configuración vigente, solo si retiene más de 0 %. La cuenta vive solo en el motor: `retentionOf`, `payoutOf` y
+    `retentionReleaseOn` de `breakdown.ts`.
+    - No es una comisión: no cambia el neto, las comisiones, `buyerFees` ni el reparto. Lo que llega al banco es
+      neto − retenido (`payoutOf`; en las filas, `net − retention`). «Por caer» y «Depositado» en pantalla son
+      `pendingPayout` y `depositedPayout`, no `*Net`.
+    - Un cobro guardado usa la congelada, no la de la configuración. Editar la conserva (también la fecha y el
+      monto); solo cambiar de pasarela y «Recalcular» traen la vigente (`reResolve`, `recalc`). Sin la clave, no
+      retiene.
+    - `retention_amount` se escribe en cada camino que escribe `fees_total`, vía `derived()` de `write.ts`: alta e
+      importación, edición, reembolso, disputa, fallido, reabrir y recalcular. Un camino nuevo pasa por ahí.
+    - Las partes (`retentionSharesOf`, a `pay_retention_shares` por `retention_shares`) van y vuelven con el reparto:
+      se reescriben si y solo si cambia el desglose. Suman exactamente lo retenido (`allocate`, por mayor resto); la
+      base lo exige al confirmar (`pay_retention_sum_mismatch`). `null` = no tocarlas; `[]` = borrarlas.
+    - `pay_beneficiary_balances.balance` ya descuenta `retained`. No lo vuelvas a restar en una pantalla.
 
 ## Comandos (desde `pasarelas/`)
 
@@ -226,7 +242,7 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 
 ## Pruebas
 
-- Motor: pruebas puras junto al código, con los casos exactos del spec (E1–E6, F1–F3) y los de la guía (E7–E9). Cobertura 100 %.
+- Motor: pruebas puras junto al código, con los casos exactos del spec (E1–E6, F1–F3) y los de la guía (E7–E10). Cobertura 100 %.
 - En Vitest, `server-only` está simulado (`vitest.setup.ts`). `cookies()` y `headers()` no existen fuera de una
   petición: lo que las use se prueba de punta a punta.
 - Integración: dos usuarios reales del stack local; cada prueba crea los suyos y no depende de datos de otra.
