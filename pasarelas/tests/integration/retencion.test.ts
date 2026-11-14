@@ -775,7 +775,7 @@ describe("la retención con las operaciones de la app (E10)", () => {
       "inactivo",
     ).id;
     expect(await tried({ recipients: [{ beneficiaryId: inactive, pct: "100" }] })).toBe(
-      "Cada persona tiene que ser un beneficiario activo.",
+      "Una de las personas está desactivada: quítala o vuelve a activarla en Repartos.",
     );
     expect((await getGateway(e10.db, e10.otfId))?.retention.pct).toBe("0");
   });

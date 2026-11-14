@@ -417,9 +417,9 @@ function partiesOf(
       });
     }
     // Quien está en el reparto o tiene pagos ligados es una parte: lo retenido ya cuenta en lo suyo.
-    const inShare = new Set([...tx.breakdown.alloc.lines, ...parts].map((item) => item.beneficiaryId));
+    const partIds = new Set([...tx.breakdown.alloc.lines, ...parts].map((item) => item.beneficiaryId));
     for (const share of retentionOf(tx.breakdown)?.shares ?? []) {
-      if (isZero(share.amount) || inShare.has(share.beneficiaryId)) continue;
+      if (isZero(share.amount) || partIds.has(share.beneficiaryId)) continue;
       const id = share.beneficiaryId;
       const advance = advances.get(id) ?? { beneficiaryId: id, name: nameOf(cfg, id, names), amount: ZERO };
       advances.set(id, { ...advance, amount: add(advance.amount, share.amount) });
