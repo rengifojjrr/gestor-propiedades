@@ -19,8 +19,10 @@ const TABLAS = [
   "pay_company_gateways",
   "pay_gateway_extras",
   "pay_gateway_fee_versions",
+  "pay_gateway_retention_recipients",
   "pay_gateways",
   "pay_holidays",
+  "pay_retention_shares",
   "pay_scheme_lines",
   "pay_scheme_versions",
   "pay_schemes",
@@ -42,7 +44,7 @@ function namesAround(before: Date): string[] {
   return [before, new Date()].map((now) => `pasarelas-${todayNY(now)}.json`);
 }
 
-test("«Exportar todo» descarga un JSON con las 17 tablas y los cobros, con el dinero como texto", async ({ page }) => {
+test("«Exportar todo» descarga un JSON con las 19 tablas y los cobros, con el dinero como texto", async ({ page }) => {
   const user = await newUser();
   const client = await signInAal1(user.email, user.password);
   const cobros = await saveTransactions(client, [
