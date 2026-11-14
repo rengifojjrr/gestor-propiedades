@@ -9,6 +9,7 @@ import * as holidays from "./holidays";
 import * as importador from "./import";
 import * as motor from "./index";
 import * as money from "./money";
+import * as payouts from "./payouts";
 import * as rules from "./rules";
 import * as schemes from "./schemes";
 import * as stats from "./stats";
@@ -19,8 +20,8 @@ import * as write from "./write";
 // `types.ts` solo declara tipos: no deja nada en tiempo de ejecución que comprobar aquí (lo cubre el typecheck).
 // `importador` es la puerta de `import/` (detect, presets y mapping).
 const MODULOS = {
-  allocate, breakdown, csv, dates, decimal, guards, holidays, importador, money, rules, schemes, stats, status, versions,
-  write,
+  allocate, breakdown, csv, dates, decimal, guards, holidays, importador, money, payouts, rules, schemes, stats, status,
+  versions, write,
 };
 
 describe("index: la puerta única del motor", () => {
