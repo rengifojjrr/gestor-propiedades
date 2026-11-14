@@ -7,6 +7,7 @@ import { GatewayStatusActions } from "@/components/pasarelas/gateways/GatewaySta
 import { InternationalCard } from "@/components/pasarelas/gateways/InternationalCard";
 import { activeInternational } from "@/components/pasarelas/gateways/international";
 import { LagText } from "@/components/pasarelas/gateways/LagText";
+import { RetentionCard } from "@/components/pasarelas/gateways/RetentionCard";
 import { daysDraft, moneyDraft } from "@/components/pasarelas/gateways/drafts";
 import { payoutText } from "@/components/pasarelas/gateways/days";
 import { Badge, Card, CardBody, CardHeader, CardTitle, Money, PageHeader } from "@/components/ui";
@@ -15,6 +16,7 @@ import { addDays, isZero, pickVersion, todayNY } from "@/lib/pasarelas";
 import { createClient } from "@/lib/supabase/server";
 import { zId } from "@/server/pasarelas/zod";
 import { getGateway, listGatewayTotals, type GatewayTotals } from "@/server/pasarelas/queries/gateways";
+import { getPayConfig } from "@/server/pasarelas/queries/session-config";
 
 export const metadata: Metadata = { title: "Pasarela" };
 
@@ -81,15 +83,19 @@ function TotalsCard({ totals, payout }: { totals: GatewayTotals[]; payout: strin
 }
 
 /**
- * La ficha de una pasarela: sus tarifas con «vigente desde», su recargo a los pagos internacionales, sus opciones,
- * sus datos y su tiempo real.
+ * La ficha de una pasarela: sus tarifas con «vigente desde», su recargo a los pagos internacionales, lo que retiene y
+ * a quién le cae, sus opciones, sus datos y su tiempo real.
  */
 export default async function PasarelaPage({ params }: PageProps<"/pasarelas/pasarelas/[id]">) {
   await requireSession();
   const parsed = zId.safeParse((await params).id);
   if (!parsed.success) notFound();
   const supabase = await createClient();
-  const [gateway, allTotals] = await Promise.all([getGateway(supabase, parsed.data), listGatewayTotals(supabase)]);
+  const [gateway, allTotals, cfg] = await Promise.all([
+    getGateway(supabase, parsed.data),
+    listGatewayTotals(supabase),
+    getPayConfig(),
+  ]);
   if (gateway === null) notFound();
 
   const today = todayNY(new Date());
@@ -97,6 +103,11 @@ export default async function PasarelaPage({ params }: PageProps<"/pasarelas/pas
   const totals = allTotals.filter((row) => row.gatewayId === gateway.id);
   const payout = payoutText(gateway.payoutDays, gateway.payoutDayType, gateway.payoutDaysMax);
   const international = activeInternational(gateway);
+  // A quién le puede caer la retención: los beneficiarios activos y los que ya la reciben (aunque estén inactivos).
+  const recipientIds = new Set(gateway.retention.recipients.map((recipient) => recipient.beneficiaryId));
+  const beneficiaries = cfg.beneficiaries
+    .filter((b) => b.active || recipientIds.has(b.id))
+    .map((b) => ({ id: b.id, name: b.name }));
 
   return (
     <>
@@ -131,6 +142,13 @@ export default async function PasarelaPage({ params }: PageProps<"/pasarelas/pas
             dayType={gateway.payoutDayType}
             fee={current === null ? null : { pct: current.pct, fixed: current.fixed }}
             international={international}
+          />
+          <RetentionCard
+            // Otra clave si cambia lo guardado: la tarjeta vuelve a partir de ahí.
+            key={JSON.stringify(gateway.retention)}
+            gatewayId={gateway.id}
+            retention={gateway.retention}
+            beneficiaries={beneficiaries}
           />
           <ExtrasCard gatewayId={gateway.id} dayType={gateway.payoutDayType} extras={gateway.extras} />
         </div>
