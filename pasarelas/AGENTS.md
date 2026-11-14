@@ -78,9 +78,11 @@ Qué es y por qué: [`docs/PASARELAS.md`](docs/PASARELAS.md). Diseño: `docs/sup
     `cobros.ts` lee con el cliente del usuario (la RLS manda) y responde.
     - Los textos del desglose y del reparto están copiados de `BreakdownCard` y `AllocationList` en `model.ts`: un
       PDF no puede usar componentes. **Quien cambie esas pantallas tiene que cambiar también el PDF** (y
-      `model.test.ts`). El reparto que copia es el de «Registrar», sin `payouts`: el PDF no dice lo pagado.
+      `model.test.ts`). El estado de pago de cada parte sale de `payoutStatuses` y `payoutStatus` del motor, la
+      misma cuenta que el detalle, y sus palabras («Pagado», «Falta X», «Se le pagó de más X») están copiadas de
+      `PayoutBadge` en `partText`: quien cambie esa insignia cambia también el PDF.
     - Un filtro nuevo de la lista llega al PDF sin tocarlo (`parseTxFilters` y `listTx`), pero el encabezado lo
-      nombra solo si está en `filterTexts` de `scope.ts`. Hoy falta «Reparto pendiente».
+      nombra solo si está en `filterTexts` de `scope.ts`.
     - La fuente es la Helvetica estándar (WinAnsi), sin incrustar: todo texto pasa por `pdfText`, que cambia lo que
       no sabe escribir. El tope es `PDF_MAX` (300), en `scope.ts`.
     - `PDF_PATH` y `selectedPdfHref` viven en `tx/pdf.ts`, no en `PdfButton`: una constante que exporta un módulo

@@ -168,7 +168,8 @@ comisión: el neto, las comisiones y el reparto no cambian (ver
   - «% que retiene»: 0 = no retiene;
   - «Días que la retiene»: corridos, de 0 a 365;
   - «¿A quién le cae?»: **«Agregar persona»** por cada una, con su beneficiario y su porcentaje. Se eligen entre los
-    beneficiarios activos.
+    beneficiarios activos. Si una persona ya guardada se desactiva después, la tarjeta lo dice junto a ella (hay que
+    quitarla o volver a activarla en Repartos) y «Guardar retención» explica por qué no se puede guardar.
 
   Los porcentajes de las personas suman exactamente 100: la suma se ve al escribir («Suman 90 %»). Con 0 % no hay
   personas; con más, al menos una. Mientras algo no cumpla, «Guardar retención» queda apagado y la tarjeta dice por
@@ -206,7 +207,11 @@ comisión: el neto, las comisiones y el reparto no cambian (ver
 un menú con solo los cambios que ese cobro admite, los mismos que en su detalle salvo uno: la fecha de un depósito
 ya hecho se cambia solo en el detalle del cobro. Son «Pasar a en tránsito», «Marcar depositado…» (pide la fecha),
 «Revertir el depósito», «Marcar como fallido» y «Reabrir». «Revertir el depósito» y «Marcar como fallido» piden
-confirmar antes. Al terminar, la lista se actualiza con los mismos filtros. En la papelera no hay menú.
+confirmar antes. Al terminar, la lista se actualiza con los mismos filtros. En la papelera no hay menú. Un cobro
+reembolsado del todo (bruto vigente 0,00) no tiene nada que depositar: el menú de la lista y la acción principal del
+detalle no ofrecen «Pasar a en tránsito» ni «Marcar depositado…», y el detalle no dice «Llega entre…» (en «Más
+acciones» del detalle todavía están, porque el motor los acepta). Lo que ya estaba en tránsito o depositado antes del
+reembolso se conserva y se puede revertir.
 
 **Marcar depositados varios cobros.** Cobros → «Más filtros» → Estado «Por caer» → marcar las casillas →
 **«Marcar depositado»** → la fecha en que llegó el dinero. O desde el Resumen, en «Próximos depósitos», el botón
@@ -328,9 +333,10 @@ La fecha del nombre es la de hoy en Nueva York. No salen los cobros de la papele
   Con E10 solo: comisión **29,20**, neto **970,80**, retenido **50,00** (Titular A 25,00 · Titular B 25,00), llega
   al banco **920,80**, y el reparto Grupo A **580,53** · Grupo B **290,27** · Titular A **50,00** · Titular B
   **50,00**.
-- **Lo que no dice: lo ya pagado a cada parte.** Su «falta» es la parte menos lo retenido, como en la vista previa de
-  Registrar. Lo que falta pagar de verdad está en el detalle de cada cobro y en el filtro «Reparto pendiente» (fila
-  [(ao)](#decisiones-tomadas-y-por-confirmar)).
+- **Lo ya pagado a cada parte.** Cada parte de cada cobro dice su estado, como el detalle: «Pagado», «Falta X» o
+  «Se le pagó de más X», con lo ya pagado y lo retenido descontados. Los totales por parte y moneda tienen las
+  columnas reparto, retenido, **pagado** y **falta**: lo que falta es lo que todavía se le debe en esos cobros (fila
+  [(ao)](#decisiones-tomadas-y-por-confirmar)). Con «Reparto pendiente» en el filtro, el encabezado lo nombra.
 - **En el celular** funciona igual, desde la barra de elegidos y desde los botones de la lista: el archivo se
   descarga con su nombre, sin abrir otra página. Mientras se arma, el botón dice «Armando el PDF…» y no se puede
   pulsar otra vez. Si algo falla: «No se pudo armar el PDF. Revisa la conexión y vuelve a intentarlo.»
@@ -1997,7 +2003,7 @@ cada parte del reparto ([P1 a P5](#lo-pagado-a-cada-parte-de-un-cobro)), y las (
 | **(al)** El PDF admite hasta 300 cobros. Con más no se arma nada: el servidor responde 422 con el mensaje y la pantalla lo enseña. Con los elegidos cuenta los ids pedidos, también los que no se ven | Lo pidió el encargo. Un aviso claro es mejor que una descarga rota, y 300 cobros ya son unas 101 páginas | Subir el tope es cambiar `PDF_MAX` en `scope.ts`. Conviene medir antes cuánto tarda |
 | **(am)** Los fallidos salen en el PDF, pero no en sus totales, y el bloque lo dice («Sin contar 1 fallido.»). Una moneda con solo fallidos no tiene bloque. Los de la papelera no salen. Sin cobros, el PDF dice «No hay cobros.» | Como los totales de la lista: un fallido no cobró nada | Si un fallido no debe salir, se filtra en `cobros.ts`. Si debe contar, los totales dejarían de coincidir con los de la lista |
 | **(an)** El reparto por parte de los totales va por nombre y dice lo que cada parte ya recibió de la retención: «ya recibió $50,00 de la retención · falta $50,00» | El dueño usa ese total para pagar: sin lo retenido pagaría de más. Quien solo recibió retención sale con 0,00 y su adelanto | Si solo se quiere el reparto, se quita esa línea del modelo |
-| **(ao)** Los textos del desglose y del reparto del PDF están copiados de `BreakdownCard` y `AllocationList`, en `model.ts`. El reparto que copia es el de Registrar: su «falta» es la parte menos lo retenido, sin lo ya pagado | Un PDF no puede usar los componentes de la pantalla. El PDF y los pagos por cobro se construyeron a la vez | Para que el PDF diga «Pagado», «Falta» o «Se le pagó de más», `cobros.ts` tiene que leer `payoutStatuses` y `model.ts`, pintarlo en cada parte y en los totales por parte |
+| **(ao)** Los textos del desglose y del reparto del PDF están copiados de `BreakdownCard` y `AllocationList`, en `model.ts`, y el estado de pago de cada parte, de `PayoutBadge` | Un PDF no puede usar los componentes de la pantalla. Desde la tarea 53, el estado de cada parte («Pagado», «Falta», «Se le pagó de más») sale de `payoutStatuses` y `payoutStatus` del motor, la misma cuenta del detalle, y los totales por parte traen lo pagado y lo que falta | Quien cambie `BreakdownCard`, `AllocationList` o `PayoutBadge` cambia también `model.ts` |
 
 ### Lo que el dueño tiene que decidir
 
@@ -2012,7 +2018,6 @@ Por orden de lo que más afecta al dinero:
 5. **«Por caer» (q).** ¿Así, o con una tercera cifra para lo detenido por una disputa o devuelto?
 6. **Lo pagado antes a mano (ad).** ¿Se ligan a sus cobros las liquidaciones de antes? Hoy esos cobros salen con
    «Falta», y marcarlos sería pagar dos veces en el libro.
-7. **El PDF y lo pagado (ao).** ¿El PDF debe decir lo ya pagado a cada parte? Hoy su «falta» no lo cuenta.
 
 Lo que hay que decidir para la fase C está aparte, en su
 [§9](#9-lo-que-el-dueño-tiene-que-decidir).
@@ -2064,10 +2069,6 @@ están en [«Pasar a producción»](../README.md#pasar-a-producción), en el REA
   puede agregar después.
 - «Vaciar la papelera» con un cobro pagado se niega y no dice cuál es (fila
   [(ah)](#decisiones-tomadas-y-por-confirmar)).
-- El PDF no dice lo ya pagado a cada parte: su «falta» es la parte menos lo retenido (fila
-  [(ao)](#decisiones-tomadas-y-por-confirmar)).
-- El PDF del filtro aplica «Reparto pendiente», pero su encabezado no lo nombra: dice el período y los demás
-  filtros.
 - Si la sesión venció, «PDF» dice «No se pudo armar el PDF. Revisa la conexión y vuelve a intentarlo.»: entra de
   nuevo y repite la descarga.
 - Para probar desde el celular contra `next dev` por la red local hace falta https (`next dev
