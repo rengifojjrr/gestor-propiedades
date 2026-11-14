@@ -8,6 +8,8 @@ import { ActionError } from "../ActionError";
 import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { DepositDialog } from "./DepositDialog";
 import { PayoutsDialog } from "./PayoutsDialog";
+import { selectedPdfHref } from "./pdf";
+import { PdfButton } from "./PdfButton";
 import { batchDone, cobros } from "./plural";
 import { RecalcDialog } from "./RecalcDialog";
 
@@ -271,6 +273,12 @@ export function TxBulkBar({ transactions, today }: TxBulkBarProps) {
           <Button variant="danger" onClick={() => open("trash")} disabled={pending}>
             A la papelera
           </Button>
+        </div>
+      ) : null}
+      {/* El PDF de los elegidos: no cambia nada, va aparte de las acciones. */}
+      {selected.length > 0 ? (
+        <div className="flex flex-wrap gap-2">
+          <PdfButton href={selectedPdfHref(selected)} label="PDF" hint="de los cobros elegidos" />
         </div>
       ) : null}
       <ActionError failure={error} />

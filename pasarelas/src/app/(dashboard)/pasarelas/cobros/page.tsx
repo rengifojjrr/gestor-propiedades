@@ -2,6 +2,8 @@ import { ChevronDown, ReceiptText } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
+import { PDF_PATH } from "@/components/pasarelas/tx/pdf";
+import { PdfButton } from "@/components/pasarelas/tx/PdfButton";
 import { TxBulkBar, TxSelectionProvider } from "@/components/pasarelas/tx/TxBulkBar";
 import { TxCards } from "@/components/pasarelas/tx/TxCards";
 import { TxFilters } from "@/components/pasarelas/tx/TxFilters";
@@ -153,7 +155,17 @@ export default async function CobrosPage({ searchParams }: PageProps<"/pasarelas
 
   return (
     <>
-      <PageHeader title="Cobros" actions={<ExportMenu href={exportHref} />} />
+      <PageHeader
+        title="Cobros"
+        actions={
+          <>
+            <ExportMenu href={exportHref} />
+            {/* El PDF de TODO el filtro (como el CSV), y el de hoy en Nueva York. */}
+            <PdfButton href={hrefWith(PDF_PATH, query, {})} label="PDF" hint="de los cobros del filtro" />
+            <PdfButton href={`${PDF_PATH}?periodo=hoy`} label="PDF de hoy" />
+          </>
+        }
+      />
       <div className="flex flex-col gap-5">
         <TxFilters
           {...filterOptions(cfg, filters)}
