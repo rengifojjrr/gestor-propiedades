@@ -86,10 +86,28 @@ código QR con una app de autenticación (o se escribe la clave), se escribe el 
 activar»**. Desde ahí, cada entrada pide el código. Conviene **«Agregar otro dispositivo»**: no hay códigos de
 respaldo. Mientras no esté activo, todas las pantallas lo avisan.
 
-**Mirar el Resumen.** Es la primera pantalla: bruto, comisiones, neto, «Por caer» y «Depositado» del período (lo que
-llega al banco) y, si una pasarela retuvo algo, «Retenido»; los avisos (atrasados, disputas abiertas, cobros sin
-comprobante, empresas sin esquema de reparto activo por defecto, feriados que faltan) y los próximos depósitos, en
-una moneda a la vez (ver la fila [(x)](#decisiones-tomadas-y-por-confirmar)). En el celular, los filtros van plegados tras «Filtros» para que las
+**Dinero en camino.** Arriba del Resumen, sin importar el período ni los filtros (solo la moneda): lo que está por
+caer **ahora**, en lo que llega al banco (neto − retenido).
+
+- Cinco cifras: **Ya debió llegar** (en ámbar, con «Revisa tu banco y márcalo»), **Puede llegar hoy**, **Próximos
+  7 días**, **Más adelante** y **Total en camino**. Las que tienen filtro en la lista llevan a esos cobros.
+- Cada grupo (fecha y cuenta) y cada cobro dicen su cuenta regresiva: «Llega mañana», «Llega en 3–7 días», «Hoy o
+  hasta el lun 16», «Debió llegar hace 4 días»; con una barra del avance desde el día del cobro hasta la fecha más
+  tardía de su ventana. Cada grupo tiene **«Marcar depositado»** y se abre para ver sus cobros. Lo que cae dentro de
+  más de 14 días va plegado bajo «Más adelante (N cobros)».
+- **Por cuenta destino**: cuánto va a cada cuenta y cuánto ya debió llegar; «Sin cuenta» aparte, con cómo asignarla.
+- **Marcado depositado en los últimos 30 días**, por cuenta: lo más cercano a «cuánto hay» que la app puede saber.
+- Aparte, sin sumarse: lo **detenido por una disputa abierta** y lo **retenido por las pasarelas** (no llega al
+  banco), con cuándo se libera.
+
+La app no ve el banco: «llegó» es lo que se marcó «depositado», y las fechas son las estimadas de cada cobro. Si no se
+marcan los depósitos, todo pasa a «Ya debió llegar». «En tránsito» no cambia nada aquí: cuenta todo lo por caer, esté
+«Registrado» o «En tránsito». Lo calcula `moneyInTransit` (`transit.ts`).
+
+**Mirar el Resumen.** Es la primera pantalla: arriba, «Dinero en camino»; después, bruto, comisiones, neto, «Por
+caer» y «Depositado» del período (lo que llega al banco) y, si una pasarela retuvo algo, «Retenido»; y los avisos
+(atrasados, disputas abiertas, cobros sin comprobante, empresas sin esquema de reparto activo por defecto, feriados
+que faltan), en una moneda a la vez (ver la fila [(x)](#decisiones-tomadas-y-por-confirmar)). En el celular, los filtros van plegados tras «Filtros» para que las
 cifras se vean primero.
 
 **Crear una pasarela con su pago rápido.** Pasarelas → **«Agregar pasarela»**:
@@ -214,7 +232,7 @@ acciones» del detalle todavía están, porque el motor los acepta). Lo que ya e
 reembolso se conserva y se puede revertir.
 
 **Marcar depositados varios cobros.** Cobros → «Más filtros» → Estado «Por caer» → marcar las casillas →
-**«Marcar depositado»** → la fecha en que llegó el dinero. O desde el Resumen, en «Próximos depósitos», el botón
+**«Marcar depositado»** → la fecha en que llegó el dinero. O desde el Resumen, en «Dinero en camino», el botón
 **«Marcar depositado»** de cada grupo. Solo se marca lo que está por caer (fila
 [(w)](#decisiones-tomadas-y-por-confirmar)); la fecha de un depósito ya hecho se cambia en el detalle del cobro,
 con **«Cambiar la fecha del depósito»**.
@@ -429,7 +447,8 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 | `dates.ts`, `holidays.ts` | Fechas, días hábiles y feriados bancarios |
 | `status.ts` | El estado que se muestra, «por caer» y «atrasado» |
 | `write.ts` | Cada cambio sobre un cobro (crear, editar, reembolsar, disputar, depositar…), planeado como una escritura |
-| `stats.ts` | Resumen por moneda (con lo retenido y lo que llega al banco), tiempos reales de depósito y próximos depósitos |
+| `stats.ts` | Resumen por moneda (con lo retenido y lo que llega al banco), tiempos reales de depósito y los grupos de depósitos por fecha y cuenta (`upcomingDeposits`) |
+| `transit.ts` | «Dinero en camino»: la fase y la cuenta regresiva de cada cobro por caer, las cifras de cada fase, por cuenta, lo detenido por disputas, lo retenido sin liberar y lo marcado depositado en los últimos 30 días (`moneyInTransit`) |
 | `schemes.ts` | Validar un esquema de reparto antes de guardarlo |
 | `payouts.ts` | Lo que falta pagarle a cada parte del reparto de un cobro (`payoutStatus`), lo que se le debe a cada parte en varios cobros, por moneda (`owedByPart`), y cuánto se le puede pagar sin pasarse (`fitsOwed`) |
 | `guards.ts` | Guardas para textos libres: tarjetas, números largos y enlaces |
@@ -1184,12 +1203,12 @@ como «en disputa».
 
 Con retención, E10 sin depositar suma **920,80** en «Por caer», no 970,80: los 50,00 retenidos le caen a los
 titulares, no a la cuenta ([E10](#e10--la-pasarela-retiene-una-parte-para-ciertas-personas)). Lo dicen igual la
-tarjeta del Resumen, la cuenta destino y los próximos depósitos. El motor da las dos cifras (`pendingNet` y
+tarjeta del Resumen, la cuenta destino y «Dinero en camino». El motor da las dos cifras (`pendingNet` y
 `pendingPayout`, `depositedNet` y `depositedPayout`), y la vista de cuentas también; las pantallas enseñan las de lo
 que llega al banco. La lista de cobros sigue enseñando el neto, con lo retenido debajo.
 
 Es **una sola definición** (`isPending`, en `status.ts`) y la usan todos: la tarjeta «Por caer», el filtro «por
-caer» de la lista de cobros, los próximos depósitos, lo [atrasado](#atrasado-y-tiempo-real) y la vista
+caer» de la lista de cobros, «Dinero en camino», lo [atrasado](#atrasado-y-tiempo-real) y la vista
 `pay_bank_account_totals`. La lista y la vista la escriben en columnas: ciclo `registrado` o `en_transito`, disputa
 que no esté abierta y bruto vigente mayor que cero.
 
@@ -1200,9 +1219,13 @@ Por eso el neto total del período ya no es siempre «por caer» más «deposita
 disputa abierta o reembolsados del todo quedan fuera de los dos. Es la fila (q) de las
 [decisiones](#decisiones-tomadas-y-por-confirmar). Lo retenido tampoco está en ninguno de los dos: no llega al banco.
 
-Los **próximos depósitos** agrupan por fecha estimada, cuenta destino y moneda los cobros por caer que tienen fecha
-estimada: todo lo atrasado, más lo que cae en una ventana de 14 días **contando hoy** (de hoy a hoy + 13). Cada grupo
-dice lo que llega al banco.
+**Dinero en camino** toma todos los cobros por caer con fecha estimada, sin tope de días, y les pone una fase con hoy
+en Nueva York y su ventana `from`–`to`: **atrasado** si hoy > `to` («Debió llegar hace N días», en días corridos);
+**hoy** si `from` ≤ hoy ≤ `to` («Puede llegar hoy» o «Hoy o hasta el …»); **próximo** si hoy < `from` («Llega
+mañana», «Llega en N días» o «Llega en N–M días»). Las tarjetas parten lo próximo en los próximos 7 días y lo que
+viene después; la suma de las fases es el total en camino, y ningún cobro cuenta dos veces. Los grupos por fecha
+estimada, cuenta destino y moneda salen de `upcomingDeposits`; en la lista, lo que cae dentro de más de 14 días va
+plegado. Cada cifra es lo que llega al banco.
 
 **La papelera.** El motor no sabe si un cobro está en la papelera: la fila mínima que recibe para sumar no trae
 ese dato. La dejan fuera quienes le pasan las filas:
@@ -1979,7 +2002,7 @@ cada parte del reparto ([P1 a P5](#lo-pagado-a-cada-parte-de-un-cobro)), y las (
 | **(n)** El costo de disputa es uno solo y desaparece si la disputa se gana | Así lo pide el encargo, y E6: al ganar, el cobro vuelve a las cifras de E1 | Según la documentación de Stripe consultada al construir (conviene confirmarla en su página de tarifas), desde junio de 2025 Stripe cobra un costo al recibir la disputa, que **no** devuelve aunque se gane, y otro al contestarla, que sí devuelve. Con Stripe, hoy el libro da por devuelto lo que no vuelve: cada disputa ganada deja el neto más alto que el real. Para reflejarlo, por pasarela: «el costo de disputa se devuelve si se gana» (sí o no), o partir el costo en dos. Es una migración aditiva, el motor y la pantalla de pasarelas, y E6 «ganada» ya no volvería a E1 |
 | **(o)** Las opciones no tienen monto mínimo | El encargo solo pedía porcentaje y cuota fija | Los depósitos instantáneos suelen tener una comisión mínima (0,50, por confirmar). En cobros chicos, el costo real del pago rápido sería mayor que el calculado. Hace falta un campo «mínimo» en la opción |
 | **(p)** Los días al depósito se cuentan desde la fecha del cobro en Nueva York | Es una sola regla para todas las pasarelas, y la fecha estimada se puede corregir a mano | Hay pasarelas que cuentan en UTC, que empiezan en el siguiente día hábil o que cuentan desde el retiro. Para afinar hace falta, por pasarela, la zona de corte y cómo trata un cobro en día inhábil |
-| **(q)** «Por caer» es lo que se ve como registrado o en tránsito. Un cobro sin depositar con la disputa abierta o reembolsado del todo no está por caer. Consecuencia: «neto total = por caer + depositado» deja de cuadrar exacto cuando hay cobros así | «Por caer» responde a «cuánto me va a llegar al banco». Con la disputa abierta la pasarela tiene el dinero detenido, y un reembolso total ya se devolvió: contarlos prometería un depósito que no va a llegar. Así la tarjeta, el filtro, los próximos depósitos, lo atrasado y la vista de cuentas dan lo mismo | Si se quiere que «por caer» más «depositado» sume siempre el neto, esos cobros vuelven a contar en «por caer» (el neto de E4 restaría 3,20 a lo que se espera recibir) y hay que cambiar el motor, el filtro de la lista y la vista. La otra salida es enseñar la diferencia como una tercera cifra, «detenido por una disputa o devuelto» (no es el «Retenido» de la retención: ver (ac)) |
+| **(q)** «Por caer» es lo que se ve como registrado o en tránsito. Un cobro sin depositar con la disputa abierta o reembolsado del todo no está por caer. Consecuencia: «neto total = por caer + depositado» deja de cuadrar exacto cuando hay cobros así | «Por caer» responde a «cuánto me va a llegar al banco». Con la disputa abierta la pasarela tiene el dinero detenido, y un reembolso total ya se devolvió: contarlos prometería un depósito que no va a llegar. Así la tarjeta, el filtro, «Dinero en camino», lo atrasado y la vista de cuentas dan lo mismo | Si se quiere que «por caer» más «depositado» sume siempre el neto, esos cobros vuelven a contar en «por caer» (el neto de E4 restaría 3,20 a lo que se espera recibir) y hay que cambiar el motor, el filtro de la lista y la vista. La otra salida es enseñar la diferencia como una tercera cifra, «detenido por una disputa o devuelto» (no es el «Retenido» de la retención: ver (ac)) |
 | **(r)** La primera tarifa de una pasarela y la primera versión de un esquema valen «desde el inicio» (`2000-01-01`). Una versión nueva, por defecto desde mañana; se puede elegir otra fecha | Así cualquier cobro, aunque sea viejo o se registre tarde, tiene tarifa y reparto | Si un esquema nuevo debe valer solo desde su fecha, al crearlo se elige «Desde una fecha». Sin eso, recalcular un cobro viejo «con la tarifa de la fecha del cobro» le aplicaría ese esquema |
 | **(s)** Al importar, cada pasarela recuerda el formato y las columnas usadas, y avisa («Ojo: puede duplicar cobros») si después llega otro formato. En el informe de saldo de Stripe la referencia es `source_id`, el id del cobro, cuando el archivo la trae | Los dos archivos de Stripe dan referencias distintas al mismo cobro (`txn_…` y `ch_…`): importar los dos lo registraría dos veces. Con `source_id`, la referencia es la misma que se suele teclear a mano (`ch_…`) | Si se cambia de formato a propósito, se marca «Son otros cobros: importar igual». Sin el aviso, ese error pasaría en silencio |
 | **(t)** Los encabezados de la exportación de **pagos** de Stripe no tienen fuente oficial: se tomaron de exportaciones de ejemplo. El informe de saldo y la actividad de PayPal sí la tienen | No se encontró una página de Stripe que los publique, y no se inventan | Si no coinciden, el archivo sale como no reconocido y se eligen las columnas a mano una vez (la pasarela lo recuerda). Con la fila de encabezados de una exportación real, sin datos, se ajusta el reconocimiento |
