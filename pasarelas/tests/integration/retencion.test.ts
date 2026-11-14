@@ -452,6 +452,24 @@ describe("las vistas", () => {
     });
   });
 
+  it("quien solo tiene liquidaciones y retención (sin reparto) queda en una sola fila por moneda", async () => {
+    const settlement = unwrap(
+      await owner
+        .from("pay_settlements")
+        .insert({ beneficiary_id: holderId, paid_on: "2026-11-14", amount: "1.00" })
+        .select("id")
+        .single(),
+      "liquidación del titular",
+    );
+    try {
+      const rows = await balances();
+      expect(Object.keys(rows)).toHaveLength(4);
+      expect(rows[holderId]).toEqual({ assigned: "0.00", settled: "1.00", balance: "-3.50", retained: "2.50" });
+    } finally {
+      await owner.from("pay_settlements").delete().eq("id", settlement.id).throwOnError();
+    }
+  });
+
   it("pay_bank_account_totals: lo que llega al banco es el neto menos lo retenido", async () => {
     const read = async () =>
       unwrap(

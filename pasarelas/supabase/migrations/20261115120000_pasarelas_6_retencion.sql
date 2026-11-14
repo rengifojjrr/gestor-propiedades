@@ -22,14 +22,31 @@
 -- ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 -- 1. La retención de la pasarela. Con valor por defecto constante: Postgres no reescribe la tabla y las pasarelas que
---    ya existen quedan sin retener.
+--    ya existen quedan sin retener (0 cumple los dos rangos). Cada restricción se crea si falta.
 alter table public.pay_gateways
-  add column if not exists retention_pct numeric(7,4) not null default 0
-    constraint pay_gateways_retention_pct_check check (retention_pct >= 0 and retention_pct <= 100);
+  add column if not exists retention_pct numeric(7,4) not null default 0;
 
 alter table public.pay_gateways
-  add column if not exists retention_days integer not null default 0
-    constraint pay_gateways_retention_days_check check (retention_days between 0 and 365);
+  add column if not exists retention_days integer not null default 0;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'pay_gateways_retention_pct_check' and conrelid = 'public.pay_gateways'::regclass
+  ) then
+    alter table public.pay_gateways
+      add constraint pay_gateways_retention_pct_check check (retention_pct >= 0 and retention_pct <= 100);
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'pay_gateways_retention_days_check' and conrelid = 'public.pay_gateways'::regclass
+  ) then
+    alter table public.pay_gateways
+      add constraint pay_gateways_retention_days_check check (retention_days between 0 and 365);
+  end if;
+end;
+$$;
 
 -- 2. A quién le cae lo retenido: una o más personas, cada una con su porcentaje (suman 100; lo comprueba
 --    `pay_save_gateway_retention`, que es por donde se guardan).
@@ -52,9 +69,20 @@ create index if not exists pay_gateway_retention_recipients_beneficiary_idx
 -- 3. Lo retenido de cada cobro. Con valor por defecto constante: los cobros que ya existen quedan en 0, que cumple la
 --    restricción (el bruto vigente nunca es negativo). Un fallido tiene el bruto vigente en 0: su retenido también.
 alter table public.pay_transactions
-  add column if not exists retention_amount numeric(14,2) not null default 0
-    constraint pay_transactions_retention_amount_check
-      check (retention_amount >= 0 and retention_amount <= gross_amount);
+  add column if not exists retention_amount numeric(14,2) not null default 0;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'pay_transactions_retention_amount_check' and conrelid = 'public.pay_transactions'::regclass
+  ) then
+    alter table public.pay_transactions
+      add constraint pay_transactions_retention_amount_check
+        check (retention_amount >= 0 and retention_amount <= gross_amount);
+  end if;
+end;
+$$;
 
 -- 4. Lo que recibe cada persona de lo retenido en un cobro. Suma exactamente `retention_amount` (disparador diferido,
 --    como el reparto).
@@ -490,26 +518,22 @@ retenido as (
   join public.pay_transactions t on t.id = r.transaction_id
   where t.deleted_at is null and t.status <> 'fallido'
   group by r.user_id, r.beneficiary_id, t.currency
-),
-claves as (
-  select user_id, beneficiary_id, currency from asignado
-  union
-  select user_id, beneficiary_id, currency from liquidado
-  union
-  select user_id, beneficiary_id, currency from retenido
 )
 select
-  k.user_id,
-  k.beneficiary_id,
-  k.currency,
+  coalesce(a.user_id, l.user_id, r.user_id) as user_id,
+  coalesce(a.beneficiary_id, l.beneficiary_id, r.beneficiary_id) as beneficiary_id,
+  coalesce(a.currency, l.currency, r.currency) as currency,
   coalesce(a.assigned, 0)::numeric(16,2) as assigned,
   coalesce(l.settled, 0)::numeric(16,2) as settled,
   (coalesce(a.assigned, 0) - coalesce(l.settled, 0) - coalesce(r.retained, 0))::numeric(16,2) as balance,
   coalesce(r.retained, 0)::numeric(16,2) as retained
-from claves k
-left join asignado a on a.user_id = k.user_id and a.beneficiary_id = k.beneficiary_id and a.currency = k.currency
-left join liquidado l on l.user_id = k.user_id and l.beneficiary_id = k.beneficiary_id and l.currency = k.currency
-left join retenido r on r.user_id = k.user_id and r.beneficiary_id = k.beneficiary_id and r.currency = k.currency;
+from asignado a
+full outer join liquidado l
+  on l.user_id = a.user_id and l.beneficiary_id = a.beneficiary_id and l.currency = a.currency
+full outer join retenido r
+  on r.user_id = coalesce(a.user_id, l.user_id)
+  and r.beneficiary_id = coalesce(a.beneficiary_id, l.beneficiary_id)
+  and r.currency = coalesce(a.currency, l.currency);
 
 create or replace view public.pay_company_totals
 with (security_invoker = true) as
