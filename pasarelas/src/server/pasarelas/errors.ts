@@ -58,12 +58,16 @@ const DATABASE_TEXT: Record<string, { named: Record<string, string>; other: stri
       pay_retention_without_recipients: RETENTION_ISSUE_TEXT.sin_personas,
       pay_retention_recipients_without_pct: RETENTION_ISSUE_TEXT.personas_sin_pct,
       pay_retention_not_100: RETENTION_ISSUE_TEXT.no_suma_100,
-      pay_retention_inactive_beneficiary: "Cada persona tiene que ser un beneficiario activo.",
+      pay_retention_inactive_beneficiary:
+        "Una de las personas está desactivada: quítala o vuelve a activarla en Repartos.",
       pay_gateways_retention_pct_check: "El % que retiene va de 0 a 100.",
       pay_gateways_retention_days_check: "Los días que la retiene van de 0 a 365.",
       pay_gateway_retention_recipients_pct_check: "El % de cada persona tiene que ser mayor que 0 y no pasar de 100.",
       pay_retention_sum_mismatch: "Lo retenido no suma lo que recibe cada persona. No se guardó nada.",
       pay_transactions_retention_amount_check: "Lo retenido no puede pasar de lo cobrado. No se guardó nada.",
+      // Los pagos a las partes del reparto, ligados a sus cobros (migración 7).
+      pay_settlement_items_sum_mismatch: "Lo pagado de cada cobro no suma el total del pago. No se guardó nada.",
+      pay_settlement_items_currency_mismatch: "Un pago solo cubre cobros de su misma moneda. No se guardó nada.",
     },
     other: "Algún dato no cumple las reglas del libro. Revísalo e inténtalo de nuevo.",
   },
@@ -96,6 +100,16 @@ const STORAGE_TEXT: Record<string, string> = {
 
 const IN_USE_TEXT = "No se puede borrar: todavía se usa en cobros o en otros registros.";
 
+/** Borrar del todo un cobro con partes del reparto ya pagadas: la clave de esas partes hacia su cobro no lo deja. */
+export const PAID_TX_PURGE_TEXT =
+  "No se puede borrar del todo un cobro con partes del reparto ya pagadas. Deshaz esos pagos (en el detalle del " +
+  "cobro o en la ficha de cada beneficiario) y vuelve a intentarlo.";
+
+/** Lo que dice cada clave foránea que no deja borrar algo, cuando tiene un mensaje propio. */
+const IN_USE_NAMED: Record<string, string> = {
+  pay_settlement_items_transaction_fk: PAID_TX_PURGE_TEXT,
+};
+
 /** `pay_tx_conflict: el cobro…` → `pay_tx_conflict`. */
 const PAY_PREFIX = /^(pay_[a-z0-9_]+):/;
 /** `…violates unique constraint "pay_companies_name_uq"` → `pay_companies_name_uq`. */
@@ -108,7 +122,9 @@ function databaseText(code: string, message: string): string {
   const named = name === undefined ? undefined : known.named[name];
   if (named !== undefined) return named;
   // Postgres distingue los dos sentidos de una clave foránea por cómo empieza el mensaje.
-  if (code === "23503" && message.startsWith("update or delete")) return IN_USE_TEXT;
+  if (code === "23503" && message.startsWith("update or delete")) {
+    return (name === undefined ? undefined : IN_USE_NAMED[name]) ?? IN_USE_TEXT;
+  }
   return known.other;
 }
 

@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { PAY_RULE_TEXT, PAY_STATE_TEXT, PayRuleError, PayStateError } from "@/lib/pasarelas";
 import type { PayRuleCode, PayStateCode } from "@/lib/pasarelas";
-import { UserError, errorMessage, isExpectedError } from "./errors";
+import { PAID_TX_PURGE_TEXT, UserError, errorMessage, isExpectedError } from "./errors";
 
 const GENERIC = "No se pudo guardar. Inténtalo de nuevo.";
 const SECOND_FACTOR = "Verifica tu segundo factor para seguir";
@@ -120,6 +120,42 @@ describe("errores de la base (PostgREST)", () => {
     expect(errorMessage(check("pay_transactions_alloc_base_check"))).toBe(
       "La base del reparto no coincide con el cobro. No se guardó nada.",
     );
+  });
+
+  test("23514 de los pagos a las partes (migración 7): lo que no suma y la moneda", () => {
+    expect(
+      errorMessage(db("23514", "pay_settlement_items_sum_mismatch: las partes (90.00) no suman la liquidación (90.30)")),
+    ).toBe("Lo pagado de cada cobro no suma el total del pago. No se guardó nada.");
+    expect(
+      errorMessage(db("23514", "pay_settlement_items_currency_mismatch: un cobro de la liquidación no es en USD")),
+    ).toBe("Un pago solo cubre cobros de su misma moneda. No se guardó nada.");
+  });
+
+  test("23503: borrar del todo un cobro con partes del reparto pagadas", () => {
+    const error = db(
+      "23503",
+      'update or delete on table "pay_transactions" violates foreign key constraint "pay_settlement_items_transaction_fk" on table "pay_settlement_items"',
+      'Key (id, user_id)=(d8c38940-d00d-47af-bee4-17cd337b12dc, 1b2c) is still referenced from table "pay_settlement_items".',
+    );
+    expect(errorMessage(error)).toBe(PAID_TX_PURGE_TEXT);
+    expect(PAID_TX_PURGE_TEXT).toBe(
+      "No se puede borrar del todo un cobro con partes del reparto ya pagadas. Deshaz esos pagos (en el detalle " +
+        "del cobro o en la ficha de cada beneficiario) y vuelve a intentarlo.",
+    );
+    // La misma clave en el otro sentido (una parte que apunta a un cobro que ya no existe) no es un borrado.
+    const missing = db(
+      "23503",
+      'insert or update on table "pay_settlement_items" violates foreign key constraint "pay_settlement_items_transaction_fk"',
+    );
+    expect(errorMessage(missing)).toBe("Algo de lo elegido ya no existe. Vuelve a cargar la página.");
+  });
+
+  test("23514 de la retención: una persona desactivada dice qué hacer", () => {
+    expect(
+      errorMessage(
+        db("23514", "pay_retention_inactive_beneficiary: cada persona tiene que ser un beneficiario activo"),
+      ),
+    ).toBe("Una de las personas está desactivada: quítala o vuelve a activarla en Repartos.");
   });
 
   test("23514 de otra restricción: algo no cumple las reglas, sin decir cuál restricción", () => {
