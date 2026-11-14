@@ -1,9 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { add, type NewTxInput } from "@/lib/pasarelas";
+import { PAYOUT_ALREADY_SAVED_TEXT, PAYOUT_CHANGED_TEXT } from "@/components/pasarelas/splits/settlementText";
+import { add, type Money, type NewTxInput, type PayoutStatus } from "@/lib/pasarelas";
+import { errorMessage } from "@/server/pasarelas/errors";
 import { createGateway, saveGatewayRetention } from "@/server/pasarelas/ops/gateways";
+import { deleteSettlement, recordPayouts, type PayoutInput } from "@/server/pasarelas/ops/settlements";
 import { saveScheme } from "@/server/pasarelas/ops/splits";
-import { createTx } from "@/server/pasarelas/ops/transactions";
+import { createTx, failTx, purgeTx, refundTx, trashTx } from "@/server/pasarelas/ops/transactions";
+import { listSettlements, listTxPayouts, payoutStatuses } from "@/server/pasarelas/queries/settlements";
+import { getSnapshots, leanTx, listTx, parseTxFilters } from "@/server/pasarelas/queries/transactions";
 import { createUser, expectRejected, seedBasics, unwrap, type Basics, type Db, type TestUser } from "./helpers";
 
 /**
@@ -469,5 +474,301 @@ describe("los saldos no cambian: las partes viven dentro de las liquidaciones", 
       retained: "25.00",
       balance: "0.00",
     });
+  });
+});
+
+// ─── Con las operaciones de la app ──────────────────────────────────────────────────────────────────────────
+
+/** El estado de pago de un cobro, como lo lee la app (de la base, con el motor). */
+async function statusOf(db: Db, txId: string): Promise<PayoutStatus | null> {
+  const [tx] = await getSnapshots(db, [txId]);
+  if (tx === undefined) throw new Error("No existe el cobro");
+  return (await payoutStatuses(db, [tx])).get(txId) ?? null;
+}
+
+type PartRow = [beneficiaryId: string, state: string, owed: Money];
+/** Por beneficiario: en la base, el reparto no guarda orden (en pantalla va el del desglose). */
+const byId = (rows: PartRow[]): PartRow[] => [...rows].sort((a, b) => a[0].localeCompare(b[0]));
+/** Cada parte como [beneficiario, estado, lo que debe]. */
+const partsOf = (status: PayoutStatus | null): PartRow[] | undefined =>
+  status?.parts && byId(status.parts.map((part) => [part.beneficiaryId, part.state, part.owed]));
+/** La parte de un beneficiario. */
+const partOf = (status: PayoutStatus | null, beneficiaryId: string): PartRow | undefined =>
+  partsOf(status)?.find((row) => row[0] === beneficiaryId);
+
+/** Un pago desde la app: una liquidación de un beneficiario con lo de cada cobro. */
+const pay = (beneficiaryId: string, items: [string, Money][], paidOn = "2026-11-14"): PayoutInput => ({
+  id: randomUUID(),
+  beneficiaryId,
+  currency: "USD",
+  paidOn,
+  method: null,
+  items: items.map(([transactionId, amount]) => ({ transactionId, amount })),
+});
+
+/** «Marcar todo el reparto pagado» de E10: a cada parte, lo que le falta. */
+const payAllE10 = (e10: E10, tx: string): PayoutInput[] => [
+  pay(e10.ids.ga, [[tx, "580.53"]]),
+  pay(e10.ids.gb, [[tx, "290.27"]]),
+  pay(e10.ids.ta, [[tx, "25.00"]]),
+  pay(e10.ids.tb, [[tx, "25.00"]]),
+];
+
+/** Lo que el error le dice a la persona. */
+async function failureText(promise: Promise<unknown>): Promise<string> {
+  try {
+    await promise;
+  } catch (error) {
+    return errorMessage(error);
+  }
+  throw new Error("debió fallar");
+}
+
+describe("el estado de pago de cada cobro, leído de la base", () => {
+  it("P1 y P2: recién registrado falta todo; «Marcar todo el reparto pagado» lo deja pagado y baja los saldos", async () => {
+    const e10 = await setupE10();
+    const tx = await chargeE10(e10);
+    expect(partsOf(await statusOf(e10.db, tx))).toEqual(
+      byId([
+        [e10.ids.ga, "falta", "580.53"],
+        [e10.ids.gb, "falta", "290.27"],
+        [e10.ids.ta, "falta", "25.00"],
+        [e10.ids.tb, "falta", "25.00"],
+      ]),
+    );
+    const before = await balanceOf(e10.db, e10.ids.ga);
+
+    expect(await recordPayouts(e10.db, payAllE10(e10, tx))).toEqual({ created: 4 });
+
+    const status = await statusOf(e10.db, tx);
+    expect(status?.parts.every((part) => part.state === "pagado")).toBe(true);
+    expect([status?.paidCount, status?.pending]).toEqual([4, false]);
+    expect(before?.balance).toBe("580.53");
+    expect((await balanceOf(e10.db, e10.ids.ga))?.balance).toBe("0.00");
+    expect((await balanceOf(e10.db, e10.ids.ta))?.balance).toBe("0.00");
+  });
+
+  it("P4: después de P2, el reembolso total deja a cada parte con lo que se le pagó de más", async () => {
+    const e10 = await setupE10();
+    const tx = await chargeE10(e10);
+    await recordPayouts(e10.db, payAllE10(e10, tx));
+    await refundTx(e10.db, tx, { amount: "1000.00", on: "2026-11-15" });
+    expect(partsOf(await statusOf(e10.db, tx))).toEqual(
+      byId([
+        [e10.ids.ga, "de_mas", "-600.00"],
+        [e10.ids.gb, "de_mas", "-300.00"],
+        [e10.ids.ta, "de_mas", "-25.00"],
+        [e10.ids.tb, "de_mas", "-25.00"],
+      ]),
+    );
+  });
+
+  it("sin reparto, fallido o en la papelera no hay estado; varios cobros se leen de una vez", async () => {
+    const e10 = await setupE10();
+    const [plain, failed, trashed, fresh] = [
+      await chargeE10(e10, { schemeId: null }),
+      await chargeE10(e10),
+      await chargeE10(e10),
+      await chargeE10(e10),
+    ];
+    await failTx(e10.db, failed);
+    await trashTx(e10.db, [trashed]);
+    const txs = await getSnapshots(e10.db, [plain, failed, trashed, fresh]);
+    const statuses = await payoutStatuses(e10.db, txs);
+    expect([plain, failed, trashed].map((id) => statuses.get(id))).toEqual([null, null, null]);
+    expect(statuses.get(fresh)?.paidCount).toBe(0);
+    expect((await payoutStatuses(e10.db, [])).size).toBe(0);
+  });
+});
+
+describe("recordPayouts: pagar desde un cobro o desde la lista", () => {
+  it("un pago parcial deja lo que falta; no se paga más de lo que falta, ni a quien no le falta nada", async () => {
+    const e10 = await setupE10();
+    const tx = await chargeE10(e10);
+    await recordPayouts(e10.db, [pay(e10.ids.ga, [[tx, "500.00"]])]);
+    expect(partOf(await statusOf(e10.db, tx), e10.ids.ga)).toEqual([e10.ids.ga, "falta", "80.53"]);
+
+    for (const tried of [
+      [pay(e10.ids.ga, [[tx, "80.54"]])],
+      [pay(e10.ids.ga, [[tx, "-1.00"]])],
+      // Dos pagos en la misma llamada que juntos pasan de lo que falta.
+      [pay(e10.ids.ga, [[tx, "50.00"]]), pay(e10.ids.ga, [[tx, "30.54"]])],
+      // Grupo C no está en el reparto de E10.
+      [pay(e10.basics.beneficiaryIds.c, [[tx, "1.00"]])],
+    ]) {
+      expect(await failureText(recordPayouts(e10.db, tried))).toBe(PAYOUT_CHANGED_TEXT);
+    }
+    expect(partOf(await statusOf(e10.db, tx), e10.ids.ga)).toEqual([e10.ids.ga, "falta", "80.53"]);
+    await recordPayouts(e10.db, [pay(e10.ids.ga, [[tx, "80.53"]])]);
+    expect(partOf(await statusOf(e10.db, tx), e10.ids.ga)).toEqual([e10.ids.ga, "pagado", "0.00"]);
+  });
+
+  it("repetir el mismo pago (la respuesta se perdió) no lo duplica; con otros datos, quedó el primero", async () => {
+    const e10 = await setupE10();
+    const tx = await chargeE10(e10);
+    const first = pay(e10.ids.gb, [[tx, "290.27"]]);
+    expect(await recordPayouts(e10.db, [first])).toEqual({ created: 1 });
+    expect(await recordPayouts(e10.db, [first])).toEqual({ created: 0 });
+    expect(await settlementsOf(e10.db)).toHaveLength(1);
+    expect(await failureText(recordPayouts(e10.db, [{ ...first, paidOn: "2026-11-15" }]))).toBe(
+      PAYOUT_ALREADY_SAVED_TEXT,
+    );
+    expect(await settlementsOf(e10.db)).toHaveLength(1);
+  });
+
+  it("P3: dos cobros como E10, una liquidación por parte con una parte por cobro; a un fallido no", async () => {
+    const e10 = await setupE10();
+    const [t1, t2, failed] = [await chargeE10(e10), await chargeE10(e10), await chargeE10(e10)];
+    await failTx(e10.db, failed);
+    const both = (id: string, amount: Money) =>
+      pay(id, [
+        [t1, amount],
+        [t2, amount],
+      ]);
+    const payouts = [
+      both(e10.ids.ga, "580.53"),
+      both(e10.ids.gb, "290.27"),
+      both(e10.ids.ta, "25.00"),
+      both(e10.ids.tb, "25.00"),
+    ];
+    expect(await recordPayouts(e10.db, payouts)).toEqual({ created: 4 });
+    expect((await settlementsOf(e10.db)).map((s) => [s.amount, s.items.length])).toEqual([
+      ["1161.06", 2],
+      ["580.54", 2],
+      ["50.00", 2],
+      ["50.00", 2],
+    ]);
+    expect((await statusOf(e10.db, t2))?.pending).toBe(false);
+    // Un cobro fallido no tiene nada pendiente: no se le paga a nadie.
+    expect(await failureText(recordPayouts(e10.db, [pay(e10.ids.ga, [[failed, "1.00"]])]))).toBe(
+      PAYOUT_CHANGED_TEXT,
+    );
+  });
+
+  it("P5: lo pagado en un cobro, con los otros cobros de cada liquidación; deshacer la borra con sus partes", async () => {
+    const e10 = await setupE10();
+    const [t1, t2] = [await chargeE10(e10), await chargeE10(e10)];
+    const gb = pay(e10.ids.gb, [
+      [t1, "290.27"],
+      [t2, "290.27"],
+    ]);
+    const ta = pay(e10.ids.ta, [[t1, "10.00"]]);
+    await recordPayouts(e10.db, [gb, ta]);
+
+    const payouts = await listTxPayouts(e10.db, t1);
+    expect(payouts.map((p) => [p.settlementId, p.beneficiaryId, p.amount, p.here, p.others.length])).toEqual(
+      expect.arrayContaining([
+        [gb.id, e10.ids.gb, "580.54", "290.27", 1],
+        [ta.id, e10.ids.ta, "10.00", "10.00", 0],
+      ]),
+    );
+    expect(payouts).toHaveLength(2);
+    const [reference] = (await getSnapshots(e10.db, [t2])).map((tx) => tx.reference);
+    expect(payouts.find((p) => p.settlementId === gb.id)).toMatchObject({
+      paidOn: "2026-11-14",
+      currency: "USD",
+      others: [{ transactionId: t2, amount: "290.27", occurredOn: "2026-11-10", grossOriginal: "1000.00", reference }],
+    });
+
+    // Deshacer: borrar la liquidación de Grupo B desmarca los dos cobros.
+    await deleteSettlement(e10.db, e10.user.id, gb.id);
+    expect(partOf(await statusOf(e10.db, t1), e10.ids.gb)).toEqual([e10.ids.gb, "falta", "290.27"]);
+    expect(partOf(await statusOf(e10.db, t2), e10.ids.gb)).toEqual([e10.ids.gb, "falta", "290.27"]);
+    expect((await listTxPayouts(e10.db, t1)).map((p) => p.settlementId)).toEqual([ta.id]);
+  });
+
+  it("la ficha del beneficiario lee de qué cobros es cada liquidación; las de siempre, sin cobros", async () => {
+    const e10 = await setupE10();
+    const [t1, t2] = [await chargeE10(e10), await chargeE10(e10)];
+    await recordPayouts(e10.db, [
+      pay(e10.ids.gb, [
+        [t1, "290.27"],
+        [t2, "290.27"],
+      ]),
+    ]);
+    unwrap(
+      await e10.db
+        .from("pay_settlements")
+        .insert({ beneficiary_id: e10.ids.gb, paid_on: "2026-11-01", amount: "5.00" })
+        .select("id"),
+      "a mano",
+    );
+    const page = await listSettlements(e10.db, e10.ids.gb, 1);
+    expect(page.total).toBe(2);
+    expect(page.rows.map((row) => [row.amount, row.items.map((item) => [item.transactionId, item.amount])])).toEqual([
+      [
+        "580.54",
+        expect.arrayContaining([
+          [t1, "290.27"],
+          [t2, "290.27"],
+        ]),
+      ],
+      ["5.00", []],
+    ]);
+    expect(page.rows[0]?.items[0]).toMatchObject({
+      occurredOn: "2026-11-10",
+      grossOriginal: "1000.00",
+      currency: "USD",
+    });
+  });
+});
+
+describe("borrar del todo un cobro con partes pagadas", () => {
+  it("no se puede, y lo dice; deshechos los pagos, sí", async () => {
+    const e10 = await setupE10();
+    const tx = await chargeE10(e10);
+    const ga = pay(e10.ids.ga, [[tx, "580.53"]]);
+    await recordPayouts(e10.db, [ga]);
+    await trashTx(e10.db, [tx]);
+    expect(await failureText(purgeTx(e10.db, e10.user.id, [tx]))).toBe(
+      "No se puede borrar del todo un cobro con partes del reparto ya pagadas. Deshaz esos pagos (en el detalle " +
+        "del cobro o en la ficha de cada beneficiario) y vuelve a intentarlo.",
+    );
+    expect(await getSnapshots(e10.db, [tx])).toHaveLength(1);
+
+    await deleteSettlement(e10.db, e10.user.id, ga.id);
+    expect(await purgeTx(e10.db, e10.user.id, [tx])).toBe(1);
+  });
+});
+
+describe("el filtro «Reparto pendiente»", () => {
+  it("trae los cobros con alguna parte a la que le falta algo o se le pagó de más, con páginas y totales", async () => {
+    const e10 = await setupE10();
+    const fresh = await chargeE10(e10);
+    const paid = await chargeE10(e10);
+    const refunded = await chargeE10(e10);
+    const partial = await chargeE10(e10);
+    const failed = await chargeE10(e10);
+    const unshared = await chargeE10(e10, { schemeId: null });
+    const trashed = await chargeE10(e10);
+    await recordPayouts(e10.db, [...payAllE10(e10, paid), ...payAllE10(e10, refunded)]);
+    await refundTx(e10.db, refunded, { amount: "1000.00", on: "2026-11-15" });
+    await recordPayouts(e10.db, [pay(e10.ids.ga, [[partial, "580.53"]])]);
+    await failTx(e10.db, failed);
+    await trashTx(e10.db, [trashed]);
+
+    const today = "2026-11-16";
+    const { filters, sort } = parseTxFilters(
+      { periodo: "personalizado", desde: "2026-11-01", hasta: "2026-11-30", reparto: "pendiente" },
+      today,
+    );
+    expect(filters.payout).toBe("pendiente");
+    const list = await listTx(e10.db, filters, sort, 1, today);
+    const expected = [fresh, refunded, partial].sort();
+    expect(list.rows.map((row) => row.id).sort()).toEqual(expected);
+    expect(list.total).toBe(3);
+    expect((await leanTx(e10.db, filters, today)).map((row) => row.id).sort()).toEqual(expected);
+    // Una página de 2: el total sigue siendo el del filtro.
+    expect((await listTx(e10.db, filters, sort, 2, today, 2)).rows).toHaveLength(1);
+
+    // Sin el filtro están todos (menos la papelera); la base y el motor dicen lo mismo de cada uno.
+    const all = await listTx(e10.db, { ...filters, payout: undefined }, sort, 1, today);
+    expect(all.total).toBe(6);
+    const statuses = await payoutStatuses(e10.db, all.rows);
+    const pending = all.rows.filter((row) => statuses.get(row.id)?.pending === true).map((row) => row.id);
+    expect(pending.sort()).toEqual(expected);
+    expect([paid, unshared, failed].map((id) => statuses.get(id)?.pending ?? false)).toEqual([false, false, false]);
+    // «reparto» con otro valor no es un filtro.
+    expect(parseTxFilters({ reparto: "otro" }, today).filters.payout).toBeUndefined();
   });
 });

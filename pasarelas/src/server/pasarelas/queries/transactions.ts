@@ -49,6 +49,11 @@ export type TxFilters = {
   estimatedOn?: ISODate;
   /** Lo que la persona escribió en la búsqueda. Se limpia al aplicarlo. */
   q?: string;
+  /**
+   * «pendiente»: solo los cobros con alguna parte del reparto a la que le falta algo o a la que se le pagó de más
+   * (`pay_payout_pending` en la base, la misma cuenta que `payoutStatus` del motor).
+   */
+  payout?: "pendiente";
   /** `true` = SOLO la papelera. Por defecto la papelera no aparece. */
   trashed?: boolean;
 };
@@ -85,6 +90,7 @@ const STATUSES: Record<NonNullable<TxFilters["status"]>, true> = {
   atrasado: true,
 };
 const RECEIPTS: Record<NonNullable<TxFilters["receipt"]>, true> = { con: true, sin: true };
+const PAYOUTS: Record<NonNullable<TxFilters["payout"]>, true> = { pendiente: true };
 const SORTS: Record<TxSort, true> = {
   fecha_desc: true,
   fecha_asc: true,
@@ -112,7 +118,7 @@ export function cleanSearch(q: string): string {
 /**
  * Los filtros, el orden y la página que pide la URL de una lista de cobros (los parámetros del kit: `periodo`,
  * `desde`, `hasta`, `empresa`, `canal`, `pasarela`, `cuenta`, `moneda`, `estado`, `comprobante`, `estimada`, `q`,
- * `orden`, `pagina`). Todo valor es entrada no confiable: lo que no se entiende se ignora, nunca lanza.
+ * `reparto`, `orden`, `pagina`). Todo valor es entrada no confiable: lo que no se entiende se ignora, nunca lanza.
  *
  * Sin `periodo` rige «este mes»; `desde` y `hasta` solo cuentan con `periodo=personalizado`. La papelera no se
  * pide por la URL: la pone la pantalla que la muestra.
@@ -154,6 +160,7 @@ export function parseTxFilters(
     estimatedOn: date("estimada"),
     // Si no queda nada que buscar (solo signos), no es un filtro.
     q: cleanSearch(q) === "" && parseMoney(q) === null ? undefined : q,
+    payout: oneOf(PAYOUTS, "reparto"),
   };
   const page = text("pagina") ?? "";
   return {
@@ -174,7 +181,7 @@ type TxFilterBuilder<Q> = {
   gte(column: string, value: string): Q;
   lt(column: string, value: string): Q;
   lte(column: string, value: string): Q;
-  is(column: string, value: null): Q;
+  is(column: string, value: null | boolean): Q;
   not(column: string, operator: string, value: null): Q;
   in(column: string, values: readonly string[]): Q;
   or(filters: string): Q;
@@ -272,6 +279,8 @@ export function applyTxFilters<Q extends TxFilterBuilder<Q>>(
   if (filters.receipt === "con") q = q.gt("receipts_count", 0);
   if (filters.receipt === "sin") q = q.eq("receipts_count", 0);
   if (filters.estimatedOn !== undefined) q = q.eq("estimated_deposit_on", filters.estimatedOn);
+  // Una columna calculada de la base: se filtra sin traer los cobros, dentro de la página y de los totales.
+  if (filters.payout === "pendiente") q = q.is("pay_payout_pending", true);
   const search = filters.q === undefined ? null : searchConditions(filters.q, cfg);
   return search === null ? q : q.or(search);
 }

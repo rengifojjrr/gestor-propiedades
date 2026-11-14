@@ -1,8 +1,14 @@
 import "server-only";
-import { SETTLEMENT_ALREADY_SAVED_TEXT } from "@/components/pasarelas/splits/settlementText";
-import { cmp, type Currency, type ISODate, type Money } from "@/lib/pasarelas";
+import {
+  PAYOUT_ALREADY_SAVED_TEXT,
+  PAYOUT_CHANGED_TEXT,
+  SETTLEMENT_ALREADY_SAVED_TEXT,
+} from "@/components/pasarelas/splits/settlementText";
+import { ZERO, add, cmp, fitsOwed, type Currency, type ISODate, type Money } from "@/lib/pasarelas";
 import type { Db } from "../dto";
 import { UserError } from "../errors";
+import { payoutStatuses } from "../queries/settlements";
+import { chunked } from "../queries/transactions";
 import { RECEIPTS_BUCKET, fileProblem, storedFile } from "./receipts";
 import { emptyFolder } from "./transactions";
 
@@ -188,4 +194,98 @@ export async function settlementReceiptUrl(supabase: Db, id: string): Promise<st
   const { data, error } = await supabase.storage.from(RECEIPTS_BUCKET).createSignedUrl(path, SIGNED_URL_SECONDS);
   if (error) throw error;
   return data.signedUrl;
+}
+
+// ─── Pagos ligados a sus cobros ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Un pago a una parte del reparto de uno o más cobros: una liquidación de ese beneficiario, ligada a sus cobros
+ * (una parte por cobro). Su monto es la suma de lo de cada cobro.
+ */
+export type PayoutInput = {
+  /** Lo genera quien paga: repetir el envío con el mismo id no lo duplica. */
+  id: string;
+  beneficiaryId: string;
+  currency: Currency;
+  paidOn: ISODate;
+  method: string | null;
+  /** Lo de cada cobro, con su signo: negativo es lo que la parte devuelve de un cobro donde se le pagó de más. */
+  items: { transactionId: string; amount: Money }[];
+};
+
+/** Lo que dice la función de la base cuando un id ya guardado llega con otros datos. */
+const PAYOUT_ALREADY_SAVED = "pay_payout_already_saved";
+
+/**
+ * Comprueba, con lo que hay ahora en la base, que cada pago nuevo cabe en lo que se le debe a esa parte en ese cobro
+ * (`fitsOwed`: con su signo y sin pasarse; un cobro fallido o en la papelera no tiene nada pendiente). Los pagos de
+ * una misma llamada a la misma parte en el mismo cobro se suman. Si alguno no cabe —otra pestaña ya pagó, hubo un
+ * reembolso, el cobro cambió—, `PAYOUT_CHANGED_TEXT`: la pantalla estaba vieja y no se guarda nada.
+ */
+async function checkOwed(supabase: Db, payouts: readonly PayoutInput[]): Promise<void> {
+  if (payouts.length === 0) return;
+  const txIds = [...new Set(payouts.flatMap((payout) => payout.items.map((item) => item.transactionId)))];
+  const pages = await Promise.all(
+    chunked(txIds).map((chunk) =>
+      supabase.from("pay_transactions").select("id, status, deleted_at, currency").in("id", chunk).throwOnError(),
+    ),
+  );
+  const txs = pages.flatMap((page) => page.data);
+  const currencyOf = new Map(txs.map((tx) => [tx.id, tx.currency]));
+  const statuses = await payoutStatuses(
+    supabase,
+    txs.map((tx) => ({ id: tx.id, status: tx.status, deletedAt: tx.deleted_at })),
+  );
+  const wanted = new Map<string, { owed: Money; amount: Money }>();
+  for (const payout of payouts) {
+    for (const item of payout.items) {
+      if (currencyOf.get(item.transactionId) !== payout.currency) throw new UserError(PAYOUT_CHANGED_TEXT);
+      const key = `${item.transactionId} ${payout.beneficiaryId}`;
+      const part = statuses.get(item.transactionId)?.parts.find((p) => p.beneficiaryId === payout.beneficiaryId);
+      const sofar = wanted.get(key)?.amount ?? ZERO;
+      wanted.set(key, { owed: part?.owed ?? ZERO, amount: add(sofar, item.amount) });
+    }
+  }
+  for (const { owed, amount } of wanted.values()) {
+    if (!fitsOwed(amount, owed)) throw new UserError(PAYOUT_CHANGED_TEXT);
+  }
+}
+
+/**
+ * Registra los pagos, cada uno como una liquidación ligada a sus cobros, todos en una sola transacción
+ * (`pay_record_payouts`): o quedan todos o ninguno. Devuelve cuántos se crearon.
+ *
+ * Es idempotente por el id de cada pago, como «Registrar liquidación»: el que ya existe —el mismo envío que llega
+ * dos veces tras un corte— no se crea otra vez ni se vuelve a comprobar. Si ese reintento trae otros datos, no se da
+ * por bueno: `PAYOUT_ALREADY_SAVED_TEXT`. Los nuevos se comprueban contra lo que falta ahora (`checkOwed`).
+ */
+export async function recordPayouts(supabase: Db, payouts: readonly PayoutInput[]): Promise<{ created: number }> {
+  const ids = payouts.map((payout) => payout.id);
+  const pages = await Promise.all(
+    chunked(ids).map((chunk) => supabase.from("pay_settlements").select("id").in("id", chunk).throwOnError()),
+  );
+  const saved = new Set(pages.flatMap((page) => page.data.map((row) => row.id)));
+  await checkOwed(
+    supabase,
+    payouts.filter((payout) => !saved.has(payout.id)),
+  );
+  const { data, error } = await supabase.rpc("pay_record_payouts", {
+    p: {
+      settlements: payouts.map((payout) => ({
+        id: payout.id,
+        beneficiary_id: payout.beneficiaryId,
+        paid_on: payout.paidOn,
+        currency: payout.currency,
+        amount: add(ZERO, ...payout.items.map((item) => item.amount)),
+        method: payout.method,
+        items: payout.items.map((item) => ({ transaction_id: item.transactionId, amount: item.amount })),
+      })),
+    },
+  });
+  if (error) {
+    if (error.message.startsWith(PAYOUT_ALREADY_SAVED)) throw new UserError(PAYOUT_ALREADY_SAVED_TEXT);
+    throw error;
+  }
+  const results = data as { id: string; inserted: boolean }[];
+  return { created: results.filter((result) => result.inserted).length };
 }

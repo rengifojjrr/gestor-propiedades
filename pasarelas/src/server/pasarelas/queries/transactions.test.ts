@@ -113,6 +113,11 @@ describe("parseTxFilters", () => {
     expect(filtersOf({ comprobante: "si" })).toEqual(THIS_MONTH);
   });
 
+  test("reparto: «pendiente»; otro se ignora", () => {
+    expect(filtersOf({ reparto: "pendiente" })).toEqual({ ...THIS_MONTH, payout: "pendiente" });
+    for (const reparto of ["pagado", "Pendiente", ""]) expect(filtersOf({ reparto })).toEqual(THIS_MONTH);
+  });
+
   test("estimada: una fecha; mal formada se ignora", () => {
     expect(filtersOf({ estimada: "2026-11-17" })).toEqual({ ...THIS_MONTH, estimatedOn: "2026-11-17" });
     expect(filtersOf({ estimada: "17/11/2026" })).toEqual(THIS_MONTH);

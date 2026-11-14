@@ -59,6 +59,11 @@ type RecalcMode = "hoy" | "fecha_del_cobro";
 const NOT_FOUND_TEXT = "Ese cobro ya no existe.";
 const PURGE_FILES_FAILED =
   "No se pudieron borrar los comprobantes de un cobro. Ese cobro sigue en la papelera: inténtalo de nuevo.";
+const PURGE_PAID_TEXT =
+  "No se puede borrar del todo un cobro con partes del reparto ya pagadas. Deshaz esos pagos (en el detalle del " +
+  "cobro o en la ficha de cada beneficiario) y vuelve a intentarlo.";
+/** La clave de las partes pagadas hacia su cobro: sin cascada, la base no deja borrar un cobro que las tenga. */
+const PAID_ITEMS_FK = "pay_settlement_items_transaction_fk";
 
 const hasChanges = (write: TxWrite): boolean => Object.keys(write.fields).length > 0;
 
@@ -378,6 +383,10 @@ export async function emptyFolder(supabase: Db, folder: string, message: string)
  *
  * `userId` es el usuario de la sesión, dueño de las carpetas. Si un cobro de la lista no es suyo no se borra
  * nada: con otra carpeta no se encontrarían sus archivos y quedarían huérfanos.
+ *
+ * Un cobro con partes del reparto ya pagadas (`pay_settlement_items`) no se borra: primero se deshacen esos pagos.
+ * Se mira antes de tocar nada (también sus archivos); si alguno lo tiene, no se borra ninguno de la lista. La base
+ * lo vuelve a exigir al borrar la fila (un pago que llega entre medias).
  */
 export async function purgeTx(supabase: Db, userId: string, ids: string[]): Promise<number> {
   const pages = await Promise.all(
@@ -394,16 +403,23 @@ export async function purgeTx(supabase: Db, userId: string, ids: string[]): Prom
   if (trashed.some((row) => row.user_id !== userId)) {
     throw new Error("purgeTx: el usuario indicado no es el dueño de los cobros");
   }
+  const paid = await Promise.all(
+    chunked(trashed.map((row) => row.id)).map((chunk) =>
+      supabase.from("pay_settlement_items").select("id").in("transaction_id", chunk).limit(1).throwOnError(),
+    ),
+  );
+  if (paid.some((page) => page.data.length > 0)) throw new UserError(PURGE_PAID_TEXT);
   let purged = 0;
   for (const { id } of trashed) {
     await emptyFolder(supabase, `${userId}/${id}`, PURGE_FILES_FAILED);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("pay_transactions")
       .delete()
       .eq("id", id)
       .not("deleted_at", "is", null)
-      .select("id")
-      .throwOnError();
+      .select("id");
+    if (error?.code === "23503" && error.message.includes(PAID_ITEMS_FK)) throw new UserError(PURGE_PAID_TEXT);
+    if (error) throw error;
     purged += data.length;
   }
   return purged;
