@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 
 /**
- * «Exportar todo»: la copia propia del dueño, en JSON. Todas las filas de las 17 tablas `pay_*` con todas sus
+ * «Exportar todo»: la copia propia del dueño, en JSON. Todas las filas de las 19 tablas `pay_*` con todas sus
  * columnas, leídas con la sesión de quien la pide (la RLS deja salir solo lo suyo; nada de `service_role`).
  * No incluye los archivos de los comprobantes: solo sus filas.
  */
@@ -13,7 +13,7 @@ export type ExportFile = {
   version: 1;
   /** El instante de la exportación (ISO 8601). */
   exportedAt: string;
-  /** Las 17 tablas `pay_*`, cada fila con todas sus columnas y el dinero como texto exacto ("90.30"). */
+  /** Las 19 tablas `pay_*`, cada fila con todas sus columnas y el dinero como texto exacto ("90.30"). */
   tables: Record<string, Record<string, unknown>[]>;
 };
 
@@ -72,6 +72,17 @@ const EXPORT_COLUMNS = {
     active: AS_IS,
     created_at: AS_IS,
     updated_at: AS_IS,
+    retention_pct: TEXT,
+    retention_days: AS_IS,
+  },
+  pay_gateway_retention_recipients: {
+    id: AS_IS,
+    user_id: AS_IS,
+    gateway_id: AS_IS,
+    beneficiary_id: AS_IS,
+    pct: TEXT,
+    sort: AS_IS,
+    created_at: AS_IS,
   },
   pay_gateway_fee_versions: {
     id: AS_IS,
@@ -204,6 +215,15 @@ const EXPORT_COLUMNS = {
     updated_at: AS_IS,
     fees_paid_by: AS_IS,
     buyer_fees: TEXT,
+    retention_amount: TEXT,
+  },
+  pay_retention_shares: {
+    id: AS_IS,
+    user_id: AS_IS,
+    transaction_id: AS_IS,
+    beneficiary_id: AS_IS,
+    amount: TEXT,
+    created_at: AS_IS,
   },
   pay_allocations: {
     id: AS_IS,

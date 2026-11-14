@@ -4,7 +4,7 @@ import { exportAll, type ExportFile } from "@/server/pasarelas/queries/export";
 import { createUser, e1Item, saveTransactions, seedBasics, unwrap, type Db, type TestUser } from "./helpers";
 
 /**
- * «Exportar todo»: la copia propia del dueño. Tiene que traer las 17 tablas con todas sus columnas, el dinero como
+ * «Exportar todo»: la copia propia del dueño. Tiene que traer las 19 tablas con todas sus columnas, el dinero como
  * texto exacto, las tablas largas enteras y nada de otro usuario.
  */
 
@@ -12,6 +12,7 @@ const TABLAS = [
   "pay_companies",
   "pay_channels",
   "pay_gateways",
+  "pay_gateway_retention_recipients",
   "pay_gateway_fee_versions",
   "pay_gateway_extras",
   "pay_bank_accounts",
@@ -22,6 +23,7 @@ const TABLAS = [
   "pay_scheme_lines",
   "pay_transactions",
   "pay_allocations",
+  "pay_retention_shares",
   "pay_transaction_receipts",
   "pay_transaction_events",
   "pay_settlements",
@@ -86,7 +88,22 @@ beforeAll(async () => {
   const basics = await seedBasics(a.client);
   await seedBasics(b.client);
 
-  const [cobro] = await saveTransactions(a.client, [e1Item(basics)]);
+  // La pasarela retiene el 5 % para el Grupo A y el cobro E1 lleva sus 5,00 retenidos.
+  const retencion = await a.client.rpc("pay_save_gateway_retention", {
+    p: {
+      gateway_id: basics.gatewayId,
+      pct: "5",
+      days: 30,
+      recipients: [{ beneficiary_id: basics.beneficiaryIds.a, pct: "100" }],
+    },
+  });
+  if (retencion.error) throw new Error(`retención: ${retencion.error.message}`);
+  const [cobro] = await saveTransactions(a.client, [
+    {
+      ...e1Item(basics, { retention_amount: "5.00" }),
+      retention_shares: [{ beneficiary_id: basics.beneficiaryIds.a, amount: "5.00" }],
+    },
+  ]);
   cobroId = cobro!.id;
   unwrap(
     await a.client
@@ -115,7 +132,7 @@ beforeAll(async () => {
 });
 
 describe("exportAll", () => {
-  it("lleva el formato, su versión, la fecha y hora, y las 17 tablas", () => {
+  it("lleva el formato, su versión, la fecha y hora, y las 19 tablas", () => {
     expect(exportado.format).toBe("pasarelas-export");
     expect(exportado.version).toBe(1);
     expect(exportado.exportedAt).toBe(AHORA);
@@ -172,12 +189,21 @@ describe("exportAll", () => {
       alloc_base_amount: "90.30",
       fees_paid_by: "nosotros",
       buyer_fees: "0.00",
+      retention_amount: "5.00",
     });
+    expect(filas("pay_retention_shares")).toEqual([
+      expect.objectContaining({ transaction_id: cobroId, amount: "5.00" }),
+    ]);
+    expect(filas("pay_gateway_retention_recipients")).toEqual([expect.objectContaining({ pct: "100.0000", sort: 0 })]);
     const reparto = filas("pay_allocations").map((fila) => `${String(fila.pct)} → ${String(fila.amount)}`);
     expect(reparto.sort()).toEqual(["20.0000 → 18.06", "30.0000 → 27.09", "50.0000 → 45.15"]);
     expect(filas("pay_gateway_fee_versions")[0]).toMatchObject({ pct: "2.9000", fixed: "0.30" });
     expect(filas("pay_gateway_extras")[0]).toMatchObject({ pct: "1.5000", fixed: "0.00" });
-    expect(filas("pay_gateways")[0]).toMatchObject({ dispute_fee: "0.00" });
+    expect(filas("pay_gateways")[0]).toMatchObject({
+      dispute_fee: "0.00",
+      retention_pct: "5.0000",
+      retention_days: 30,
+    });
     expect(filas("pay_channels")[0]).toMatchObject({ platform_fee_pct: "5.0000", platform_fee_fixed: "0.00" });
     expect(filas("pay_scheme_lines").map((fila) => fila.pct).sort()).toEqual(["20.0000", "30.0000", "50.0000"]);
     expect(filas("pay_settlements")[0]).toMatchObject({ amount: "45.15" });

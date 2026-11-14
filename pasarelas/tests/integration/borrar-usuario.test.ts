@@ -31,6 +31,8 @@ const TABLAS = [
   "pay_company_gateways",
   "pay_transactions",
   "pay_allocations",
+  "pay_retention_shares",
+  "pay_gateway_retention_recipients",
   "pay_transaction_receipts",
   "pay_transaction_events",
   "pay_settlements",
@@ -44,7 +46,7 @@ const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 /** Las tablas se recorren por nombre: el mismo cliente, sin los tipos de la base. */
 const admin = adminClient() as unknown as SupabaseClient;
 
-/** Cuántas filas de ese usuario hay en cada una de las 17 tablas (leído con la clave secreta). */
+/** Cuántas filas de ese usuario hay en cada una de las 19 tablas (leído con la clave secreta). */
 async function filasPorTabla(userId: string): Promise<Record<string, number>> {
   const cuenta: Record<string, number> = {};
   for (const tabla of TABLAS) {
@@ -56,12 +58,27 @@ async function filasPorTabla(userId: string): Promise<Record<string, number>> {
 }
 
 /**
- * Completa lo que `seedBasics` y el cobro E1 no crean, para que el usuario tenga filas en las 17 tablas.
+ * Completa lo que `seedBasics` y el cobro E1 no crean, para que el usuario tenga filas en las 19 tablas.
  * (El esquema por defecto de la empresa y su cuenta de la pasarela ya los deja `seedBasics`.)
  */
 async function usarTodasLasTablas(user: TestUser, b: Basics): Promise<{ txId: string; path: string }> {
-  const [cobro] = await saveTransactions(user.client, [e1Item(b)]);
+  // E1 con 5,00 retenido para el Grupo A: así hay filas en las partes de lo retenido.
+  const [cobro] = await saveTransactions(user.client, [
+    {
+      ...e1Item(b, { retention_amount: "5.00" }),
+      retention_shares: [{ beneficiary_id: b.beneficiaryIds.a, amount: "5.00" }],
+    },
+  ]);
   if (!cobro) throw new Error("pay_save_transactions no devolvió el cobro");
+  const retencion = await user.client.rpc("pay_save_gateway_retention", {
+    p: {
+      gateway_id: b.gatewayId,
+      pct: "5",
+      days: 30,
+      recipients: [{ beneficiary_id: b.beneficiaryIds.a, pct: "100" }],
+    },
+  });
+  if (retencion.error) throw new Error(`retención de la pasarela: ${retencion.error.message}`);
   const path = `${user.id}/${cobro.id}/recibo.png`;
 
   const subida = await user.client.storage.from(BUCKET).upload(path, PNG, { contentType: "image/png" });
@@ -105,10 +122,10 @@ describe("borrar un usuario por la API de administración", () => {
     filasDelOtro = await filasPorTabla(otro.id);
   });
 
-  it("antes de borrarlo tiene filas en las 17 tablas", async () => {
+  it("antes de borrarlo tiene filas en las 19 tablas", async () => {
     const cuenta = await filasPorTabla(user.id);
 
-    expect(Object.keys(cuenta)).toHaveLength(17);
+    expect(Object.keys(cuenta)).toHaveLength(19);
     for (const tabla of TABLAS) {
       expect(cuenta[tabla], tabla).toBeGreaterThan(0);
     }

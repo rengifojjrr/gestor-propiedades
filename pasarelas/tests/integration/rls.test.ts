@@ -19,7 +19,7 @@ import {
 
 /**
  * Cada fila es de un usuario y solo él la ve y la escribe; y si tiene un segundo factor, solo con sesión aal2.
- * Las mismas comprobaciones se repiten en las 17 tablas y las 4 vistas: los casos salen de las listas de abajo.
+ * Las mismas comprobaciones se repiten en las 19 tablas y las 4 vistas: los casos salen de las listas de abajo.
  */
 
 /** Estas pruebas recorren las tablas por nombre: usan el mismo cliente, sin los tipos de la base. */
@@ -125,6 +125,24 @@ const TABLAS: Tabla[] = [
       pct: "0",
     }),
     cambio: { is_remainder: true },
+  },
+  {
+    nombre: "pay_retention_shares",
+    nueva: async (ctx) => ({
+      transaction_id: await insertar(ctx.client, "pay_transactions", cobroMinimo(ctx)),
+      beneficiary_id: ctx.b.beneficiaryIds.a,
+      amount: "0.00",
+    }),
+    cambio: { created_at: "2026-01-01T00:00:00+00:00" },
+  },
+  {
+    nombre: "pay_gateway_retention_recipients",
+    nueva: async (ctx) => ({
+      gateway_id: ctx.b.gatewayId,
+      beneficiary_id: await insertar(ctx.client, "pay_beneficiaries", { name: `Titular ${sufijo()}` }),
+      pct: "100",
+    }),
+    cambio: { sort: 9 },
   },
   {
     nombre: "pay_transaction_receipts",

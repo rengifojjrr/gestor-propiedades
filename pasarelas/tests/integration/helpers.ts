@@ -279,6 +279,8 @@ export type SaveItem = {
   tx: { [column: string]: Json };
   expected_updated_at?: string;
   allocations?: { beneficiary_id: string; amount: string; base: string; pct: string; is_remainder: boolean }[] | null;
+  /** Lo que recibe cada persona de lo retenido. `null` o ausente: no se tocan. */
+  retention_shares?: { beneficiary_id: string; amount: string }[] | null;
   event?: { kind: string; summary: string; data: Json };
 };
 

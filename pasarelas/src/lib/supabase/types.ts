@@ -22,7 +22,9 @@ type DecimalColumn =
   | "fees_total"
   | "net_amount"
   | "alloc_base_amount"
-  | "buyer_fees";
+  | "buyer_fees"
+  | "retention_pct"
+  | "retention_amount";
 
 type DecimalAsString<Row> = {
   [Column in keyof Row]: Column extends DecimalColumn ? Exclude<Row[Column], number> | string : Row[Column];
