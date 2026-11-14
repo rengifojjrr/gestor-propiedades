@@ -34,7 +34,7 @@ aplicar las migraciones. Si alguien más usa el mismo stack, no hagas ninguno de
 
 **Desde el celular, por la red local, hace falta https**: fuera de un contexto seguro el navegador no da
 `crypto.randomUUID`, y sin él no funcionan registrar un cobro, subir comprobantes o logos, agregar opciones al crear
-una pasarela, agregar líneas a un esquema ni registrar liquidaciones. Arranca con
+una pasarela, agregar líneas a un esquema, registrar liquidaciones ni marcar pagos del reparto. Arranca con
 `npx next dev --experimental-https -H <IP de tu computadora>` y entra en `https://<IP>:3000` (el certificado es
 propio: el navegador avisa la primera vez). Los comprobantes van directo del navegador al Supabase local, que escucha
 en `127.0.0.1` de tu computadora: desde el celular no llegan.
@@ -75,11 +75,12 @@ Desde el 10 de noviembre de 2026, en **https://pasarelas-rengifojjrr-6206s-proje
     | `pasarelas_4_quien_paga_la_comision` | `ee9befa` | `eb659a8d…` |
     | `pasarelas_5_partes_sin_comision` | `04ab658` | `2a3951c4…` |
     | `pasarelas_6_retencion` | `59301a2` | `35d75ec4…` |
+    | `pasarelas_7_pagos_por_cobro` | `f54dda1` | `0a9cc6fa…` |
 
-    Antes de la 4, todas las tablas `pay_*` se copiaron al esquema `pasarelas_copia_antes_4`. Antes de la 5 y de la
-    6 se sacaron otras dos copias, en los esquemas `pasarelas_copia_antes_5` y `pasarelas_copia_antes_6`. La API no
-    expone ninguno de los tres. Se pueden borrar cuando ya no hagan falta.
-  - Se comprobó después de cada publicación, la última tras la 6 (14/11/2026): la huella del esquema coincide con la
+    Antes de la 4, todas las tablas `pay_*` se copiaron al esquema `pasarelas_copia_antes_4`. Antes de la 5, de la 6
+    y de la 7 se sacaron otras tres copias, en los esquemas `pasarelas_copia_antes_5`, `pasarelas_copia_antes_6` y
+    `pasarelas_copia_antes_7`. La API no expone ninguno de los cuatro. Se pueden borrar cuando ya no hagan falta.
+  - Se comprobó después de cada publicación, la última tras la 7 (14/11/2026): la huella del esquema coincide con la
     de una base local recién aplicada, y no apareció ningún aviso de seguridad nuevo. La única diferencia en la
     huella: `service_role` también escribe en las 4 vistas, por los permisos por defecto del proyecto alojado.
   - Cada publicación se prueba en vivo con una cuenta de prueba.
@@ -144,9 +145,9 @@ pg_dump "$DB_URL" -Fc -f ~/copias-pasarelas/antes-de-pasarelas.dump
 
 ### 3. Aplicar las migraciones
 
-Son seis y van todas, en orden: la app lee columnas de todas (por ejemplo, `pay_scheme_lines.fee_exempt`, de la 5,
-o `pay_gateways.retention_pct`, de la 6). Desde esta carpeta, con `psql`, **en una sola transacción**: si algo
-falla, no queda nada a medias.
+Son siete y van todas, en orden: la app lee columnas de todas (por ejemplo, `pay_scheme_lines.fee_exempt`, de la 5,
+o `pay_gateways.retention_pct`, de la 6) y usa la tabla `pay_settlement_items` y la función `pay_record_payouts`, de
+la 7. Desde esta carpeta, con `psql`, **en una sola transacción**: si algo falla, no queda nada a medias.
 
 ```bash
 psql "$DB_URL" --single-transaction -v ON_ERROR_STOP=1 \
@@ -155,11 +156,12 @@ psql "$DB_URL" --single-transaction -v ON_ERROR_STOP=1 \
   -f supabase/migrations/20261112120000_pasarelas_3_ventanas_de_deposito.sql \
   -f supabase/migrations/20261113120000_pasarelas_4_quien_paga_la_comision.sql \
   -f supabase/migrations/20261114120000_pasarelas_5_partes_sin_comision.sql \
-  -f supabase/migrations/20261115120000_pasarelas_6_retencion.sql
+  -f supabase/migrations/20261115120000_pasarelas_6_retencion.sql \
+  -f supabase/migrations/20261116120000_pasarelas_7_pagos_por_cobro.sql
 ```
 
-Al final, las migraciones 1 a 4 y la 6 comprueban que toda tabla `pay_` tiene RLS y la política del segundo factor
-(la 1, además, que el bucket tiene la suya); si no, fallan y no se aplica nada. **No uses `supabase db push`.**
+Al final, las migraciones 1 a 4, la 6 y la 7 comprueban que toda tabla `pay_` tiene RLS y la política del segundo
+factor (la 1, además, que el bucket tiene la suya); si no, fallan y no se aplica nada. **No uses `supabase db push`.**
 
 ### 4. Registrar las versiones, solo si después usarás la CLI con ese proyecto
 
@@ -167,7 +169,7 @@ Así la CLI sabe que las migraciones ya están aplicadas y no intenta repetirlas
 
 ```bash
 npx supabase migration repair 20261110120000 20261111120000 20261112120000 20261113120000 20261114120000 \
-  20261115120000 --status applied --remote="$DB_URL"
+  20261115120000 20261116120000 --status applied --remote="$DB_URL"
 ```
 
 Sin `--remote`, la CLI trabaja contra el stack local.

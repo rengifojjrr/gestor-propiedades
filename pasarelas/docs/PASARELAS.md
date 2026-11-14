@@ -19,7 +19,7 @@ como está guardado, con punto (`"90.30"`).
 6. [Cuándo cae el dinero](#cuándo-cae-el-dinero) (ejemplos F1 a F3)
 7. [Lo que se congela y lo que lo cambia](#lo-que-se-congela-y-lo-que-lo-cambia)
 8. [Estados de un cobro](#estados-de-un-cobro)
-9. [Repartos y liquidaciones](#repartos-y-liquidaciones)
+9. [Repartos y liquidaciones](#repartos-y-liquidaciones) (ejemplos P1 a P5)
 10. [La base de datos](#la-base-de-datos)
 11. [Seguridad](#seguridad)
 12. [Decisiones tomadas y por confirmar](#decisiones-tomadas-y-por-confirmar)
@@ -178,10 +178,14 @@ comisión: el neto, las comisiones y el reparto no cambian (ver
 - **En Registrar y en el detalle.** Al final del desglose: «Retiene OTF Demo (5 %)» $50,00, a quién le cae y cuánto
   (Titular A $25,00 · Titular B $25,00), «Se libera hacia el jue 10 dic 2026» y **«Llega al banco»** $920,80: el
   neto menos lo retenido. Con un reembolso total retiene $0,00 y dice «Sin nada cobrado, no retiene nada.»
-- **En el reparto.** A cada persona que recibe retención: «ya recibió $25,00 de la retención · falta $25,00». Si lo
-  retenido pasa de su parte, lo de más es un adelanto: «ya recibió $50,00 de la retención · $31,94 de adelanto». Si
-  recibe retención sin estar en el reparto de ese cobro, la vista previa y el detalle lo advierten: «Grupo C recibe
-  $50,00 de la retención pero no está en el reparto de este cobro: es un adelanto y su saldo baja.»
+- **En el reparto.** A cada persona que recibe retención: «ya recibió $25,00 de la retención».
+  - En la vista previa de Registrar y en el PDF sigue «· falta $25,00»: su parte menos lo retenido. Si lo retenido
+    pasa de su parte, lo de más es un adelanto: «ya recibió $50,00 de la retención · $31,94 de adelanto».
+  - En el detalle del cobro, lo que falta lo dice el estado de pago de la parte, que cuenta también lo ya pagado:
+    «Falta $25,00», o «Se le pagó de más $31,94» si fue un adelanto (ver «Marcar lo que ya se le pagó a cada parte»,
+    más abajo).
+  - Si recibe retención sin estar en el reparto de ese cobro, la vista previa y el detalle lo advierten: «Grupo C
+    recibe $50,00 de la retención pero no está en el reparto de este cobro: es un adelanto y su saldo baja.»
 - **En la ficha del beneficiario y en Repartos.** «Retenido» va junto a «Asignado» y «Liquidado», y el saldo ya lo
   descuenta: «Retenido: lo que una pasarela ya le pagó de lo que retuvo. El saldo lo descuenta.» Sin nada retenido,
   esa fila no sale.
@@ -221,7 +225,54 @@ esperada; las demás quedan plegadas en **«Más acciones»**, y debajo vienen l
 
 **Registrar una liquidación.** Repartos → el beneficiario → «Registrar liquidación»: tipo («Pago al beneficiario»
 o «Devolución a la empresa»), monto, moneda, fecha, medio, nota y comprobante → **«Registrar liquidación»**. El
-saldo se actualiza.
+saldo se actualiza. Una liquidación registrada aquí no dice de qué cobros es: para eso se marca desde los cobros.
+
+**Marcar lo que ya se le pagó a cada parte.** Cada pago a una parte del reparto se anota desde sus cobros. Es una
+liquidación de esa parte, ligada a esos cobros: su saldo baja en lo mismo. No mueve dinero, anota que ya se pagó.
+Las cuentas, en [Lo pagado a cada parte de un cobro](#lo-pagado-a-cada-parte-de-un-cobro).
+
+- **En el detalle del cobro.** En «Reparto», cada parte dice su estado: **«Pagado»**, **«Falta $25,00»** o **«Se le
+  pagó de más $10,00»**. Lo retenido se ve como ya recibido («ya recibió $25,00 de la retención») y lo que falta ya
+  lo descuenta.
+  - **«Marcar pagado…»**, en cada parte a la que le falta algo: el monto (viene con lo que falta; se baja para un
+    pago parcial), la fecha del pago (hoy) y el medio (opcional) → **«Marcar pagado»**. No deja pasar de lo que
+    falta: «No puede pasar de lo que falta ($580,53)».
+  - **«Marcar todo el reparto pagado…»**, al pie del reparto: lista cada parte a la que le falta algo, con su monto
+    y «En total». La fecha y el medio valen para todas → **«Marcar 4 pagos»**: un pago por parte, con una sola
+    confirmación ([P2](#lo-pagado-a-cada-parte-de-un-cobro)).
+  - Cada pago queda bajo su parte: «Pagado el sáb 14 nov 2026: $500,00». Si cubre otros cobros, añade «(de un pago
+    de $580,54 por 2 cobros)». Una devolución dice «Devolvió el …».
+  - **«Deshacer»** borra el pago entero, tras confirmar. Si es solo de este cobro: «Se borra el pago a Grupo A de
+    $500,00 del sáb 14 nov 2026, y en este cobro vuelve a faltarle eso.» Si cubre varios, dice cuáles se desmarcan
+    y cuánto ([P5](#lo-pagado-a-cada-parte-de-un-cobro)).
+  - Quien tiene pagos en el cobro sin estar ya en su reparto (se cambió el esquema después de pagarle) sale aparte,
+    en «Pagos a quien no está en el reparto».
+  - Un cobro fallido o en la papelera no tiene estado ni «Marcar…». Sus pagos se ven y se pueden deshacer.
+- **En la lista de Cobros.** Bajo la empresa y la pasarela, una marca: **«Reparto pagado»** o **«Reparto: 2 de 4
+  pagados»**. Sin reparto, no hay marca. «Más filtros» → «Reparto» → **«Reparto pendiente»** deja solo los cobros
+  con alguna parte a la que le falta algo o a la que se le pagó de más. Vale para la página, los totales, el CSV y el
+  PDF del filtro.
+- **Pagar varios cobros a la vez.** Marcar las casillas de los cobros → en la barra, **«Pagar repartos…»**. Dice lo
+  que se le debe ahora a cada parte en esos cobros, por moneda: Grupo A, $1.161,06, «en 2 cobros». Cada parte tiene
+  su casilla:
+  - las de «Les falta» vienen marcadas;
+  - las de «Se les pagó de más» salen aparte y sin marcar («devuelve $600,00»): no se incluyen solas, decide el
+    dueño. Si se marca una, se registra su devolución;
+  - las partes que no deben nada no salen.
+
+  La fecha y el medio → **«Registrar 4 pagos»**: un pago por parte y moneda, con lo de cada cobro
+  ([P3](#lo-pagado-a-cada-parte-de-un-cobro)).
+- **En la ficha del beneficiario.** En «Liquidaciones», cada pago ligado dice de qué cobros es: «De estos 2 cobros:»,
+  con un enlace a cada uno (por su referencia, o «Cobro del …» si no tiene) y lo de cada cobro. Al borrarlo, la
+  confirmación avisa: «Sus 2 cobros se desmarcan.»
+- **Si algo cambió mientras tanto** (otra pestaña pagó, hubo un reembolso), no se guarda nada: «Lo que falta pagar
+  cambió mientras lo veías (otro pago, un reembolso o un cambio en el cobro). No se guardó nada: vuelve a cargar la
+  página.»
+- **Un cobro con pagos no se borra del todo.** En la papelera, «Borrar del todo» se niega: «No se puede borrar del
+  todo un cobro con partes del reparto ya pagadas. Deshaz esos pagos (en el detalle del cobro o en la ficha de cada
+  beneficiario) y vuelve a intentarlo.» «Vaciar la papelera» se niega igual si alguno los tiene, y no dice cuál (fila
+  [(ah)](#decisiones-tomadas-y-por-confirmar)).
+- **Exportar todo** lleva de qué cobros es cada pago y cuánto de cada uno.
 
 **Importar un CSV.** Importar → empresa, pasarela, canal y opciones (por ejemplo, «Pago rápido»; valen para todo
 el archivo) → el archivo. Reconoce por sí mismo los formatos de Stripe (informe de saldo y exportación de pagos) y la
@@ -238,10 +289,57 @@ aunque se importe dos veces. Los reembolsos del archivo no se importan: se regis
 ningún archivo (ni los comprobantes ni los logos de las empresas). Para una lista filtrada, Cobros → **«Exportar
 CSV»**.
 
+**Sacar un PDF de cobros.** Un PDF de verdad, armado en el servidor, para guardar o mandar. Hay tres botones en
+Cobros:
+
+- **Los elegidos.** Marcar las casillas → en la barra, **«PDF»**, aparte de las acciones. Salen en el orden en que
+  se eligieron. El archivo: `cobros-elegidos-2026-11-14.pdf`.
+- **El filtro de la lista.** **«PDF»**, junto a «Exportar CSV»: todo el filtro, no solo la página, con las mismas
+  claves que el CSV y en el orden de la lista. El archivo: `cobros-2026-11-14.pdf`.
+- **Hoy.** **«PDF de hoy»**, al lado: los cobros de hoy en Nueva York, sin mirar el filtro. Está porque la lista no
+  tiene «Hoy» entre sus períodos. El archivo, como el del filtro.
+
+La fecha del nombre es la de hoy en Nueva York. No salen los cobros de la papelera, ni un id que el usuario no ve
+(de otro usuario o que no existe), y eso no es un error.
+
+- **Tope: 300 cobros.** Con más no se arma nada. El botón lo dice en un aviso que se anuncia al lector de pantalla:
+  «Son 412 cobros; el PDF admite hasta 300. Acota el filtro.» (con los elegidos, «Elige menos.» en vez de «Acota el
+  filtro.»). 300 cobros son unas 101 páginas y 250 KB, y se arman en menos de un segundo: de 0,5 a 0,8 s, de leer a
+  dibujar, contra el Supabase local.
+- **Qué lleva.** Página Carta vertical y «Página X de Y» al pie.
+  - Arriba: «Cobros», qué abarca y cuándo se generó. Qué abarca es «Seleccionados (12)», o el período y los filtros
+    en palabras: «Del dom 1 nov 2026 al sáb 14 nov 2026 · Empresa: Tienda Demo · Estado: Depositado». Debajo,
+    «Generado el sáb 14 nov 2026, 10:30 (hora de Nueva York)».
+  - Cada cobro, en un bloque: la empresa (y el canal), la fecha y hora, la pasarela, la referencia y la moneda, y el
+    estado con la fecha del depósito, real o estimada («Depositado el vie 13 nov 2026», «Registrado · llega el jue
+    12 nov»). Debajo, dos columnas:
+    - **Desglose**: lo cobrado y lo reembolsado (si hubo reembolso), el bruto, cada comisión con su cuenta («2,9 % +
+      $0,20 de $1.000,00»), las comisiones, quién las pagó, el neto y, si la pasarela retuvo algo, lo retenido, a
+      quién le cae, cuándo se libera y «Llega al banco»;
+    - **Reparto**: sobre qué se reparte y cada parte con su %, «Resto» y «no paga comisión»; a quien recibe
+      retención, «ya recibió $25,00 de la retención · falta $25,00».
+
+    Todo sale del desglose congelado, igual que en el detalle: no se recalcula nada. Un cobro no se parte entre dos
+    páginas, salvo que no quepa en una.
+  - Al final, un bloque por moneda, «Totales en USD»: cobros, bruto, comisiones, neto, retenido y «Llega al banco»,
+    y el **reparto por parte** en esos cobros, por nombre, con lo que cada una ya recibió de la retención.
+  - Los fallidos salen con su estado, pero no cuentan en los totales, y el bloque lo dice: «Sin contar 1 fallido.»
+
+  Con E10 solo: comisión **29,20**, neto **970,80**, retenido **50,00** (Titular A 25,00 · Titular B 25,00), llega
+  al banco **920,80**, y el reparto Grupo A **580,53** · Grupo B **290,27** · Titular A **50,00** · Titular B
+  **50,00**.
+- **Lo que no dice: lo ya pagado a cada parte.** Su «falta» es la parte menos lo retenido, como en la vista previa de
+  Registrar. Lo que falta pagar de verdad está en el detalle de cada cobro y en el filtro «Reparto pendiente» (fila
+  [(ao)](#decisiones-tomadas-y-por-confirmar)).
+- **En el celular** funciona igual, desde la barra de elegidos y desde los botones de la lista: el archivo se
+  descarga con su nombre, sin abrir otra página. Mientras se arma, el botón dice «Armando el PDF…» y no se puede
+  pulsar otra vez. Si algo falla: «No se pudo armar el PDF. Revisa la conexión y vuelve a intentarlo.»
+
 **Si se corta la red al guardar**, la pantalla no da nada por hecho: dice que no se sabe si se guardó y, en los
 diálogos y botones, ofrece **«Ver cómo quedó»**, que vuelve a leer lo guardado. Lo escrito no se pierde. En
-Registrar cobro y en una liquidación, reenviar el mismo formulario no duplica nada. Si antes de reenviarlo se cambió
-un dato, avisa de que ya se había guardado con los datos del primer intento, pero no con cualquier dato:
+Registrar cobro, en una liquidación y al marcar pagos del reparto, reenviar el mismo formulario no duplica nada. Si
+antes de reenviarlo se cambió un dato, avisa de que ya se había guardado con los datos del primer intento, pero no
+con cualquier dato:
 
 - En Registrar cobro avisa si cambió el monto, la moneda, la fecha, la empresa, el canal, la pasarela, las opciones,
   quién paga la comisión, quién no paga comisión, el esquema, la referencia, el estado inicial, la fecha del
@@ -249,6 +347,9 @@ un dato, avisa de que ya se había guardado con los datos del primer intento, pe
   la que pone la app) no se detecta: se toma como el mismo envío y ese cambio se pierde.
 - En una liquidación avisa si cambió el beneficiario, la fecha, la moneda o el monto, o si se puso o se quitó el
   comprobante. Un cambio en el medio de pago o en la nota no se detecta y se pierde.
+- Al marcar pagos («Marcar pagado…», «Marcar todo el reparto pagado…» o «Pagar repartos…») avisa si cambió la fecha
+  o el monto: «Ese pago ya se había guardado en el primer intento, con los datos de entonces: lo que cambiaste no se
+  guardó. Mira cómo quedó el reparto.» Un cambio en el medio no se detecta y se pierde.
 
 Lo mismo pasa al entrar, al escribir el código y en Ajustes → Seguridad. Entrar y el código piden repetir, que es
 seguro. Al entrar se conserva el correo, pero la contraseña y los códigos de 6 dígitos hay que escribirlos otra vez.
@@ -263,7 +364,7 @@ con su propio `package.json`. No comparte código con el otro proyecto que está
 | Pieza | Qué hace |
 |---|---|
 | **Motor** | Funciones puras que hacen todas las cuentas. No tocan la red, la base ni el reloj: la fecha de «hoy» les llega como parámetro. Por eso se prueban solas y dan lo mismo en el servidor y en el navegador |
-| **Base** | Postgres en Supabase: 19 tablas `pay_*`, sus reglas, cuatro funciones que guardan varias tablas a la vez y cuatro vistas de totales |
+| **Base** | Postgres en Supabase: 20 tablas `pay_*`, sus reglas, cinco funciones que guardan varias tablas a la vez, una columna calculada (`pay_payout_pending`) y cuatro vistas de totales |
 | **Capa de servidor** | Lee con la sesión del usuario y escribe llamando al motor y a las funciones de la base. Es la que manda: no se fía de lo que calculó el navegador |
 | **Pantallas** | Formularios y listas, pensadas primero para el celular. Usan el motor para la vista previa |
 | **Pruebas** | Del motor (junto al código), de la base y de la capa de servidor (contra el Supabase local) y de punta a punta (con un navegador) |
@@ -298,10 +399,10 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 | `src/server/pasarelas/` | **La capa de servidor**: lecturas (`queries/`), operaciones (`ops/`), las acciones del servidor que llaman las pantallas (`actions/`) y lo que comparten |
 | `src/lib/supabase/` | Los clientes de Supabase (navegador, servidor y proxy) y los tipos generados de la base |
 | `src/lib/auth/`, `src/proxy.ts` | La sesión verificada de cada petición y el refresco de la sesión |
-| `src/app/` | La entrada (`/login`), Ajustes (con «Exportar todo»), la galería del kit y las pantallas del libro, bajo `/pasarelas` |
+| `src/app/` | La entrada (`/login`), Ajustes (con «Exportar todo»), la galería del kit y las pantallas del libro, bajo `/pasarelas`, con las descargas de Cobros (`cobros/exportar` y `cobros/pdf`) |
 | `src/components/ui/`, `src/components/shell/` | Kit propio de interfaz y marco de navegación |
 | `src/components/pasarelas/` | Las piezas de cada pantalla del libro |
-| `supabase/migrations/` | El esquema de la base: seis migraciones aditivas, de `20261110120000_las_pasarelas_de_pago.sql` a `20261115120000_pasarelas_6_retencion.sql` |
+| `supabase/migrations/` | El esquema de la base: siete migraciones aditivas, de `20261110120000_las_pasarelas_de_pago.sql` a `20261116120000_pasarelas_7_pagos_por_cobro.sql` |
 | `supabase/config.toml` | El Supabase local: registro público apagado, segundo factor TOTP encendido |
 | `scripts/` | El arranque del Supabase local (`stack.sh`), la semilla de ejemplo (`npm run seed`) y las capturas |
 | `tests/integration/` | Pruebas contra el Supabase local: RLS, cuadres, funciones, Storage, sesiones, borrado de usuario y cada parte del libro |
@@ -324,6 +425,7 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 | `write.ts` | Cada cambio sobre un cobro (crear, editar, reembolsar, disputar, depositar…), planeado como una escritura |
 | `stats.ts` | Resumen por moneda (con lo retenido y lo que llega al banco), tiempos reales de depósito y próximos depósitos |
 | `schemes.ts` | Validar un esquema de reparto antes de guardarlo |
+| `payouts.ts` | Lo que falta pagarle a cada parte del reparto de un cobro (`payoutStatus`), lo que se le debe a cada parte en varios cobros, por moneda (`owedByPart`), y cuánto se le puede pagar sin pasarse (`fitsOwed`) |
 | `guards.ts` | Guardas para textos libres: tarjetas, números largos y enlaces |
 | `csv.ts` | Armar un CSV para descargar, protegido contra fórmulas |
 | `import/` | Leer el CSV de una pasarela: reconocer el formato, convertir cada fila y separar repetidos y posibles repetidos |
@@ -339,8 +441,11 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 | `action.ts` | `runAction`: la envoltura de cada acción del servidor (sesión, validación, error en español, revalidar) |
 | `queries/config.ts`, `queries/session-config.ts` | Lee toda la configuración del usuario (`loadPayConfig`, `getPayConfig`) y siembra los feriados (`ensureHolidays`) |
 | `queries/transactions.ts` | Los filtros, la lista por páginas, las filas para totales y el detalle de un cobro |
-| `queries/…` | Una lectura por pantalla: resumen, empresas, pasarelas, cuentas, feriados, repartos, liquidaciones, importar y exportar |
+| `queries/settlements.ts` | Las liquidaciones de un beneficiario con sus cobros, el estado de pago de cada cobro (`payoutStatuses`), lo que se debe en los cobros elegidos (`listOwed`) y los pagos ligados a un cobro (`listTxPayouts`) |
+| `queries/…` | Una lectura por pantalla: resumen, empresas, pasarelas, cuentas, feriados, repartos, importar y exportar |
 | `ops/transactions.ts` | Registrar, editar, reembolsar, disputar, depositar, recalcular, fechas estimadas, papelera y borrado definitivo |
+| `ops/settlements.ts` | Registrar y borrar liquidaciones (con su comprobante) y registrar pagos ligados a sus cobros (`recordPayouts`). Borrar una liquidación es también el «Deshacer» de un pago |
+| `pdf/` | El PDF de cobros: qué cobros pide la URL y cómo se dice (`scope.ts`), el modelo puro (`model.ts`), el dibujo con pdfkit (`draw.ts`) y la lectura con la RLS y la respuesta (`cobros.ts`) |
 | `ops/receipts.ts` | Registrar y quitar un comprobante, y firmar su URL |
 | `ops/…` | Las escrituras de cada parte: empresas, pasarelas (con su retención), cuentas, feriados, repartos, liquidaciones e importar |
 | `actions/…` | Las acciones del servidor que llaman las pantallas, cada una con su esquema de validación. Delgadas: sesión, validación y la `op` que toca |
@@ -1100,7 +1205,10 @@ ese dato. La dejan fuera quienes le pasan las filas:
 - la lista de cobros y las filas para totales (`listTx` y `leanTx`), que pasan por `applyTxFilters`: por defecto
   solo trae cobros fuera de la papelera (y, cuando se pide la papelera, solo los de ella);
 - tres lecturas más, cada una con su propio filtro de `deleted_at`: el último cobro (`lastTx`, para «Repetir el
-  último»), los repartos de un beneficiario y la búsqueda de posibles repetidos al importar.
+  último»), los repartos de un beneficiario y la búsqueda de posibles repetidos al importar;
+- lo que falta pagar a cada parte: `payoutStatuses` le dice al motor que el cobro no cuenta (`counts: false`) y
+  `pay_payout_pending` mira `deleted_at` en la base;
+- el PDF de los elegidos, que deja fuera los que ya están en la papelera.
 
 El detalle de un cobro y las lecturas por id sí traen los de la papelera: así se abren y se restauran.
 
@@ -1178,7 +1286,7 @@ Cada empresa puede tener un esquema por defecto. Un cobro sin esquema no tiene r
 La vista `pay_beneficiary_balances` da, por beneficiario **y por moneda**:
 
 - **Asignado:** la suma de lo que le tocó en cada cobro. No cuentan los cobros de la papelera ni los fallidos.
-- **Liquidado:** la suma de sus liquidaciones.
+- **Liquidado:** la suma de sus liquidaciones, ligadas a cobros o no.
 - **Retenido** (`retained`): lo que ya le pagó una pasarela de lo que retuvo
   ([E10](#e10--la-pasarela-retiene-una-parte-para-ciertas-personas)). Tampoco cuentan los cobros de la papelera ni los
   fallidos.
@@ -1203,24 +1311,107 @@ de pago, nota y, si se quiere, un comprobante.
 Siguiendo E4: el Grupo A quedó con saldo −46,75. Cuando devuelve esos 46,75 se registra una liquidación de −46,75.
 Lo liquidado pasa a 45,15 − 46,75 = −1,60, igual que lo asignado, y el saldo queda en 0,00.
 
+Desde la migración 7, una liquidación puede estar **ligada a sus cobros**: dice de qué cobros es y cuánto de cada
+uno. Son las que crean «Marcar pagado…», «Marcar todo el reparto pagado…» y «Pagar repartos…». Las registradas a
+mano en la ficha no dicen de qué cobros son. En el saldo cuentan igual.
+
+### Lo pagado a cada parte de un cobro
+
+Lo que se le debe a una parte del reparto en un cobro:
+
+**Lo que falta = su reparto − lo que la pasarela le retuvo en ese cobro − lo ya pagado ligado a ese cobro.**
+
+- Mayor que 0: le falta. En pantalla, «Falta $25,00».
+- 0: está pagada. «Pagado».
+- Menor que 0: se le pagó de más y tiene que devolver. «Se le pagó de más $10,00». Pasa, por ejemplo, si hubo un
+  reembolso después de pagarle.
+
+En cada parte, lo pagado + lo que falta + lo retenido = su reparto, siempre.
+
+- **Las partes** de un cobro son quienes están en su reparto y quienes tienen pagos ligados a él sin estar en el
+  reparto (se cambió el esquema después de pagarles: todo lo suyo se le pagó de más). Quien solo recibe lo retenido
+  sin estar en el reparto **no** es una parte: lo suyo ya es un adelanto que baja su saldo (fila
+  [(ab)](#decisiones-tomadas-y-por-confirmar)).
+- **Sin estado.** Un cobro sin reparto no tiene estado ni marca. Uno fallido o en la papelera no tiene nada
+  pendiente, aunque tenga pagos.
+- **El reparto está pagado** cuando todas sus partes lo están. Está **pendiente** si a alguna le falta algo o se le
+  pagó de más: es lo que trae el filtro «Reparto pendiente». La marca de la lista cuenta las pagadas: «Reparto: 2 de
+  4 pagados».
+- **Lo pagado en un cobro nunca pasa de lo que falta**, ni cambia de signo. A una parte a la que le faltan 25,00 se
+  le pagan como mucho 25,00. A una que tiene 600,00 de más se le registra una devolución de hasta 600,00.
+
+Los casos usan [E10](#e10--la-pasarela-retiene-una-parte-para-ciertas-personas): OTF Demo, 1000,00 USD. El reparto
+es Grupo A 580,53 · Grupo B 290,27 · Titular A 50,00 · Titular B 50,00, y la pasarela le retuvo 25,00 a cada
+titular.
+
+**P1**, recién registrado. Nada pagado.
+
+- Grupo A: 580,53 − 0,00 − 0,00 = **580,53**: «Falta $580,53».
+- Grupo B: 290,27 − 0,00 − 0,00 = **290,27**: «Falta $290,27».
+- Titular A: 50,00 − 25,00 − 0,00 = **25,00**: «Falta $25,00». Titular B, lo mismo.
+- En la lista: «Reparto: 0 de 4 pagados». Sale en «Reparto pendiente».
+
+**P2**, «Marcar todo el reparto pagado…» desde el detalle de P1.
+
+- El diálogo lista Grupo A $580,53, Grupo B $290,27, Titular A $25,00 y Titular B $25,00. En total, **920,80**. En
+  E10 es justo lo que llega al banco: el reparto suma el neto (970,80) y los titulares ya recibieron lo retenido
+  (50,00).
+- «Marcar 4 pagos» crea **4 liquidaciones**, de 580,53, 290,27, 25,00 y 25,00, cada una con una parte: este cobro.
+- Las cuatro partes quedan «Pagado». En la lista, «Reparto pagado», y ya no sale en «Reparto pendiente».
+- Los saldos bajan en lo mismo. Grupo A, de 580,53 a **0,00**. Titular A: 50,00 asignado − 25,00 liquidado − 25,00
+  retenido = **0,00**.
+
+**Un pago parcial**, sobre P1. «Marcar pagado…» a Grupo A por 500,00: queda «Falta $80,53». Con 600,00 no deja: «No
+puede pasar de lo que falta ($580,53)». Después, un pago de 80,53 la deja «Pagado»; uno de 80,54, no.
+
+**P3**, dos cobros como E10 elegidos en la lista → «Pagar repartos…».
+
+- Grupo A: 580,53 + 580,53 = **1161,06**, en 2 cobros.
+- Grupo B: 290,27 + 290,27 = **580,54**.
+- Titular A: 25,00 + 25,00 = **50,00**. Titular B, lo mismo.
+- «Registrar 4 pagos» crea **4 liquidaciones** (1161,06, 580,54, 50,00 y 50,00), cada una con **dos partes**, una
+  por cobro: la de Grupo B, 290,27 + 290,27.
+- Los dos cobros quedan «Reparto pagado». Con el filtro «Reparto pendiente», la lista queda vacía.
+
+**P4**, después de P2, un reembolso total del cobro. Es E10b: el reparto pasa a −19,47 · −9,73 · 0,00 · 0,00, y lo
+retenido, a 0,00.
+
+- Grupo A: −19,47 − 0,00 − 580,53 = **−600,00**: «Se le pagó de más $600,00».
+- Grupo B: −9,73 − 0,00 − 290,27 = **−300,00**: «Se le pagó de más $300,00».
+- Titular A: 0,00 − 0,00 − 25,00 = **−25,00**: «Se le pagó de más $25,00». Titular B, lo mismo. Con el reembolso
+  total la pasarela no retiene nada, así que lo retenido ya no le descuenta.
+- En la lista: «Reparto: 0 de 4 pagados». Vuelve a salir en «Reparto pendiente».
+- En «Pagar repartos…» salen aparte y sin marcar: Grupo A «devuelve $600,00», Grupo B $300,00 y cada titular
+  $25,00. Si se marcan, cada una registra su devolución: una liquidación negativa.
+
+**P5**, sobre P3, «Deshacer» el pago de Grupo B desde el detalle del primer cobro. Ese pago dice «Pagado el sáb 14
+nov 2026: $290,27 (de un pago de $580,54 por 2 cobros)». La confirmación avisa que desmarca los dos: «El pago a
+Grupo B de $580,54 del sáb 14 nov 2026 cubre 2 cobros, y se desmarcan los dos: este ($290,27) y el cobro E10-b
+($290,27). No se puede deshacer.»
+
+- Se borra la liquidación con sus dos partes.
+- En los dos cobros, Grupo B vuelve a «Falta $290,27». Las otras tres partes siguen pagadas: «Reparto: 3 de 4
+  pagados», y los dos vuelven a «Reparto pendiente».
+- El saldo de Grupo B sube 580,54.
+
 ## La base de datos
 
-Todo está en migraciones aditivas (seis, de `20261110120000` a `20261115120000`): solo crean o cambian objetos con
+Todo está en migraciones aditivas (siete, de `20261110120000` a `20261116120000`): solo crean o cambian objetos con
 prefijo `pay_` y, la primera, además el esquema `private`, el bucket `comprobantes` y sus políticas. Si el proyecto
 ya tiene un esquema `private` o un bucket `comprobantes`, la primera los reutiliza y les cambia permisos y políticas
 (el paso 1 de [«Pasar a producción»](../README.md#pasar-a-producción) dice qué mirar antes).
 
-Columnas comunes de las 19 tablas:
+Columnas comunes de las 20 tablas:
 
 - Todas tienen `id` (uuid) y `user_id` (el dueño de la fila, que se borra en cascada con el usuario).
 - Todas menos `pay_transaction_events` tienen `created_at`. El historial guarda su fecha en la columna `at`.
 - Diez tienen `updated_at`, que mueve un disparador: `pay_bank_accounts`, `pay_beneficiaries`, `pay_schemes`,
   `pay_companies`, `pay_channels`, `pay_gateways`, `pay_gateway_extras`, `pay_company_gateways`, `pay_settlements`
   y `pay_transactions`.
-- `pay_allocations`, `pay_transaction_receipts`, `pay_holidays`, `pay_gateway_retention_recipients` y
-  `pay_retention_shares` admiten actualizaciones y **no** tienen `updated_at`.
+- `pay_allocations`, `pay_transaction_receipts`, `pay_holidays`, `pay_gateway_retention_recipients`,
+  `pay_retention_shares` y `pay_settlement_items` admiten actualizaciones y **no** tienen `updated_at`.
 
-### Las 19 tablas
+### Las 20 tablas
 
 | Tabla | Qué guarda |
 |---|---|
@@ -1242,6 +1433,7 @@ Columnas comunes de las 19 tablas:
 | `pay_transaction_receipts` | Los comprobantes de un cobro (el archivo está en Storage; aquí, su ruta, tipo y tamaño) |
 | `pay_transaction_events` | El historial de cada cobro, con el antes y el después |
 | `pay_settlements` | Las liquidaciones a beneficiarios |
+| `pay_settlement_items` | De qué cobros es cada liquidación y cuánto de cada uno: liquidación, cobro, beneficiario y monto |
 | `pay_holidays` | Los feriados de cada usuario |
 
 ### Lo que la base hace cumplir
@@ -1304,12 +1496,41 @@ por fila, para poder guardar el cobro, su reparto y las partes de lo retenido ju
 - La cuenta no la hace la base: la hace el motor (`retentionOf`) con la regla congelada en el desglose
   (`rules.gateway.retention`). La base guarda el resultado y comprueba que cuadre.
 
+**Los pagos ligados a sus cobros** (migración 7, `20261116120000_pasarelas_7_pagos_por_cobro.sql`):
+
+- `pay_settlement_items`: una fila por cobro en cada liquidación, con `settlement_id`, `transaction_id`,
+  `beneficiary_id` y `amount` (`numeric(14,2)`, nunca 0: `pay_settlement_items_amount_check`). Negativo es lo que la
+  parte devuelve de ese cobro. Un cobro va una sola vez en cada liquidación (`pay_settlement_items_uq`).
+- Lleva lo mismo que `pay_allocations`: `user_id`, `unique (id, user_id)`, claves foráneas compuestas con `user_id`,
+  RLS por usuario, la política restrictiva del segundo factor y permisos explícitos.
+- **Una clave nueva en `pay_settlements`**: `pay_settlements_id_beneficiary_uq (id, beneficiary_id, user_id)`. Cada
+  parte apunta a su liquidación por esas tres columnas: no puede ser de otro beneficiario, y una liquidación con
+  partes no cambia de beneficiario. `id` ya era único, así que la clave no cambia qué filas se admiten.
+- **Borrar** la liquidación borra sus partes (cascada). La clave hacia el cobro no lleva cascada: borrar del todo un
+  cobro con partes pagadas falla.
+- **Tres disparadores diferidos**, que miran al confirmar la transacción, con el patrón de `pay_assert_allocations`
+  (`private.pay_assert_settlement_items`). Saltan al tocar una parte (`pay_settlement_items_check`), al cambiar el
+  monto o la moneda de una liquidación (`pay_settlements_items_check`) y al cambiar la moneda de un cobro con partes
+  (`pay_transactions_settlement_currency_check`). Exigen dos cosas:
+  - si la liquidación tiene partes, suman exactamente su monto (`pay_settlement_items_sum_mismatch`);
+  - cada cobro es de la moneda de la liquidación (`pay_settlement_items_currency_mismatch`).
+
+  Una liquidación sin partes no se mira: es de las de siempre.
+- **Lo que la base no comprueba**: que un pago no pase de lo que falta. Lo comprueba el servidor (`fitsOwed`, en
+  `recordPayouts`), contra lo que hay en la base en ese momento. Una liquidación a mano puede ser de cualquier monto,
+  como antes.
+- **Las vistas de saldos no cambian.** Las partes viven dentro de las liquidaciones, y `pay_beneficiary_balances`
+  sigue sumando las liquidaciones. Pagar E10 con partes da el mismo saldo que pagarlo con liquidaciones a mano: Grupo
+  A, 580,53 asignado, 580,53 liquidado, saldo **0,00**; Titular A, 50,00 asignado, 25,00 liquidado, 25,00 retenido,
+  saldo **0,00**. Una prueba lo comprueba.
+
 **Nada apunta a datos de otro usuario.** Cada tabla tiene `unique (id, user_id)` y las claves foráneas son
-compuestas, con `user_id`. Tres van más lejos:
+compuestas, con `user_id`. Cuatro van más lejos:
 
 - El canal de un cobro tiene que ser de **esa** empresa.
 - La tarifa de un cobro tiene que ser de **esa** pasarela.
 - La versión de esquema de un cobro tiene que ser de **ese** esquema.
+- La parte de una liquidación tiene que ser del beneficiario de **esa** liquidación.
 
 **Nombres únicos por usuario** en empresas, pasarelas, beneficiarios y esquemas, sin distinguir mayúsculas ni
 espacios de los extremos. Otro usuario sí puede usar el mismo nombre.
@@ -1327,6 +1548,7 @@ importar.
 - un feriado del mismo usuario en el mismo día (por eso `ensureHolidays` ignora los repetidos al sembrar);
 - un beneficiario en el reparto de un mismo cobro, o en las líneas de una misma versión de esquema;
 - una persona en la retención de una misma pasarela, o en lo retenido de un mismo cobro;
+- un cobro en las partes de una misma liquidación;
 - la ruta de un comprobante.
 
 **Tablas de solo añadir:**
@@ -1341,13 +1563,16 @@ importar.
 - **Eventos del historial:** ni se editan ni se borran. Se van con su cobro.
 
 **Lo que tiene cobros no se borra.** Una pasarela, un canal, una empresa, un beneficiario, un esquema, una tarifa o
-una versión de esquema con cobros no se pueden borrar: la clave foránea lo impide. Hay pruebas para los siete.
+una versión de esquema con cobros no se pueden borrar: la clave foránea lo impide. Hay pruebas para los siete. Al
+revés pasa lo mismo desde la migración 7: un cobro con partes pagadas no se borra del todo
+(`pay_settlement_items_transaction_fk`).
 
-**Dos borrados que sí pasan, con efecto:**
+**Tres borrados que sí pasan, con efecto:**
 
 - Una **cuenta destino** con cobros sí se puede borrar. Sus cobros, y las cuentas de pasarela que la usaban, quedan
   sin cuenta destino, y esos cobros dejan de salir en `pay_bank_account_totals`.
 - Borrar un **esquema sin cobros** deja sin esquema por defecto a las empresas que lo tenían.
+- Borrar una **liquidación ligada a cobros** borra sus partes: a esos cobros les vuelve a faltar lo que pagaba.
 
 **`receipts_count` está protegido.** El contador de comprobantes de un cobro solo lo mueve el disparador de la tabla
 de comprobantes. Si una sentencia intenta escribirlo a mano, la base lo ignora: una inserción empieza en 0 y una
@@ -1376,7 +1601,7 @@ disputa que se anula.
 
 **La migración se revisa a sí misma.** Al final falla si alguna tabla `pay_*` quedó sin RLS, sin la política del
 segundo factor o sin su `unique (id, user_id)`, o si el bucket `comprobantes` quedó sin sus dos políticas
-restrictivas. Las migraciones 2, 3, 4 y 6 repiten al final la comprobación de RLS y de la política del segundo
+restrictivas. Las migraciones 2, 3, 4, 6 y 7 repiten al final la comprobación de RLS y de la política del segundo
 factor.
 
 Un detalle para quien mantenga: `pay_company_gateways.default_extra_ids` es un arreglo de ids sin clave foránea. El
@@ -1384,7 +1609,7 @@ motor ignora los ids que ya no existen o están inactivos.
 
 ### Funciones atómicas
 
-Las cuatro corren con los permisos de quien llama (`security invoker`): la RLS y el segundo factor siguen aplicando.
+Las cinco corren con los permisos de quien llama (`security invoker`): la RLS y el segundo factor siguen aplicando.
 Exigen una sesión de usuario.
 
 | Función | Qué hace |
@@ -1393,9 +1618,17 @@ Exigen una sesión de usuario.
 | `pay_save_scheme(p)` | Si no llega `scheme_id`, crea el esquema. Si llega, le cambia el nombre (si viene `name`) y las notas (si viene la clave `notes`). En los dos casos le agrega una versión con sus líneas. Cada línea trae `beneficiary_id`, `pct` y, desde la migración 5, `fee_exempt` (si no viene, `false`). Devuelve el esquema, la versión y su número |
 | `pay_create_gateway(p)` | Crea una pasarela con su primera tarifa («desde el inicio») y sus opciones |
 | `pay_save_gateway_retention(p)` | Desde la migración 6. Fija el % y los días de la retención de una pasarela y reemplaza a sus personas. `p`: `gateway_id`, `pct`, `days` y `recipients` (`beneficiary_id`, `pct`). Valida: con 0 % no hay personas; con más, al menos una; cada una es un beneficiario activo del usuario, una sola vez; los % suman exactamente 100. Si algo falla, no cambia nada |
+| `pay_record_payouts(p)` | Desde la migración 7. Crea de 1 a 200 liquidaciones, cada una con sus partes. `p`: `settlements`, cada una con `id`, `beneficiary_id`, `paid_on`, `currency`, `amount`, `method` y `note` (los dos últimos, opcionales) e `items` (`transaction_id`, `amount`; al menos uno). Idempotente por `id`: si ya existe y es igual (beneficiario, fecha, moneda, monto y los mismos cobros con sus montos), se salta; si es otra, `pay_payout_already_saved` y no se guarda nada. Todo o nada. Devuelve, por cada una y en el mismo orden, su `id` y si se insertó (`inserted`) |
 
 Quien llame a `pay_save_scheme` solo para agregar una versión no debe mandar `name` ni `notes`, salvo que quiera
 cambiarlos.
+
+**Una columna calculada.** `pay_payout_pending(t)` (migración 7) recibe la fila de un cobro y dice si a su reparto le
+queda algo pendiente: alguna parte a la que le falta algo o a la que se le pagó de más. Es la misma cuenta que
+`payoutStatus` del motor, con las mismas partes, y da `false` para un fallido o un cobro de la papelera. La API la
+expone como una columna más de `pay_transactions`: el filtro «Reparto pendiente» pide `pay_payout_pending` igual a
+`true`, y así cabe en la paginación, en los totales y en el CSV sin traer los cobros al navegador. Es `stable` y
+`security invoker`: lee con la RLS de quien pregunta. «Exportar todo» no la lleva, porque sale de las demás.
 
 Más sobre `pay_save_transactions`:
 
@@ -1454,6 +1687,10 @@ titular que no está en el reparto), y 10,00 liquidados al Grupo A:
 
 Y en su cuenta destino, sin depositar: `pending_net` 90,30 y `pending_payout` 85,30.
 
+La migración 7 no toca ninguna vista. Un pago ligado a sus cobros es una liquidación más, así que `settled` lo cuenta
+igual que a una registrada a mano: con E10 pagado del todo, el saldo de cada parte es 0,00 por los dos caminos (ver
+[Lo que la base hace cumplir](#lo-que-la-base-hace-cumplir)).
+
 Los totales **por período** (el Resumen, los totales de un filtro) no salen de estas vistas: los suma el motor sobre
 las filas del período, traídas por páginas (`leanTx`). La API tiene las agregaciones apagadas y un tope de 1000
 filas por petición. Cada página pide además el total de filas del filtro: si la respuesta llega sin ese total, la
@@ -1468,7 +1705,7 @@ pantalla.
 | Código | SQLSTATE | Cuándo | Mensaje para la persona |
 |---|---|---|---|
 | `pay_no_session` | 28000 | Se llamó a una función sin sesión de usuario | «Tu sesión terminó. Vuelve a entrar.» |
-| `pay_bad_payload` | 22023 | Lo que llegó no tiene la forma esperada. En `pay_save_transactions`: no es una lista, trae menos de 1 o más de 500 cobros, falta `tx`, modo desconocido. En `pay_save_scheme`: `lines` no es una lista. En `pay_create_gateway`: falta `fee`. En `pay_save_gateway_retention`: `recipients` no es una lista | El general: «No se pudo guardar. Inténtalo de nuevo.» |
+| `pay_bad_payload` | 22023 | Lo que llegó no tiene la forma esperada. En `pay_save_transactions`: no es una lista, trae menos de 1 o más de 500 cobros, falta `tx`, modo desconocido. En `pay_save_scheme`: `lines` no es una lista. En `pay_create_gateway`: falta `fee`. En `pay_save_gateway_retention`: `recipients` no es una lista. En `pay_record_payouts`: `settlements` no es una lista o trae menos de 1 o más de 200, una liquidación sin cobros, o sin id o sin beneficiario | El general: «No se pudo guardar. Inténtalo de nuevo.» |
 | `pay_tx_not_found` | P0002 | El cobro que se quiere actualizar no existe (o no es del usuario) | «Ese cobro ya no existe.» |
 | `pay_tx_conflict` | 40001 | El cobro cambió mientras se editaba | «Este cobro cambió mientras lo editabas: vuelve a abrirlo» |
 | `pay_scheme_not_found` | P0002 | El esquema no existe (o no es del usuario) | «Ese esquema de reparto ya no existe.» |
@@ -1483,6 +1720,9 @@ pantalla.
 | `pay_retention_not_100` | 23514 | Las personas no suman exactamente 100 % | «Los porcentajes de las personas tienen que sumar exactamente 100 %.» |
 | `pay_retention_inactive_beneficiary` | 23514 | Una persona no es un beneficiario activo del usuario | «Cada persona tiene que ser un beneficiario activo.» |
 | `pay_retention_sum_mismatch` | 23514 | Las partes de lo retenido no suman lo retenido | «Lo retenido no suma lo que recibe cada persona. No se guardó nada.» |
+| `pay_settlement_items_sum_mismatch` | 23514 | Las partes de una liquidación no suman su monto | El general de 23514. La app no llega ahí: el monto que manda es la suma de las partes |
+| `pay_settlement_items_currency_mismatch` | 23514 | Un cobro de la liquidación es de otra moneda | El general de 23514. La app lo frena antes con «Lo que falta pagar cambió mientras lo veías (otro pago, un reembolso o un cambio en el cobro). No se guardó nada: vuelve a cargar la página.» |
+| `pay_payout_already_saved` | 23505 | Un pago llega con el id de uno ya guardado, pero con otros datos | «Ese pago ya se había guardado en el primer intento, con los datos de entonces: lo que cambiaste no se guardó. Mira cómo quedó el reparto.» Lo pone `recordPayouts`, no `errors.ts` |
 
 Otros rechazos llegan con el nombre de la restricción o del índice:
 
@@ -1497,6 +1737,14 @@ Un SQLSTATE que `errors.ts` no reconoce da el mensaje general («No se pudo guar
 nombre que no reconoce, dentro de un código conocido, da el mensaje propio de ese código: el de las tablas para
 23505, 23503 y 23514, y «Ese registro ya no existe.» para P0002.
 
+Los de la migración 7 no tienen mensaje propio en `errors.ts`: una parte en 0 (`pay_settlement_items_amount_check`)
+da el general de 23514, y el mismo cobro dos veces en una liquidación (`pay_settlement_items_uq`), el de 23505.
+Borrar del todo un cobro con partes pagadas choca con `pay_settlement_items_transaction_fk` (23503). `purgeTx` lo mira
+antes y dice «No se puede borrar del todo un cobro con partes del reparto ya pagadas. Deshaz esos pagos (en el
+detalle del cobro o en la ficha de cada beneficiario) y vuelve a intentarlo.»; si lo frena la base, da la misma
+frase. Un pago que ya no cabe en lo que falta lo frena el servidor antes de llegar a la base, con «Lo que falta
+pagar cambió mientras lo veías…».
+
 Los rechazos de Storage se traducen por su código HTTP: sin segundo factor, archivo que ya no existe, nombre
 repetido, más de 10 MB y tipo no admitido tienen cada uno su mensaje.
 
@@ -1509,7 +1757,7 @@ esquema (`validateScheme`) y los de una retención (`validateRetention`, con los
 
 ### Cada fila es de un usuario (RLS)
 
-Las 19 tablas tienen seguridad por fila. Un usuario solo ve y escribe las filas cuyo `user_id` es el suyo. Quien no
+Las 20 tablas tienen seguridad por fila. Un usuario solo ve y escribe las filas cuyo `user_id` es el suyo. Quien no
 ha entrado (rol `anon`) no tiene ningún permiso. Los permisos están escritos uno por uno en la migración: no se
 depende de los que el proyecto dé por defecto.
 
@@ -1548,13 +1796,16 @@ corre con permisos elevados (`security definer`). Para que eso no abra nada:
 - vive en un esquema que la API **no expone**, así que no se puede llamar desde fuera (las pruebas lo comprueban);
 - lleva el `search_path` vacío.
 
-**No es la única con permisos elevados.** Cinco funciones de disparador que leen o escriben tablas también son
-`security definer`, con `search_path` vacío: `pay_receipts_count_sync`, `pay_transactions_alloc_check`,
-`pay_allocations_sum_check`, `pay_scheme_versions_check` y `pay_scheme_lines_check`. El motivo: al borrar un
-usuario desde Auth, la cascada corre los disparadores con el rol del servicio de Auth, que no tiene permisos sobre
-las tablas `pay_*` ni sobre el esquema `private`. Sin eso, el borrado falla. No abren nada: no reciben parámetros,
-nadie tiene permiso para llamarlas a mano y solo miran la fila que las disparó. **Un disparador nuevo que lea o
-escriba tablas tiene que seguir la misma regla**, o rompe el borrado de usuarios.
+**No es la única con permisos elevados.** Diez funciones de disparador que leen o escriben tablas también son
+`security definer`, con `search_path` vacío: cinco de la migración 1 (`pay_receipts_count_sync`,
+`pay_transactions_alloc_check`, `pay_allocations_sum_check`, `pay_scheme_versions_check` y
+`pay_scheme_lines_check`), dos de la 6 (`pay_transactions_retention_check` y `pay_retention_shares_sum_check`) y
+tres de la 7 (`pay_settlement_items_check`, `pay_settlements_items_check` y
+`pay_transactions_settlement_currency_check`). El motivo: al borrar un usuario desde Auth, la cascada corre los
+disparadores con el rol del servicio de Auth, que no tiene permisos sobre las tablas `pay_*` ni sobre el esquema
+`private`. Sin eso, el borrado falla. No abren nada: no reciben parámetros, nadie tiene permiso para llamarlas a
+mano y solo miran la fila que las disparó. **Un disparador nuevo que lea o escriba tablas tiene que seguir la misma
+regla**, o rompe el borrado de usuarios.
 
 Las demás funciones internas viven en el mismo esquema, y nadie tiene permiso para llamarlas a mano.
 
@@ -1638,7 +1889,7 @@ ahí solo están las reglas de los alias (7 o más dígitos seguidos) y de los �
 
 ### Al borrar un usuario
 
-Borrar un usuario borra en cascada **todas sus filas** de las 19 tablas. Lo de los demás usuarios queda igual. Hay
+Borrar un usuario borra en cascada **todas sus filas** de las 20 tablas. Lo de los demás usuarios queda igual. Hay
 una prueba que lo comprueba.
 
 **No borra sus archivos de Storage.** Los comprobantes y los logos quedan en el bucket y hay que quitarlos por la
@@ -1701,7 +1952,8 @@ dejaba abierto o no se podía cumplir tal cual. Las filas (n) a (p) son límites
 las pasarelas; lo que dicen de las pasarelas conviene confirmarlo en sus páginas de tarifas. La fila (q) es la
 definición de «por caer». Las filas (r) a (x) se tomaron al construir las pantallas y tras la revisión final. Las
 filas (y) a (ac) son las de la retención de la pasarela
-([E10](#e10--la-pasarela-retiene-una-parte-para-ciertas-personas)).
+([E10](#e10--la-pasarela-retiene-una-parte-para-ciertas-personas)). Las filas (ad) a (aj) son las de lo pagado a
+cada parte del reparto ([P1 a P5](#lo-pagado-a-cada-parte-de-un-cobro)), y las (ak) a (ao), las del PDF de cobros.
 
 | Decisión | Por qué | Qué cambia si el dueño decide lo contrario |
 |---|---|---|
@@ -1734,6 +1986,18 @@ filas (y) a (ac) son las de la retención de la pasarela
 | **(aa)** Es una configuración de la pasarela, sin versiones: un %, unos días y sus personas. Cada cobro la congela al registrarse o al importarse; uno ya guardado la toma solo con «Recalcular» | Lo pidió así el encargo. Congelarla es lo mismo que se hace con la tarifa: cambiarla no reescribe ningún cobro | Si cambia según la empresa, iría en la cuenta de la pasarela en cada empresa. Si cambia con el tiempo, haría falta un «vigente desde», como las tarifas: hoy un cambio vale para los cobros nuevos y para los que se recalculen |
 | **(ab)** Quien recibe retención sin estar en el reparto de ese cobro queda con saldo negativo, como un adelanto. La vista previa y el detalle lo advierten | Lo retenido ya le llegó, y el saldo es «lo que se le debe» | Si no debiera contar como adelanto, la vista de saldos tendría que dejar fuera lo retenido de quien no está en el reparto de cada cobro |
 | **(ac)** La retención no es una comisión: el neto, las comisiones, lo facturado y el reparto no cambian. «Llega al banco» = neto − retenido, y eso es lo que dicen «Por caer» y «Depositado» | Es una parte del neto que la pasarela le paga directo a esas personas: un pago de su parte del reparto, no un costo del negocio | Si fuera una comisión, bajaría el neto y con él el reparto de todos, y lo retenido dejaría de contar como un pago a esas personas. Cambiarían las cifras de E10 a E10d |
+| **(ad)** Cada marca de «pagado» es una liquidación ligada a sus cobros, no una marca aparte. El saldo sigue saliendo de las liquidaciones y las vistas no cambian | Unas marcas aparte podrían contradecir el saldo de cada parte. Así, marcar es pagar, y deshacer es borrar ese pago | Lo pagado antes con liquidaciones a mano no marca ningún cobro: esos cobros salen con «Falta» y en «Reparto pendiente». Marcarlos ahora sería pagar dos veces en el libro. Para ligarlos, se borra la liquidación a mano (con su comprobante) y se paga desde los cobros con la misma fecha. Si el dueño prefiere ligar las de antes, hace falta una pantalla para elegir los cobros de una liquidación ya guardada |
+| **(ae)** No se puede pagar más de lo que falta, ni con el otro signo: lo frenan la pantalla y el servidor (`fitsOwed`), contra lo que hay en la base en ese momento. La base no lo impide | Pagar de más sin querer dejaría un adelanto escondido en un cobro. Una pantalla vieja (otra pestaña, un reembolso después) no paga de más: no guarda nada | Para adelantar dinero desde un cobro habría que quitar esa comprobación. La parte quedaría con «Se le pagó de más» en ese cobro y en «Reparto pendiente» |
+| **(af)** Quien solo recibe lo retenido, sin estar en el reparto de ese cobro, no es una parte: no tiene estado ni pendiente | Lo suyo ya es un adelanto que baja su saldo ([(ab)](#decisiones-tomadas-y-por-confirmar)). Si fuera una parte, ese cobro quedaría «pendiente» para siempre | El cobro saldría en «Reparto pendiente» hasta que esa persona devolviera lo retenido, con una devolución ligada al cobro |
+| **(ag)** Un cobro fallido o en la papelera no tiene nada pendiente: sin estado, sin marca, fuera del filtro y sin «Marcar…». Sus pagos se ven en el detalle y se pueden deshacer, y siguen contando en el saldo | Igual que el reparto: no cuentan en ningún saldo ni total. Y deshacer sus pagos es lo que deja borrarlo del todo | Si se quiere que un fallido pida devolver lo ya pagado, tendría estado: a cada parte se le pagó de más todo lo suyo |
+| **(ah)** «Borrar del todo» y «Vaciar la papelera» se niegan si algún cobro tiene partes pagadas, y no dicen cuál. «Vaciar» va en tandas de 500: una tanda con un cobro pagado no borra ninguno de los suyos; las anteriores ya se borraron, y el aviso dice cuántos | Las partes apuntan al cobro: borrarlo dejaría pagos sin saber de qué. Primero se deshacen esos pagos | Saltar los cobros pagados y borrar el resto es un cambio chico en `purgeTx`. También se puede marcar en la Papelera cuáles tienen pagos |
+| **(ai)** En el detalle, una parte «Se le pagó de más» no tiene botón propio para registrar su devolución, y «Marcar todo el reparto pagado…» solo paga a quien le falta | El encargo pedía «Marcar pagado…» con lo que falta. Una devolución la decide el dueño, como en «Pagar repartos…» | La devolución ligada se hace desde «Pagar repartos…», marcándola, o a mano en la ficha (sin ligarla al cobro). Un botón «Registrar devolución…» por parte es un cambio chico en el detalle |
+| **(aj)** «Pagar repartos…» crea un pago por parte y moneda. Lo que se pagó de más sale aparte y sin marcar. Si una parte debe en un cobro y le sobra en otro, los dos van en el mismo pago; si se compensan a 0,00, no sale (una liquidación no puede ser 0) y esos cobros siguen pendientes. Lo que se debe se lee al abrir el diálogo | Pagar es por persona y por moneda, no por cobro. Las devoluciones las decide el dueño. Leer al abrir da lo de ahora, no lo de cuando se pintó la lista | Un par que se compensa a 0,00 se arregla desde el detalle de cada cobro. Si se prefiere un pago por cobro, «Pagar repartos…» crearía una liquidación por cada cobro y parte |
+| **(ak)** El PDF usa pdfkit 0.20.2 (MIT) con la Helvetica estándar, sin incrustar fuente | JavaScript puro, sin binarios ni navegador, mantenida, y 300 cobros en menos de un segundo. Con @react-pdf/renderer, 300 cobros tardaron 105 s; pdf-lib no se publica desde 2021-2022. La Helvetica (WinAnsi) tiene los acentos, la ñ, «», €, — y ·. Lo que no tiene pasa a su letra sin marcas («ő» → «o») o a «?» (un emoji) | Para nombres con letras fuera de WinAnsi hay que incrustar una fuente libre: el PDF pesa más |
+| **(al)** El PDF admite hasta 300 cobros. Con más no se arma nada: el servidor responde 422 con el mensaje y la pantalla lo enseña. Con los elegidos cuenta los ids pedidos, también los que no se ven | Lo pidió el encargo. Un aviso claro es mejor que una descarga rota, y 300 cobros ya son unas 101 páginas | Subir el tope es cambiar `PDF_MAX` en `scope.ts`. Conviene medir antes cuánto tarda |
+| **(am)** Los fallidos salen en el PDF, pero no en sus totales, y el bloque lo dice («Sin contar 1 fallido.»). Una moneda con solo fallidos no tiene bloque. Los de la papelera no salen. Sin cobros, el PDF dice «No hay cobros.» | Como los totales de la lista: un fallido no cobró nada | Si un fallido no debe salir, se filtra en `cobros.ts`. Si debe contar, los totales dejarían de coincidir con los de la lista |
+| **(an)** El reparto por parte de los totales va por nombre y dice lo que cada parte ya recibió de la retención: «ya recibió $50,00 de la retención · falta $50,00» | El dueño usa ese total para pagar: sin lo retenido pagaría de más. Quien solo recibió retención sale con 0,00 y su adelanto | Si solo se quiere el reparto, se quita esa línea del modelo |
+| **(ao)** Los textos del desglose y del reparto del PDF están copiados de `BreakdownCard` y `AllocationList`, en `model.ts`. El reparto que copia es el de Registrar: su «falta» es la parte menos lo retenido, sin lo ya pagado | Un PDF no puede usar los componentes de la pantalla. El PDF y los pagos por cobro se construyeron a la vez | Para que el PDF diga «Pagado», «Falta» o «Se le pagó de más», `cobros.ts` tiene que leer `payoutStatuses` y `model.ts`, pintarlo en cada parte y en los totales por parte |
 
 ### Lo que el dueño tiene que decidir
 
@@ -1746,6 +2010,9 @@ Por orden de lo que más afecta al dinero:
    los beneficiarios o solo la empresa?
 4. **Pago rápido y días (o) y (p).** ¿El pago rápido tiene un mínimo? ¿Cómo cuenta los días cada pasarela?
 5. **«Por caer» (q).** ¿Así, o con una tercera cifra para lo detenido por una disputa o devuelto?
+6. **Lo pagado antes a mano (ad).** ¿Se ligan a sus cobros las liquidaciones de antes? Hoy esos cobros salen con
+   «Falta», y marcarlos sería pagar dos veces en el libro.
+7. **El PDF y lo pagado (ao).** ¿El PDF debe decir lo ya pagado a cada parte? Hoy su «falta» no lo cuenta.
 
 Lo que hay que decidir para la fase C está aparte, en su
 [§9](#9-lo-que-el-dueño-tiene-que-decidir).
@@ -1791,6 +2058,18 @@ están en [«Pasar a producción»](../README.md#pasar-a-producción), en el REA
   salir repetida o faltar. Conviene exportar sin estar cambiando nada.
 - Tras el aviso de que una liquidación ya estaba guardada, el formulario queda listo para otra: pulsar otra vez
   «Registrar liquidación» crea una segunda, sin el archivo elegido. Antes, revisar la lista.
+- Lo pagado antes con liquidaciones a mano no marca ningún cobro: esos cobros salen con «Falta» y en «Reparto
+  pendiente». Marcarlos ahora sería pagar dos veces en el libro (fila [(ad)](#decisiones-tomadas-y-por-confirmar)).
+- Un pago marcado desde los cobros lleva fecha, medio y monto, pero no nota ni comprobante. Un comprobante no se le
+  puede agregar después.
+- «Vaciar la papelera» con un cobro pagado se niega y no dice cuál es (fila
+  [(ah)](#decisiones-tomadas-y-por-confirmar)).
+- El PDF no dice lo ya pagado a cada parte: su «falta» es la parte menos lo retenido (fila
+  [(ao)](#decisiones-tomadas-y-por-confirmar)).
+- El PDF del filtro aplica «Reparto pendiente», pero su encabezado no lo nombra: dice el período y los demás
+  filtros.
+- Si la sesión venció, «PDF» dice «No se pudo armar el PDF. Revisa la conexión y vuelve a intentarlo.»: entra de
+  nuevo y repite la descarga.
 - Para probar desde el celular contra `next dev` por la red local hace falta https (`next dev
   --experimental-https`): sin él, el navegador no da los identificadores que usan los formularios. En producción
   siempre hay https.
@@ -2590,7 +2869,7 @@ Dar permisos por columna tampoco sirve: el dueño y el socio entran con el mismo
 (`authenticated`). Y una vista con `security_invoker`, como las de totales de hoy, respeta la RLS de quien
 consulta: el socio no vería nada.
 
-**Modelo propuesto.** No se toca ninguna política de las 19 tablas actuales. «Cada fila es de un usuario» sigue
+**Modelo propuesto.** No se toca ninguna política de las 20 tablas actuales. «Cada fila es de un usuario» sigue
 siendo verdad sin excepciones.
 
 1. **Tabla de accesos** `pay_partner_access`: fila **del dueño** (`user_id` del dueño, como todas), con el

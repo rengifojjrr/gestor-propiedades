@@ -55,6 +55,36 @@ Qué es y por qué: [`docs/PASARELAS.md`](docs/PASARELAS.md). Diseño: `docs/sup
       se reescriben si y solo si cambia el desglose. Suman exactamente lo retenido (`allocate`, por mayor resto); la
       base lo exige al confirmar (`pay_retention_sum_mismatch`). `null` = no tocarlas; `[]` = borrarlas.
     - `pay_beneficiary_balances.balance` ya descuenta `retained`. No lo vuelvas a restar en una pantalla.
+12. **Los pagos ligados a sus cobros** (`pay_settlement_items`, migración 7). Cada marca de «pagado» es una
+    liquidación (`pay_settlements`) con sus partes, una por cobro: no hay marcas aparte ni otra columna de «pagado».
+    - El saldo sale de las liquidaciones, como siempre: `pay_beneficiary_balances` no mira las partes ni cambió. No
+      sumes las partes otra vez en una pantalla.
+    - Lo que se le debe a una parte en un cobro = reparto − retenido − pagado. Es una sola definición escrita dos
+      veces: `payoutStatus` de `payouts.ts` (motor) y `pay_payout_pending` (base, para el filtro «Reparto
+      pendiente»). Si cambias una, cambia la otra: `tests/integration/pagos-reparto.test.ts` comprueba que digan lo
+      mismo. Fallido o en la papelera: sin nada pendiente (`counts: false`). Quien solo recibe lo retenido sin estar
+      en el reparto no es una parte.
+    - Se escribe solo con `recordPayouts` (`ops/settlements.ts`) → `pay_record_payouts`. Antes comprueba con
+      `fitsOwed`, contra lo que hay en la base, que ningún pago pase de lo que falta ni cambie de signo; el monto de
+      la liquidación es la suma de sus partes. «Deshacer» es `deleteSettlement`: la cascada se lleva las partes.
+    - Las sumas las exige la base al confirmar: las partes suman el monto de su liquidación
+      (`pay_settlement_items_sum_mismatch`) y cada cobro es de la moneda de la liquidación
+      (`pay_settlement_items_currency_mismatch`). Que la parte sea del beneficiario de su liquidación lo exige la
+      clave compuesta contra `pay_settlements_id_beneficiary_uq`. No lo rodees desde la app.
+    - Un cobro con partes pagadas no se borra del todo: `purgeTx` lo mira antes de tocar Storage y la clave hacia el
+      cobro (sin cascada) lo vuelve a frenar.
+13. **El PDF de cobros** (`src/server/pasarelas/pdf/`, ruta `/pasarelas/cobros/pdf`). `model.ts` es puro y arma
+    filas y totales del desglose congelado, sin recalcular (`retentionOf`, `payoutOf`); `draw.ts` dibuja con pdfkit;
+    `cobros.ts` lee con el cliente del usuario (la RLS manda) y responde.
+    - Los textos del desglose y del reparto están copiados de `BreakdownCard` y `AllocationList` en `model.ts`: un
+      PDF no puede usar componentes. **Quien cambie esas pantallas tiene que cambiar también el PDF** (y
+      `model.test.ts`). El reparto que copia es el de «Registrar», sin `payouts`: el PDF no dice lo pagado.
+    - Un filtro nuevo de la lista llega al PDF sin tocarlo (`parseTxFilters` y `listTx`), pero el encabezado lo
+      nombra solo si está en `filterTexts` de `scope.ts`. Hoy falta «Reparto pendiente».
+    - La fuente es la Helvetica estándar (WinAnsi), sin incrustar: todo texto pasa por `pdfText`, que cambia lo que
+      no sabe escribir. El tope es `PDF_MAX` (300), en `scope.ts`.
+    - `PDF_PATH` y `selectedPdfHref` viven en `tx/pdf.ts`, no en `PdfButton`: una constante que exporta un módulo
+      `"use client"` le llega al servidor como referencia de cliente, no como texto.
 
 ## Comandos (desde `pasarelas/`)
 
@@ -98,8 +128,9 @@ puerto. Punta a punta, de dos maneras:
 
 Desde otro dispositivo de la red local (`http://<IP>:3000`) el navegador no da `crypto.randomUUID` (no es un
 contexto seguro), y lo usan registrar un cobro, subir comprobantes o logos, agregar opciones al crear una pasarela,
-agregar líneas a un esquema y registrar liquidaciones: arranca con `npx next dev --experimental-https -H <IP>`. A
-propósito no se programó una alternativa a `crypto.randomUUID`: para probar desde el celular se usa https.
+agregar líneas a un esquema, registrar liquidaciones y marcar pagos del reparto: arranca con
+`npx next dev --experimental-https -H <IP>`. A propósito no se programó una alternativa a `crypto.randomUUID`: para
+probar desde el celular se usa https.
 
 ## Next 16.4: lo que NO es como lo recuerdas
 
@@ -221,8 +252,9 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
   de un diálogo, `<DialogActionError>`. Con `unsure` ofrece «Ver cómo quedó», que hace `router.refresh()`.
   `callAction` **no refresca solo**: con mala señal el refresco fallido recargaría la página entera. Al cerrar un
   diálogo con esa duda en pantalla, se refresca (`useRefreshOnClose`).
-- Lo que no es idempotente (reembolso, liquidación, alta de un cobro) lleva un id creado en el navegador o la
-  versión vista (`expectedUpdatedAt`): repetirlo tras la duda no duplica dinero ni pisa cambios de otra pestaña.
+- Lo que no es idempotente (reembolso, liquidación, pago de una parte del reparto, alta de un cobro) lleva un id
+  creado en el navegador o la versión vista (`expectedUpdatedAt`): repetirlo tras la duda no duplica dinero ni pisa
+  cambios de otra pestaña.
 
 ## Dónde va cada cosa
 
@@ -234,6 +266,7 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 | `src/server/pasarelas/ops/` | Escrituras con el cliente inyectado: se prueban sin Next (`tests/integration`) |
 | `src/server/pasarelas/actions/` | Server Actions delgadas: `runAction` (sesión + Zod + `ops` + `revalidatePath`) |
 | `src/server/pasarelas/queries/paging.ts` | `readAll(page, what)`: leer por tramos de 1000 filas sin cortar en silencio |
+| `src/server/pasarelas/pdf/` | El PDF de cobros: qué pide la URL (`scope.ts`), el modelo puro (`model.ts`), el dibujo (`draw.ts`) y la lectura y la respuesta (`cobros.ts`) |
 | `src/components/ui/` | Kit propio de interfaz. `src/components/pasarelas/` son las piezas del dominio (con `callAction` y `ActionError`) |
 | `src/app/(auth)/`, `src/app/(dashboard)/` | Entrada y pantallas: las del módulo bajo `/pasarelas`, más `/ajustes` y la galería `/kit` (solo en desarrollo) |
 | `supabase/migrations/` | El esquema. `supabase/config.toml` es el stack local |
@@ -242,10 +275,25 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 
 ## Pruebas
 
-- Motor: pruebas puras junto al código, con los casos exactos del spec (E1–E6, F1–F3) y los de la guía (E7–E10). Cobertura 100 %.
+- Motor: pruebas puras junto al código, con los casos exactos del spec (E1–E6, F1–F3) y los de la guía (E7–E10, y
+  P1 a P4 en `payouts.test.ts`). Cobertura 100 %.
+- PDF: `model.ts` y `scope.ts` tienen pruebas puras al 100 %, pero `npm run coverage` mide solo el motor. Se miden
+  aparte:
+
+  ```bash
+  npx vitest run --project unit src/server/pasarelas/pdf/model.test.ts src/server/pasarelas/pdf/scope.test.ts \
+    --coverage --coverage.include=src/server/pasarelas/pdf/model.ts \
+    --coverage.include=src/server/pasarelas/pdf/scope.ts
+  ```
+
+  `draw.test.ts` y `tests/integration/pdf.test.ts` (D1 a D5) leen el texto del PDF de verdad con `unpdf`, que solo
+  está en desarrollo.
 - En Vitest, `server-only` está simulado (`vitest.setup.ts`). `cookies()` y `headers()` no existen fuera de una
   petición: lo que las use se prueba de punta a punta.
 - Integración: dos usuarios reales del stack local; cada prueba crea los suyos y no depende de datos de otra.
+  `pagos-reparto.test.ts` recorre la migración 7 y P1 a P5.
+- Una tabla `pay_*` nueva entra en las pruebas que recorren todas: `rls.test.ts`, `borrar-usuario.test.ts` y
+  `exportar.test.ts` (integración) y `e2e/ajustes.spec.ts` («Exportar todo»). Hoy son 20.
 - Punta a punta: contra `next build && next start`. La salida de las pruebas debe quedar limpia, sin avisos.
 
 ## Kit de interfaz
