@@ -1,7 +1,14 @@
 import { describe, expect, test } from "vitest";
 import { addDays } from "./dates";
 import { add } from "./money";
-import { moneyInTransit, transitLabel, type RetainedRow, type TransitRows } from "./transit";
+import {
+  moneyInTransit,
+  transitCurrencies,
+  transitLabel,
+  transitPhase,
+  type RetainedRow,
+  type TransitRows,
+} from "./transit";
 import type { LeanTx } from "./types";
 
 /** Hoy: lunes 16 de noviembre de 2026. */
@@ -74,12 +81,8 @@ const t6Retained: RetainedRow = { id: "t6", occurredOn: "2026-11-10", currency: 
 
 const CASOS: TransitRows<LeanTx> = { open: [t1, t2, t3, t4, t5, t6, t7, t8], deposited: [], retained: [t6Retained] };
 
-/** El resultado en USD (falla si no lo hay). */
-function usd(rows: TransitRows<LeanTx>, today = HOY) {
-  const view = moneyInTransit(rows, today).USD;
-  if (view === undefined) throw new Error("No hay nada en USD.");
-  return view;
-}
+/** El resultado en USD. */
+const usd = (rows: TransitRows<LeanTx>, today = HOY) => moneyInTransit(rows, "USD", today);
 
 /** Un cobro por caer con esa ventana (`from` nulo: un solo día), solo, en su resultado. */
 function itemOf(window: { from?: string; to: string; occurredOn?: string }, today = HOY) {
@@ -254,10 +257,13 @@ describe("moneyInTransit: los límites de la fase", () => {
     expect(itemOf({ to: "2026-11-19" }).progress).toBe(50);
   });
 
-  test("transitLabel dice lo mismo que la fase de cada cobro", () => {
+  test("transitLabel y transitPhase dicen lo mismo que la fase de cada cobro (también de un grupo)", () => {
     expect(transitLabel({ from: "2026-11-12", to: "2026-11-12" }, HOY)).toBe("Debió llegar hace 4 días");
     expect(transitLabel({ from: HOY, to: "2026-11-18" }, HOY)).toBe("Hoy o hasta el mié 18");
     expect(transitLabel({ from: "2026-11-19", to: "2026-11-23" }, HOY)).toBe("Llega en 3–7 días");
+    expect(transitPhase({ from: "2026-11-12", to: "2026-11-12" }, HOY)).toBe("atrasado");
+    expect(transitPhase({ from: "2026-11-12", to: HOY }, HOY)).toBe("hoy");
+    expect(transitPhase({ from: "2026-11-17", to: "2026-11-17" }, HOY)).toBe("proximo");
   });
 });
 
@@ -266,23 +272,20 @@ describe("moneyInTransit: qué entra y qué no", () => {
   const T = "2026-11-17";
 
   test("solo lo por caer con fecha estimada: ni depositado, ni fallido, ni reembolsado del todo, ni sin fecha", () => {
-    const view = moneyInTransit(
-      {
-        open: [
-          tx("deposito", { status: "depositado", depositedOn: "2026-11-10", estimatedDepositOn: "2026-11-12" }),
-          tx("fallido", { status: "fallido", gross: "0.00", fees: "0.00", net: "0.00", estimatedDepositOn: T }),
-          tx("reembolsado", { refunded: "100.00", gross: "0.00", fees: "3.20", net: "-3.20", estimatedDepositOn: T }),
-          tx("sin-fecha"),
-          tx("en-transito", { status: "en_transito", estimatedDepositOn: T }),
-          tx("ganada", { disputeState: "ganada", estimatedDepositOn: T }),
-        ],
-        deposited: [],
-        retained: [],
-      },
-      HOY,
-    );
-    expect(view.USD?.items.map((item) => item.tx.id)).toEqual(["en-transito", "ganada"]);
-    expect(view.USD?.held).toEqual({ payout: "0.00", count: 0 });
+    const view = usd({
+      open: [
+        tx("deposito", { status: "depositado", depositedOn: "2026-11-10", estimatedDepositOn: "2026-11-12" }),
+        tx("fallido", { status: "fallido", gross: "0.00", fees: "0.00", net: "0.00", estimatedDepositOn: T }),
+        tx("reembolsado", { refunded: "100.00", gross: "0.00", fees: "3.20", net: "-3.20", estimatedDepositOn: T }),
+        tx("sin-fecha"),
+        tx("en-transito", { status: "en_transito", estimatedDepositOn: T }),
+        tx("ganada", { disputeState: "ganada", estimatedDepositOn: T }),
+      ],
+      deposited: [],
+      retained: [],
+    });
+    expect(view.items.map((item) => item.tx.id)).toEqual(["en-transito", "ganada"]);
+    expect(view.held).toEqual({ payout: "0.00", count: 0 });
   });
 
   test("detenido por disputa: solo lo que estaría por caer; uno ya depositado o reembolsado del todo, no", () => {
@@ -301,24 +304,48 @@ describe("moneyInTransit: qué entra y qué no", () => {
   });
 
   test("nunca se mezclan monedas: cada una con lo suyo", () => {
-    const view = moneyInTransit(
-      {
-        open: [t1, tx("eur", { currency: "EUR", estimatedDepositOn: "2026-11-17" })],
-        deposited: [tx("eur-dep", { currency: "EUR", status: "depositado", depositedOn: HOY })],
-        retained: [{ ...t6Retained, currency: "MXN" }],
-      },
-      HOY,
-    );
-    expect(Object.keys(view)).toEqual(["EUR", "MXN", "USD"]);
-    expect(view.EUR?.total).toEqual({ payout: "90.30", count: 1 });
-    expect(view.EUR?.deposited.total).toEqual({ payout: "90.30", count: 1 });
-    expect(view.MXN).toMatchObject({ total: { payout: "0.00", count: 0 }, retained: { amount: "50.00" } });
-    expect(view.USD?.items.map((item) => item.tx.id)).toEqual(["t1"]);
-    expect(view.USD?.retained).toBeNull();
+    const rows: TransitRows<LeanTx> = {
+      open: [
+        t1,
+        tx("eur", { currency: "EUR", estimatedDepositOn: "2026-11-17" }),
+        // Lo que no cuenta no hace aparecer su moneda.
+        tx("cad-depositado", { currency: "CAD", status: "depositado", depositedOn: "2026-01-02" }),
+      ],
+      deposited: [tx("eur-dep", { currency: "EUR", status: "depositado", depositedOn: HOY })],
+      retained: [{ ...t6Retained, currency: "MXN" }],
+    };
+    expect(transitCurrencies(rows, HOY)).toEqual(["EUR", "MXN", "USD"]);
+    const eur = moneyInTransit(rows, "EUR", HOY);
+    expect(eur.total).toEqual({ payout: "90.30", count: 1 });
+    expect(eur.deposited.total).toEqual({ payout: "90.30", count: 1 });
+    expect(moneyInTransit(rows, "MXN", HOY)).toMatchObject({
+      total: { payout: "0.00", count: 0 },
+      retained: { amount: "50.00" },
+    });
+    expect(usd(rows).items.map((item) => item.tx.id)).toEqual(["t1"]);
+    expect(usd(rows).retained).toBeNull();
   });
 
-  test("sin nada: ninguna moneda", () => {
-    expect(moneyInTransit({ open: [], deposited: [], retained: [] }, HOY)).toEqual({});
+  test("sin nada: ninguna moneda, y en cualquiera, todo en cero", () => {
+    const none = { open: [], deposited: [], retained: [] };
+    expect(transitCurrencies(none, HOY)).toEqual([]);
+    expect(usd(none)).toEqual({
+      items: [],
+      buckets: {
+        atrasado: { payout: "0.00", count: 0 },
+        hoy: { payout: "0.00", count: 0 },
+        semana: { payout: "0.00", count: 0 },
+        despues: { payout: "0.00", count: 0 },
+      },
+      total: { payout: "0.00", count: 0 },
+      accounts: [],
+      unassigned: null,
+      soon: [],
+      later: [],
+      held: { payout: "0.00", count: 0 },
+      retained: null,
+      deposited: { total: { payout: "0.00", count: 0 }, accounts: [] },
+    });
   });
 });
 
@@ -445,7 +472,8 @@ describe("moneyInTransit: propiedades con 2 000 cobros generados", () => {
       estimatedDepositOn: random() < 0.05 ? null : to,
     });
   });
-  const views = Object.values(moneyInTransit({ open: rows, deposited: [], retained: [] }, HOY));
+  const generated = { open: rows, deposited: [], retained: [] };
+  const views = transitCurrencies(generated, HOY).map((currency) => moneyInTransit(generated, currency, HOY));
 
   test("la suma de las cuatro fases es el total en camino, en monto y en cobros", () => {
     for (const view of views) {

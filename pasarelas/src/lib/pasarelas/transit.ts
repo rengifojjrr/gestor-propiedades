@@ -122,7 +122,8 @@ function dayLabel(d: ISODate, today: ISODate): string {
   return d.slice(0, 4) === today.slice(0, 4) ? `${weekday} ${day} ${month}` : `${weekday} ${day} ${month} ${year}`;
 }
 
-function phaseOf(window: DateWindow, today: ISODate): TransitPhase {
+/** La fase de una ventana hoy: atrasado si hoy > `to`; hoy si `from` ≤ hoy ≤ `to`; próximo si hoy < `from`. */
+export function transitPhase(window: DateWindow, today: ISODate): TransitPhase {
   if (today > window.to) return "atrasado";
   return today >= window.from ? "hoy" : "proximo";
 }
@@ -133,7 +134,7 @@ function phaseOf(window: DateWindow, today: ISODate): TransitPhase {
  * solo día) o «Llega en 3–7 días» (una ventana). Los días son de calendario.
  */
 export function transitLabel(window: DateWindow, today: ISODate): string {
-  const phase = phaseOf(window, today);
+  const phase = transitPhase(window, today);
   if (phase === "atrasado") return `Debió llegar hace ${days(daysBetween(window.to, today))}`;
   if (phase === "hoy") return window.to === today ? "Puede llegar hoy" : `Hoy o hasta el ${dayLabel(window.to, today)}`;
   const first = daysBetween(today, window.from);
@@ -152,7 +153,7 @@ function progressOf(occurredOn: ISODate, window: DateWindow, phase: TransitPhase
 /** El cobro por caer (con fecha estimada) en su fase. */
 function itemOf<T extends LeanTx>(tx: T, to: ISODate, today: ISODate): TransitItem<T> {
   const window = { from: tx.estimatedDepositFrom ?? to, to };
-  const phase = phaseOf(window, today);
+  const phase = transitPhase(window, today);
   const bucket = phase !== "proximo" ? phase : daysBetween(today, to) <= TRANSIT_WEEK_DAYS ? "semana" : "despues";
   return {
     tx,
@@ -218,15 +219,43 @@ function depositedOf(rows: readonly LeanTx[]): InTransit["deposited"] {
   return { total: amountOf(rows.map(payoutOf)), accounts };
 }
 
-/** Lo de UNA moneda (quien llama ya separó las filas). */
-function inCurrency<T extends LeanTx>(
-  pending: readonly T[],
-  held: readonly LeanTx[],
-  deposited: readonly LeanTx[],
-  retained: readonly RetainedRow[],
-  today: ISODate,
-): InTransit<T> {
-  const items = pending.map((tx) => itemOf(tx, tx.estimatedDepositOn as ISODate, today)).sort(byWindow);
+/**
+ * Las filas que cuentan, separadas:
+ *  - en camino: lo por caer (`isPending`, la misma regla que «Por caer») con fecha estimada;
+ *  - detenido: lo que estaría por caer pero tiene la disputa abierta;
+ *  - depositado: lo marcado depositado en los últimos 30 días, contando hoy;
+ *  - retenido: lo que las pasarelas todavía no liberan (el día del cobro más los días de su regla, ≥ hoy).
+ */
+function counted<T extends LeanTx>(rows: TransitRows<T>, today: ISODate) {
+  return {
+    pending: rows.open.filter((row) => isPending(row) && row.estimatedDepositOn !== null),
+    held: rows.open.filter(isHeld),
+    deposited: rows.deposited.filter((row) => isRecentDeposit(row, today)),
+    retained: rows.retained.filter(
+      (row) => cmp(row.retention, ZERO) > 0 && retentionReleaseOn(row.occurredOn, row.days) >= today,
+    ),
+  };
+}
+
+/** Las monedas con algo que contar (en camino, detenido, depositado o retenido), en orden alfabético. */
+export function transitCurrencies(rows: TransitRows<LeanTx>, today: ISODate): Currency[] {
+  const { pending, held, deposited, retained } = counted(rows, today);
+  const all = [...pending, ...held, ...deposited, ...retained];
+  return [...new Set(all.map((row) => row.currency))].sort(byText);
+}
+
+/**
+ * «Dinero en camino» en UNA moneda, con hoy en Nueva York (sin nada en esa moneda, todo en cero). La fase de cada
+ * cobro sale de hoy y de su ventana (`from` nulo = un solo día, `to`): atrasado si hoy > `to`; hoy si `from` ≤ hoy ≤
+ * `to`; próximo si hoy < `from`. Lo próximo va en «próximos 7 días» si `to` llega a lo sumo dentro de 7 días; si no,
+ * en «más adelante». Nada se cuenta dos veces: cada cobro en camino está en una sola fase. Lo que entra, en `counted`.
+ */
+export function moneyInTransit<T extends LeanTx>(rows: TransitRows<T>, currency: Currency, today: ISODate): InTransit<T> {
+  const of = <R extends { currency: Currency }>(list: readonly R[]) => list.filter((row) => row.currency === currency);
+  const { pending, held, deposited, retained } = counted(rows, today);
+  const items = of(pending)
+    .map((tx) => itemOf(tx, tx.estimatedDepositOn as ISODate, today))
+    .sort(byWindow);
   const bucket = (name: TransitBucket) =>
     amountOf(items.filter((item) => item.bucket === name).map((item) => item.payout));
   const accounts = accountsOf(items);
@@ -246,36 +275,8 @@ function inCurrency<T extends LeanTx>(
     unassigned: accounts.find((account) => account.bankAccountId === null) ?? null,
     soon: groups.filter((group) => group.date <= lastSoon),
     later: groups.filter((group) => group.date > lastSoon),
-    held: amountOf(held.map(payoutOf)),
-    retained: retainedOf(retained),
-    deposited: depositedOf(deposited),
+    held: amountOf(of(held).map(payoutOf)),
+    retained: retainedOf(of(retained)),
+    deposited: depositedOf(of(deposited)),
   };
-}
-
-/**
- * «Dinero en camino», por moneda, con hoy en Nueva York. Lo que entra:
- *  - en camino: lo por caer (`isPending`, la misma regla que «Por caer») con fecha estimada. Su fase sale de hoy y de
- *    su ventana (`from` nulo = un solo día, `to`): atrasado si hoy > `to`; hoy si `from` ≤ hoy ≤ `to`; próximo si
- *    hoy < `from`. Lo próximo va en «próximos 7 días» si `to` llega a lo sumo dentro de 7 días; si no, «más adelante»;
- *  - detenido: lo que estaría por caer pero tiene la disputa abierta (`held`);
- *  - retenido: lo que las pasarelas todavía no liberan (el día del cobro más los días de su regla, ≥ hoy);
- *  - depositado: lo marcado depositado en los últimos 30 días, contando hoy.
- * Una moneda aparece si tiene algo de eso. Nada se cuenta dos veces: cada cobro en camino está en una sola fase.
- */
-export function moneyInTransit<T extends LeanTx>(rows: TransitRows<T>, today: ISODate): Record<Currency, InTransit<T>> {
-  const pending = rows.open.filter((row) => isPending(row) && row.estimatedDepositOn !== null);
-  const held = rows.open.filter(isHeld);
-  const deposited = rows.deposited.filter((row) => isRecentDeposit(row, today));
-  const retained = rows.retained.filter(
-    (row) => cmp(row.retention, ZERO) > 0 && retentionReleaseOn(row.occurredOn, row.days) >= today,
-  );
-  const all = [...pending, ...held, ...deposited, ...retained];
-  const currencies = [...new Set(all.map((row) => row.currency))].sort(byText);
-  return Object.fromEntries(
-    currencies.map((currency) => {
-      const of = <R extends { currency: Currency }>(list: readonly R[]) =>
-        list.filter((row) => row.currency === currency);
-      return [currency, inCurrency(of(pending), of(held), of(deposited), of(retained), today)];
-    }),
-  );
 }
