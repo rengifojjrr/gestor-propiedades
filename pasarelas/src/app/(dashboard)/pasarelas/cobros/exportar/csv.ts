@@ -5,9 +5,11 @@ import {
   daysBetween,
   depositWindowOf,
   displayStatus,
+  isZero,
   pctOf,
   toCsv,
   type CsvFormat,
+  type Money,
   type PayConfig,
 } from "@/lib/pasarelas";
 import { FEES_PAID_BY_LABEL } from "@/components/pasarelas/tx/payer";
@@ -20,7 +22,9 @@ import type { TxListItem } from "@/server/pasarelas/dto";
  * «Fecha estimada» es la más tardía de la ventana de depósito (la de siempre) y «Fecha estimada (desde)», la más
  * temprana (la misma, si es un solo día). «Comisión pagada por» dice si la comisión la pagó el negocio o el
  * comprador, y «Comisiones pagadas por los compradores», cuánto de «Comisiones» pagaron ellos (el resto, el negocio:
- * el costo de un reembolso o de una disputa). Van al final para no mover las columnas de quien ya usa el archivo.
+ * el costo de un reembolso o de una disputa). «Retenido» es lo que retuvo la pasarela (no llega al banco) y «Retenido
+ * para», lo que le cae a cada persona («Titular A 25,00 · Titular B 25,00»). Van al final para no mover las columnas
+ * de quien ya usa el archivo.
  */
 
 export const TX_CSV_HEADER = [
@@ -46,10 +50,15 @@ export const TX_CSV_HEADER = [
   "Fecha estimada (desde)",
   "Comisión pagada por",
   "Comisiones pagadas por los compradores",
+  "Retenido",
+  "Retenido para",
 ] as const;
 
 /** Las columnas de dinero: `toCsv` les pone el separador decimal del formato. */
-const MONEY_COLUMNS = [6, 7, 8, 9, 11, 21];
+const MONEY_COLUMNS = [6, 7, 8, 9, 11, 21, 22];
+
+/** Lo que le cae a una persona de lo retenido en un cobro (`pay_retention_shares`). */
+export type RetentionShareCell = { beneficiaryId: string; amount: Money };
 
 /** El formato que pide la URL (`formato=estandar`); cualquier otro valor, o ninguno, es el español. */
 export function csvFormatOf(value: string | null): CsvFormat {
@@ -60,13 +69,40 @@ export function csvFormatOf(value: string | null): CsvFormat {
 const pctCell = (pct: string | null, fmt: CsvFormat): string | null =>
   pct === null ? null : pct.replace(".", fmt.decimal);
 
+/**
+ * «Titular A 25,00 · Titular B 25,00»: cada persona con lo suyo, por nombre; vacío si no le cayó nada a nadie (no
+ * retuvo, o un reembolso total dejó lo retenido en 0).
+ */
+function sharesCell(
+  shares: readonly RetentionShareCell[],
+  names: ReadonlyMap<string, string>,
+  fmt: CsvFormat,
+): string | null {
+  const received = shares.filter((share) => !isZero(share.amount));
+  if (received.length === 0) return null;
+  return received
+    .map((share) => ({ name: names.get(share.beneficiaryId) ?? "Beneficiario borrado", amount: share.amount }))
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map((share) => `${share.name} ${share.amount.replace(".", fmt.decimal)}`)
+    .join(" · ");
+}
+
 /** El nombre de cada id de una lista de la configuración. */
 const namesOf = (items: readonly { id: string; name: string }[]): Map<string, string> =>
   new Map(items.map((item) => [item.id, item.name]));
 
-/** Los cobros como CSV, en el orden en que llegan. */
-export function txCsv(rows: readonly TxListItem[], cfg: PayConfig, fmt: CsvFormat): string {
+/**
+ * Los cobros como CSV, en el orden en que llegan. `shares`: lo que le cayó a cada persona de lo retenido en cada
+ * cobro, por id (sin él, la celda va vacía).
+ */
+export function txCsv(
+  rows: readonly TxListItem[],
+  cfg: PayConfig,
+  fmt: CsvFormat,
+  shares: ReadonlyMap<string, readonly RetentionShareCell[]> = new Map(),
+): string {
   const companies = namesOf(cfg.companies);
+  const beneficiaries = namesOf(cfg.beneficiaries);
   const channels = namesOf(cfg.channels);
   const gateways = namesOf(cfg.gateways);
   const accounts = new Map(cfg.bankAccounts.map((account) => [account.id, account.alias]));
@@ -98,6 +134,8 @@ export function txCsv(rows: readonly TxListItem[], cfg: PayConfig, fmt: CsvForma
       depositWindowOf(tx)?.from ?? null,
       FEES_PAID_BY_LABEL[tx.feesPaidBy],
       tx.buyerFees,
+      tx.retention,
+      sharesCell(shares.get(tx.id) ?? [], beneficiaries, fmt),
     ];
   });
   return toCsv(TX_CSV_HEADER, body, fmt, MONEY_COLUMNS);

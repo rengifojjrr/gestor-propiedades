@@ -1,10 +1,10 @@
 import type { NextRequest } from "next/server";
 import { requireSession } from "@/lib/auth/session";
-import { todayNY } from "@/lib/pasarelas";
+import { isZero, todayNY } from "@/lib/pasarelas";
 import { createClient } from "@/lib/supabase/server";
 import type { TxListItem } from "@/server/pasarelas/dto";
 import { getPayConfig } from "@/server/pasarelas/queries/session-config";
-import { listTx, parseTxFilters } from "@/server/pasarelas/queries/transactions";
+import { listRetentionShares, listTx, parseTxFilters } from "@/server/pasarelas/queries/transactions";
 import { csvFormatOf, txCsv } from "./csv";
 
 /** Filas por lectura: el tope de la API. */
@@ -13,7 +13,8 @@ const EXPORT_PAGE_SIZE = 1000;
 /**
  * GET /pasarelas/cobros/exportar: los cobros de TODO el filtro de la URL (las mismas claves que la lista; la página
  * no cuenta), en el orden elegido, como CSV (`cobros-AAAA-MM-DD.csv`, la fecha de hoy en Nueva York).
- * `formato=estandar` da coma y punto decimal; si no, el español (punto y coma, coma decimal y BOM).
+ * `formato=estandar` da coma y punto decimal; si no, el español (punto y coma, coma decimal y BOM). Lo que le cayó a
+ * cada persona de lo retenido se lee solo para los cobros que retuvieron algo.
  * Sin sesión, o sin el código del segundo factor, `requireSession()` redirige y no sale nada.
  */
 export async function GET(request: NextRequest): Promise<Response> {
@@ -33,7 +34,10 @@ export async function GET(request: NextRequest): Promise<Response> {
     if (chunk.rows.length === 0 || rows.length >= chunk.total) break;
   }
 
-  return new Response(txCsv(rows, cfg, csvFormatOf(params.get("formato"))), {
+  const retained = rows.filter((row) => !isZero(row.retention)).map((row) => row.id);
+  const shares = await listRetentionShares(supabase, retained);
+
+  return new Response(txCsv(rows, cfg, csvFormatOf(params.get("formato")), shares), {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="cobros-${today}.csv"`,

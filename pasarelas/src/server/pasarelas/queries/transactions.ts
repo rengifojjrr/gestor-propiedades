@@ -1,7 +1,16 @@
 import "server-only";
 import { PostgrestError } from "@supabase/supabase-js";
-import { ZERO, isISODate, parseMoney, periodRange } from "@/lib/pasarelas";
-import type { Currency, DisplayStatus, ISODate, LeanTx, PayConfig, PeriodPreset, TxSnapshot } from "@/lib/pasarelas";
+import { ZERO, dec, isISODate, parseMoney, periodRange, toMoney } from "@/lib/pasarelas";
+import type {
+  Currency,
+  DisplayStatus,
+  ISODate,
+  LeanTx,
+  Money,
+  PayConfig,
+  PeriodPreset,
+  TxSnapshot,
+} from "@/lib/pasarelas";
 import {
   ALLOCATION_COLUMNS,
   EVENT_COLUMNS,
@@ -19,6 +28,7 @@ import {
 } from "../dto";
 import { zCurrency, zId } from "../zod";
 import { loadPayConfig } from "./config";
+import { EXACT_COUNT, readAll } from "./paging";
 
 /**
  * Las lecturas de cobros. La lista (`listTx`, de 50 en 50) y los totales (`leanTx`, todas las filas del filtro)
@@ -433,4 +443,38 @@ export async function lastTx(supabase: Db): Promise<TxSnapshot | null> {
     .maybeSingle()
     .throwOnError();
   return data === null ? null : toTxSnapshot(data);
+}
+
+/** Lo que le cayó a una persona de lo retenido en un cobro. */
+export type RetentionShare = { beneficiaryId: string; amount: Money };
+
+/**
+ * Lo que le cayó a cada persona de lo retenido en esos cobros (`pay_retention_shares`), por cobro. Los ids van por
+ * tramos (no caben en la URL) y cada tramo se lee entero (`readAll`). Un cobro sin retención no está en el mapa.
+ */
+export async function listRetentionShares(
+  supabase: Db,
+  txIds: readonly string[],
+): Promise<Map<string, RetentionShare[]>> {
+  const pages = await Promise.all(
+    chunked([...new Set(txIds)]).map((ids) =>
+      readAll(
+        (from, to) =>
+          supabase
+            .from("pay_retention_shares")
+            .select("transaction_id, beneficiary_id, amount::text", EXACT_COUNT)
+            .in("transaction_id", ids)
+            .order("id")
+            .range(from, to)
+            .throwOnError(),
+        "de lo retenido",
+      ),
+    ),
+  );
+  const byTx = new Map<string, RetentionShare[]>();
+  for (const row of pages.flat()) {
+    const share = { beneficiaryId: row.beneficiary_id, amount: toMoney(dec(row.amount)) };
+    byTx.set(row.transaction_id, [...(byTx.get(row.transaction_id) ?? []), share]);
+  }
+  return byTx;
 }

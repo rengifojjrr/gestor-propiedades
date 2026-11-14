@@ -10,15 +10,18 @@ import {
   applyRecalcOneTx,
   applyRecalcTx,
   createTx,
+  disputeTx,
+  editTx,
   failTx,
   previewRecalcTx,
   refundTx,
+  reopenTx,
 } from "@/server/pasarelas/ops/transactions";
 import { listBankAccounts } from "@/server/pasarelas/queries/accounts";
 import { loadPayConfig } from "@/server/pasarelas/queries/config";
 import { getGateway } from "@/server/pasarelas/queries/gateways";
 import { listBalances } from "@/server/pasarelas/queries/splits";
-import { getSnapshots } from "@/server/pasarelas/queries/transactions";
+import { getSnapshots, listRetentionShares } from "@/server/pasarelas/queries/transactions";
 import {
   createUser,
   e1Item,
@@ -819,6 +822,63 @@ describe("la retención con las operaciones de la app (E10)", () => {
     await failTx(e10.db, id);
     expect((await retainedOf(e10.db, id)).retention_amount).toBe("0.00");
     expect(await balanceOf(e10.db, e10.ids.ta)).toBeUndefined();
+  });
+
+  it("E10c: el reembolso parcial de 400 retiene 30,00 (15,00 · 15,00) sobre los 600 que quedan", async () => {
+    const e10 = await setupE10();
+    const { id } = await createTx(e10.db, e10Input(e10));
+    await refundTx(e10.db, id, { amount: "400.00", on: "2026-11-12" });
+    expect(await retainedOf(e10.db, id)).toEqual({
+      fees_total: "29.20",
+      net_amount: "570.80",
+      retention_amount: "30.00",
+      shares: { [e10.ids.ta]: "15.00", [e10.ids.tb]: "15.00" },
+    });
+    expect(await balanceOf(e10.db, e10.ids.ta)).toMatchObject({ assigned: "30.00", retained: "15.00", balance: "15.00" });
+  });
+
+  it("editar, la disputa y reabrir también escriben lo retenido junto con las comisiones", async () => {
+    const e10 = await setupE10();
+    const { id } = await createTx(e10.db, e10Input(e10));
+    // Editar el monto: 2000,00 retiene 100,00.
+    await editTx(e10.db, id, { grossOriginal: "2000.00" });
+    expect(await retainedOf(e10.db, id)).toMatchObject({
+      retention_amount: "100.00",
+      shares: { [e10.ids.ta]: "50.00", [e10.ids.tb]: "50.00" },
+    });
+    // Una disputa abierta no cambia lo cobrado: lo retenido sigue; perderla es un reembolso total: 0.
+    await disputeTx(e10.db, id, { action: "abrir", on: "2026-11-12" });
+    expect((await retainedOf(e10.db, id)).retention_amount).toBe("100.00");
+    await disputeTx(e10.db, id, { action: "perder", on: "2026-11-13" });
+    expect(await retainedOf(e10.db, id)).toMatchObject({
+      retention_amount: "0.00",
+      shares: { [e10.ids.ta]: "0.00", [e10.ids.tb]: "0.00" },
+    });
+    // Un fallido que se reabre vuelve con lo retenido de antes.
+    const other = await createTx(e10.db, e10Input(e10));
+    await failTx(e10.db, other.id);
+    expect((await retainedOf(e10.db, other.id)).retention_amount).toBe("0.00");
+    await reopenTx(e10.db, other.id);
+    expect(await retainedOf(e10.db, other.id)).toMatchObject({
+      retention_amount: "50.00",
+      shares: { [e10.ids.ta]: "25.00", [e10.ids.tb]: "25.00" },
+    });
+  });
+
+  it("la exportación lee lo que le cayó a cada persona, por cobro; un cobro sin retención no está", async () => {
+    const e10 = await setupE10();
+    const retained = await createTx(e10.db, e10Input(e10));
+    const plain = await createTx(e10.db, e10Input(e10, { gatewayId: e10.basics.gatewayId, extraIds: [] }));
+    const shares = await listRetentionShares(e10.db, [retained.id, plain.id]);
+    expect([...shares.keys()]).toEqual([retained.id]);
+    expect(shares.get(retained.id)).toEqual(
+      expect.arrayContaining([
+        { beneficiaryId: e10.ids.ta, amount: "25.00" },
+        { beneficiaryId: e10.ids.tb, amount: "25.00" },
+      ]),
+    );
+    expect(shares.get(retained.id)).toHaveLength(2);
+    expect((await listRetentionShares(e10.db, [])).size).toBe(0);
   });
 
   it("recalcular trae la retención vigente a los cobros registrados antes de configurarla: uno y en lote", async () => {
