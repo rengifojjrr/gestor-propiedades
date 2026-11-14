@@ -9,7 +9,7 @@ import { serverData } from "./server-data";
 
 /**
  * Resumen: el «Listo cuando» n.º 4. Con cobros de dos empresas y dos pasarelas: cuánto facturó cada empresa, las
- * comisiones por pasarela, qué cae en los próximos 14 días y en qué cuenta, y cuánto se le debe a cada grupo; y
+ * comisiones por pasarela, qué está en camino y a qué cuenta, y cuánto se le debe a cada grupo; y
  * marcar depositado un grupo desde aquí lo mueve de «por caer» a «depositado». Además, una moneda distinta no se
  * suma con la otra. Corre en el celular y en el escritorio, con un usuario nuevo en cada uno.
  *
@@ -146,7 +146,7 @@ async function chartTable(page: Page, title: string): Promise<Locator> {
   return figure.getByRole("table");
 }
 
-/** Un grupo de próximos depósitos por su fecha y su cuenta. */
+/** Un grupo de «Dinero en camino» por su fecha y su cuenta. */
 const depositGroup = (page: Page, on: ISODate, account: string): Locator =>
   page.getByRole("article", { name: `${formatDate(on)} · ${account}` });
 
@@ -183,7 +183,7 @@ test("cuánto facturó cada empresa, sus comisiones, qué cae y en qué cuenta, 
   await expect(cost.getByRole("row", { name: /PayPal Demo/ })).toContainText("4,48 %");
 
   // Qué cae y en qué cuenta: lo atrasado primero.
-  const deposits = page.getByRole("region", { name: "Próximos depósitos" });
+  const deposits = page.getByRole("region", { name: "Dinero en camino" });
   const groups = deposits.getByRole("article");
   await expect(groups).toHaveCount(3);
   await expect(groups.first()).toHaveAccessibleName(`${formatDate(overdueOn)} · Cuenta principal (…4321)`);
@@ -245,7 +245,7 @@ test("marcar depositado un grupo lo mueve de «por caer» a «depositado»", asy
   await checkScreen(page);
 });
 
-test("en el celular, las cifras se ven al abrir: los filtros van plegados tras «Filtros» y siguen en la URL", async ({
+test("en el celular, lo que está en camino se ve al abrir: los filtros van plegados tras «Filtros» y siguen en la URL", async ({
   page,
 }) => {
   await login(page, user);
@@ -263,9 +263,10 @@ test("en el celular, las cifras se ven al abrir: los filtros van plegados tras �
   await expect(button).toHaveAttribute("aria-expanded", "false");
   expect((await button.boundingBox())?.height).toBeGreaterThanOrEqual(44);
   await expect(page.getByLabel("Período", { exact: true })).toBeHidden();
-  // Bruto, comisiones, neto y por caer, enteros y por encima de la barra de abajo, sin desplazar.
+  // Arriba va «Dinero en camino» (lo de ahora): sus cinco cifras, enteras y por encima de la barra de abajo, sin
+  // desplazar. Las del período vienen después.
   const bar = await page.getByRole("navigation", { name: "Principal" }).last().boundingBox();
-  for (const name of ["Bruto", "Comisiones", "Neto", "Por caer"]) {
+  for (const name of ["Ya debió llegar", "Puede llegar hoy", "Próximos 7 días", "Más adelante", "Total en camino"]) {
     await expect(card(page, name)).toBeInViewport({ ratio: 1 });
     const box = await card(page, name).boundingBox();
     expect((box?.y ?? Infinity) + (box?.height ?? 0)).toBeLessThanOrEqual(bar?.y ?? 0);

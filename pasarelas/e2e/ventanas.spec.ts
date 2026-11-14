@@ -36,7 +36,7 @@ async function checkScreen(page: Page): Promise<void> {
   await expectNoSeriousAxe(page);
 }
 
-/** Cómo se nombra un grupo de próximos depósitos con una ventana: «Entre el lun 16 y el mié 18 nov · …». */
+/** Cómo se nombra un grupo de «Dinero en camino» con una ventana: «Entre el lun 16 y el mié 18 nov · …». */
 function groupName(from: string, to: string): RegExp {
   const [first, last] = windowDayLabels({ from, to });
   return new RegExp(`^Entre el ${first} y el ${last} · `);
@@ -272,7 +272,7 @@ test.describe("ventanas de depósito", () => {
     await checkScreen(page);
 
     await page.goto("/pasarelas");
-    const deposits = page.getByRole("region", { name: "Próximos depósitos" });
+    const deposits = page.getByRole("region", { name: "Dinero en camino" });
     // Cada uno cuenta en el día de su fecha más tardía; el grupo dice la ventana corta.
     const onTimeGroup = deposits.getByRole("article", { name: groupName(onTime.from, onTime.to) });
     const lateGroup = deposits.getByRole("article", { name: groupName(late.from, late.to) });

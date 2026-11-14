@@ -304,8 +304,8 @@ test.describe.serial("«Listo cuando»", () => {
     await expect(cost.getByRole("row", { name: /Stripe/ })).toContainText("$9,70");
     await expect(cost.getByRole("row", { name: /PayPal Demo/ })).toContainText("$2,24");
 
-    // Qué cae en los próximos 14 días y en qué cuenta.
-    const deposits = page.getByRole("region", { name: "Próximos depósitos" });
+    // Qué está en camino y en qué cuenta.
+    const deposits = page.getByRole("region", { name: "Dinero en camino" });
     await expect(deposits.getByRole("article")).toHaveCount(2);
     const e1Group = deposits.getByRole("article", { name: `${formatDate(e1EstimatedOn)} · Cuenta principal (…4321)` });
     await expect(e1Group).toContainText("$90,30");
