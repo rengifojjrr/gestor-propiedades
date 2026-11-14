@@ -1,7 +1,7 @@
 import { formatDate } from "@/lib/pasarelas/dates";
 import { formatMoney } from "@/lib/pasarelas/money";
 import type { Currency, ISODate, Money } from "@/lib/pasarelas/types";
-import { allowedActions, type AllowedInput, type TxAction } from "./allowed";
+import { allowedActions, refundedInFull, type AllowedInput, type TxAction } from "./allowed";
 
 /**
  * Los cambios de estado que ofrece el menú de cada cobro de la lista, en el orden en que se enseñan (el mismo de
@@ -36,15 +36,23 @@ export const REVERT_DEPOSIT_CONFIRM = {
   confirmLabel: "Revertir depósito",
 } as const;
 
+/** Lo que lleva el cobro hacia el banco: con un reembolso total no hay depósito, y no se ofrece. */
+const TOWARD_DEPOSIT: ReadonlySet<StatusChange> = new Set(["en_transito", "depositado"]);
+
 /**
  * Los cambios de estado que el motor admite para ese cobro (`allowedActions`). En uno ya depositado, «Marcar
- * depositado» solo cambiaría la fecha del depósito, no el estado: eso queda en el detalle. En la papelera no sale
- * ninguno (ahí solo se restaura): ese cobro no tiene menú.
+ * depositado» solo cambiaría la fecha del depósito, no el estado: eso queda en el detalle. Reembolsado del todo
+ * (`refundedInFull`) no hay depósito que esperar: ni «Pasar a en tránsito» ni «Marcar depositado…» (lo ya depositado
+ * se sigue pudiendo revertir). En la papelera no sale ninguno (ahí solo se restaura): ese cobro no tiene menú.
  */
 export function statusChanges(tx: AllowedInput): StatusChange[] {
   const allowed = new Set<TxAction>(allowedActions(tx));
+  const noDeposit = refundedInFull(tx);
   return STATUS_CHANGES.filter(
-    (change) => allowed.has(change) && !(change === "depositado" && tx.status === "depositado"),
+    (change) =>
+      allowed.has(change) &&
+      !(change === "depositado" && tx.status === "depositado") &&
+      !(noDeposit && TOWARD_DEPOSIT.has(change)),
   );
 }
 

@@ -26,6 +26,8 @@ const STATES: Record<string, AllowedInput> = {
   fallido: { ...registrado, status: "fallido" },
   "con la disputa abierta": { ...registrado, disputeState: "abierta" },
   "reembolsado del todo": { ...registrado, refunded: "100.00" },
+  "en tránsito y reembolsado del todo": { ...registrado, status: "en_transito", refunded: "100.00" },
+  "depositado y reembolsado del todo": { ...registrado, status: "depositado", refunded: "100.00" },
   "en la papelera": { ...registrado, deletedAt: "2026-11-20T12:00:00Z" },
 };
 
@@ -36,9 +38,13 @@ describe("statusChanges: qué opciones salen en cada estado", () => {
     // Ya depositado, «Marcar depositado» solo cambiaría la fecha: eso no es un cambio de estado (va en el detalle).
     ["depositado", ["revertir_deposito"]],
     ["fallido", ["reabrir"]],
-    // Con una disputa o un reembolso, el motor no lo deja marcar fallido (`planFail`); depositarlo, sí.
+    // Con una disputa, el motor no lo deja marcar fallido (`planFail`); depositarlo, sí.
     ["con la disputa abierta", ["en_transito", "depositado"]],
-    ["reembolsado del todo", ["en_transito", "depositado"]],
+    // Reembolsado del todo (bruto vigente 0) no hay depósito que esperar: ni en tránsito ni depositado.
+    ["reembolsado del todo", []],
+    ["en tránsito y reembolsado del todo", []],
+    // Lo ya depositado antes del reembolso se conserva y se puede revertir.
+    ["depositado y reembolsado del todo", ["revertir_deposito"]],
     // En la papelera solo se restaura: no hay menú.
     ["en la papelera", []],
   ])("%s", (name, expected) => {

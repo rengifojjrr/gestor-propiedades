@@ -6,6 +6,7 @@ import { Alert, Card, CardBody, CardHeader, CardTitle, DateText, DateTimeText } 
 import { depositWindowOf } from "@/lib/pasarelas/dates";
 import type { ISODate, PayConfig, TxSnapshot } from "@/lib/pasarelas/types";
 import type { TxDetail as TxDetailData } from "@/server/pasarelas/dto";
+import { refundedInFull } from "./allowed";
 import { DepositWindowText } from "./DepositWindow";
 import { EventsTimeline } from "./EventsTimeline";
 import { FEES_PAID_BY_LABEL } from "./payer";
@@ -65,6 +66,8 @@ function DataCard({ tx, cfg }: { tx: TxSnapshot; cfg: PayConfig }) {
   const scheme = tx.breakdown.rules.scheme;
   const origin = originText(tx, cfg);
   const estimated = depositWindowOf(tx);
+  // Reembolsado del todo antes de depositarse: la pasarela ya lo devolvió y no llega nada (no está «Por caer»).
+  const noDeposit = refundedInFull(tx) && tx.status !== "depositado";
   return (
     <Card>
       <CardHeader>
@@ -87,7 +90,9 @@ function DataCard({ tx, cfg }: { tx: TxSnapshot; cfg: PayConfig }) {
             <DateTimeText value={tx.occurredAt} />
           </Row>
           <Row label="Fecha estimada" testId="fecha-estimada">
-            {estimated === null ? (
+            {noDeposit ? (
+              "Reembolsado del todo: no hay depósito"
+            ) : estimated === null ? (
               "—"
             ) : (
               <span className="flex flex-col items-end">

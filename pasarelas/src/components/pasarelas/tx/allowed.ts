@@ -64,15 +64,25 @@ export function allowedActions(tx: AllowedInput): TxAction[] {
 }
 
 /**
+ * Reembolsado del todo: el bruto vigente quedó en 0. La pasarela ya devolvió el dinero, así que no hay depósito que
+ * esperar: no está «Por caer» (`isPending` del motor, que lo ve como «Reembolsado»). Lo ya depositado antes del
+ * reembolso sigue depositado. Un fallido también queda en 0, pero no por un reembolso: no cuenta.
+ */
+export function refundedInFull(tx: Pick<AllowedInput, "refunded" | "grossOriginal">): boolean {
+  return cmp(tx.refunded, tx.grossOriginal) >= 0;
+}
+
+/**
  * La acción que el detalle deja a la vista; las demás van en «Más acciones». Es la que más se espera en ese estado:
  * restaurar lo que está en la papelera, reabrir un fallido, resolver una disputa abierta, marcar depositado lo que
- * todavía no lo está y, si no, editar (que todo cobro fuera de la papelera admite).
+ * todavía no lo está (salvo que se haya reembolsado del todo: ahí no hay depósito) y, si no, editar (que todo cobro
+ * fuera de la papelera admite).
  */
 export function primaryAction(tx: AllowedInput): TxAction {
   const can = allowedActions(tx);
   if (can.includes("restaurar")) return "restaurar";
   if (can.includes("reabrir")) return "reabrir";
   if (can.includes("resolver_disputa")) return "resolver_disputa";
-  if (can.includes("depositado") && tx.status !== "depositado") return "depositado";
+  if (can.includes("depositado") && tx.status !== "depositado" && !refundedInFull(tx)) return "depositado";
   return "editar";
 }

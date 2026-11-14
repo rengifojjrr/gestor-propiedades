@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { parseBreakdown } from "@/lib/pasarelas/breakdown";
+import { displayStatus, isPending } from "@/lib/pasarelas/status";
 import { DEMO, cfgDemo } from "@/lib/pasarelas/demo.fixture";
 import {
   PayStateError,
@@ -19,7 +20,7 @@ import {
   planTrash,
 } from "@/lib/pasarelas/write";
 import type { TxFields, TxSnapshot, TxWrite } from "@/lib/pasarelas/types";
-import { TX_ACTIONS, allowedActions, primaryAction, type TxAction } from "./allowed";
+import { TX_ACTIONS, allowedActions, primaryAction, refundedInFull, type TxAction } from "./allowed";
 
 /*
  * El ayudante decide qué acciones enseña el detalle de un cobro. Tiene que decir lo mismo que el motor: para cada
@@ -147,6 +148,8 @@ const STATES: Record<string, TxSnapshot> = {
   fallido: failed,
   "con reembolso parcial": partial,
   "reembolsado del todo": full,
+  "en tránsito y reembolsado del todo": then(transit, (tx) => planRefund(tx, { amount: "100.00", on: "2026-11-15" })),
+  "depositado y reembolsado del todo": then(deposited, (tx) => planRefund(tx, { amount: "100.00", on: "2026-11-17" })),
   "con la disputa abierta": disputed,
   "con la disputa ganada": won,
   "con la disputa perdida": lost,
@@ -250,6 +253,10 @@ describe("primaryAction: la que queda a la vista en el detalle", () => {
     ["registrado", "depositado"],
     ["en tránsito", "depositado"],
     ["con reembolso parcial", "depositado"],
+    // Reembolsado del todo no hay nada que depositar (no está «Por caer»): ni registrado ni ya en tránsito.
+    ["reembolsado del todo", "editar"],
+    ["en tránsito y reembolsado del todo", "editar"],
+    ["depositado y reembolsado del todo", "editar"],
     ["depositado", "editar"],
     ["con la disputa abierta", "resolver_disputa"],
     ["depositado con la disputa abierta", "resolver_disputa"],
@@ -263,5 +270,32 @@ describe("primaryAction: la que queda a la vista en el detalle", () => {
 
   test("en todo estado hay una, y es de las que admite", () => {
     for (const tx of Object.values(STATES)) expect(allowedActions(tx)).toContain(primaryAction(tx));
+  });
+});
+
+describe("refundedInFull: reembolsado del todo (bruto vigente 0)", () => {
+  test("con el reembolso total, en cualquier punto del ciclo del dinero; no con uno parcial ni sin reembolso", () => {
+    expect(refundedInFull(full)).toBe(true);
+    expect(refundedInFull(STATES["en tránsito y reembolsado del todo"] as TxSnapshot)).toBe(true);
+    expect(refundedInFull(STATES["depositado y reembolsado del todo"] as TxSnapshot)).toBe(true);
+    expect(refundedInFull(lost)).toBe(true);
+    expect(refundedInFull(partial)).toBe(false);
+    expect(refundedInFull(e1)).toBe(false);
+    // Un fallido tiene el bruto vigente en 0, pero no por un reembolso: no se dice reembolsado.
+    expect(refundedInFull(failed)).toBe(false);
+  });
+
+  test("es lo mismo que el motor llama «Reembolsado» y que deja fuera de «Por caer»", () => {
+    for (const tx of [full, STATES["en tránsito y reembolsado del todo"] as TxSnapshot]) {
+      expect(displayStatus(tx)).toBe("reembolsado");
+      expect(isPending(tx)).toBe(false);
+      expect(tx.gross).toBe("0.00");
+    }
+  });
+
+  test("lo ya depositado antes del reembolso se conserva y se puede revertir", () => {
+    const tx = STATES["depositado y reembolsado del todo"] as TxSnapshot;
+    expect(tx.status).toBe("depositado");
+    expect(allowedActions(tx)).toContain("revertir_deposito");
   });
 });
