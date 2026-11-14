@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 
 /**
- * «Exportar todo»: la copia propia del dueño, en JSON. Todas las filas de las 19 tablas `pay_*` con todas sus
+ * «Exportar todo»: la copia propia del dueño, en JSON. Todas las filas de las 20 tablas `pay_*` con todas sus
  * columnas, leídas con la sesión de quien la pide (la RLS deja salir solo lo suyo; nada de `service_role`).
  * No incluye los archivos de los comprobantes: solo sus filas.
  */
@@ -13,13 +13,19 @@ export type ExportFile = {
   version: 1;
   /** El instante de la exportación (ISO 8601). */
   exportedAt: string;
-  /** Las 19 tablas `pay_*`, cada fila con todas sus columnas y el dinero como texto exacto ("90.30"). */
+  /** Las 20 tablas `pay_*`, cada fila con todas sus columnas y el dinero como texto exacto ("90.30"). */
   tables: Record<string, Record<string, unknown>[]>;
 };
 
 type Tables = Database["public"]["Tables"];
 type TableName = keyof Tables;
-type RowOf<Table extends TableName> = Tables[Table] extends { Row: infer Row } ? Row : never;
+/**
+ * Las columnas guardadas de una tabla. Sin las calculadas (`ComputedFields`, como `pay_payout_pending` de los cobros):
+ * no son datos, salen de los demás.
+ */
+type RowOf<Table extends TableName> = Tables[Table] extends { Row: infer Row; ComputedFields: infer Computed }
+  ? Omit<Row, Computed & keyof Row>
+  : never;
 
 /** Cómo se pide cada columna: tal cual, o con `::text` (los `numeric`: montos y porcentajes). */
 const AS_IS = "as-is";
@@ -268,6 +274,15 @@ const EXPORT_COLUMNS = {
     note: AS_IS,
     created_at: AS_IS,
     updated_at: AS_IS,
+  },
+  pay_settlement_items: {
+    id: AS_IS,
+    user_id: AS_IS,
+    settlement_id: AS_IS,
+    transaction_id: AS_IS,
+    beneficiary_id: AS_IS,
+    amount: TEXT,
+    created_at: AS_IS,
   },
   pay_holidays: {
     id: AS_IS,

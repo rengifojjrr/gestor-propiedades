@@ -4,7 +4,7 @@ import { exportAll, type ExportFile } from "@/server/pasarelas/queries/export";
 import { createUser, e1Item, saveTransactions, seedBasics, unwrap, type Db, type TestUser } from "./helpers";
 
 /**
- * «Exportar todo»: la copia propia del dueño. Tiene que traer las 19 tablas con todas sus columnas, el dinero como
+ * «Exportar todo»: la copia propia del dueño. Tiene que traer las 20 tablas con todas sus columnas, el dinero como
  * texto exacto, las tablas largas enteras y nada de otro usuario.
  */
 
@@ -27,6 +27,7 @@ const TABLAS = [
   "pay_transaction_receipts",
   "pay_transaction_events",
   "pay_settlements",
+  "pay_settlement_items",
   "pay_holidays",
 ];
 /** Las vistas de totales no se exportan: se calculan de las tablas. */
@@ -121,6 +122,24 @@ beforeAll(async () => {
       .single(),
     "liquidación",
   );
+  // Lo del Grupo B en E1, pagado y ligado al cobro: una liquidación con su parte.
+  unwrap(
+    await a.client.rpc("pay_record_payouts", {
+      p: {
+        settlements: [
+          {
+            id: crypto.randomUUID(),
+            beneficiary_id: basics.beneficiaryIds.b,
+            paid_on: "2026-11-16",
+            currency: "USD",
+            amount: "27.09",
+            items: [{ transaction_id: cobroId, amount: "27.09" }],
+          },
+        ],
+      },
+    }),
+    "liquidación ligada al cobro",
+  );
   const feriados = Array.from({ length: FERIADOS }, (_, i) => ({
     day: new Date(Date.UTC(2001, 0, 1 + i)).toISOString().slice(0, 10),
     name: `Feriado de prueba ${i + 1}`,
@@ -132,7 +151,7 @@ beforeAll(async () => {
 });
 
 describe("exportAll", () => {
-  it("lleva el formato, su versión, la fecha y hora, y las 19 tablas", () => {
+  it("lleva el formato, su versión, la fecha y hora, y las 20 tablas", () => {
     expect(exportado.format).toBe("pasarelas-export");
     expect(exportado.version).toBe(1);
     expect(exportado.exportedAt).toBe(AHORA);
@@ -206,7 +225,10 @@ describe("exportAll", () => {
     });
     expect(filas("pay_channels")[0]).toMatchObject({ platform_fee_pct: "5.0000", platform_fee_fixed: "0.00" });
     expect(filas("pay_scheme_lines").map((fila) => fila.pct).sort()).toEqual(["20.0000", "30.0000", "50.0000"]);
-    expect(filas("pay_settlements")[0]).toMatchObject({ amount: "45.15" });
+    expect(filas("pay_settlements").map((fila) => fila.amount).sort()).toEqual(["27.09", "45.15"]);
+    expect(filas("pay_settlement_items")).toEqual([
+      expect.objectContaining({ transaction_id: cobroId, beneficiary_id: expect.any(String), amount: "27.09" }),
+    ]);
   });
 
   it(`con ${FERIADOS} feriados salen los ${FERIADOS}, sin repetir ninguno`, () => {

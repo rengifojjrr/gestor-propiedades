@@ -36,6 +36,7 @@ const TABLAS = [
   "pay_transaction_receipts",
   "pay_transaction_events",
   "pay_settlements",
+  "pay_settlement_items",
   "pay_holidays",
 ] as const;
 
@@ -46,7 +47,7 @@ const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 /** Las tablas se recorren por nombre: el mismo cliente, sin los tipos de la base. */
 const admin = adminClient() as unknown as SupabaseClient;
 
-/** Cuántas filas de ese usuario hay en cada una de las 19 tablas (leído con la clave secreta). */
+/** Cuántas filas de ese usuario hay en cada una de las 20 tablas (leído con la clave secreta). */
 async function filasPorTabla(userId: string): Promise<Record<string, number>> {
   const cuenta: Record<string, number> = {};
   for (const tabla of TABLAS) {
@@ -58,7 +59,7 @@ async function filasPorTabla(userId: string): Promise<Record<string, number>> {
 }
 
 /**
- * Completa lo que `seedBasics` y el cobro E1 no crean, para que el usuario tenga filas en las 19 tablas.
+ * Completa lo que `seedBasics` y el cobro E1 no crean, para que el usuario tenga filas en las 20 tablas.
  * (El esquema por defecto de la empresa y su cuenta de la pasarela ya los deja `seedBasics`.)
  */
 async function usarTodasLasTablas(user: TestUser, b: Basics): Promise<{ txId: string; path: string }> {
@@ -97,6 +98,24 @@ async function usarTodasLasTablas(user: TestUser, b: Basics): Promise<{ txId: st
       .select("id"),
     "liquidación",
   );
+  // Lo del Grupo B, pagado y ligado al cobro: una liquidación con su parte. Borrar el usuario se lleva las dos.
+  unwrap(
+    await user.client.rpc("pay_record_payouts", {
+      p: {
+        settlements: [
+          {
+            id: crypto.randomUUID(),
+            beneficiary_id: b.beneficiaryIds.b,
+            paid_on: "2026-11-14",
+            currency: "USD",
+            amount: "27.09",
+            items: [{ transaction_id: cobro.id, amount: "27.09" }],
+          },
+        ],
+      },
+    }),
+    "liquidación ligada al cobro",
+  );
   unwrap(
     await user.client
       .from("pay_holidays")
@@ -122,10 +141,10 @@ describe("borrar un usuario por la API de administración", () => {
     filasDelOtro = await filasPorTabla(otro.id);
   });
 
-  it("antes de borrarlo tiene filas en las 19 tablas", async () => {
+  it("antes de borrarlo tiene filas en las 20 tablas", async () => {
     const cuenta = await filasPorTabla(user.id);
 
-    expect(Object.keys(cuenta)).toHaveLength(19);
+    expect(Object.keys(cuenta)).toHaveLength(20);
     for (const tabla of TABLAS) {
       expect(cuenta[tabla], tabla).toBeGreaterThan(0);
     }

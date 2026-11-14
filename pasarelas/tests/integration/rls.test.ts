@@ -19,7 +19,7 @@ import {
 
 /**
  * Cada fila es de un usuario y solo él la ve y la escribe; y si tiene un segundo factor, solo con sesión aal2.
- * Las mismas comprobaciones se repiten en las 19 tablas y las 4 vistas: los casos salen de las listas de abajo.
+ * Las mismas comprobaciones se repiten en las 20 tablas y las 4 vistas: los casos salen de las listas de abajo.
  */
 
 /** Estas pruebas recorren las tablas por nombre: usan el mismo cliente, sin los tipos de la base. */
@@ -163,6 +163,21 @@ const TABLAS: Tabla[] = [
     nombre: "pay_settlements",
     nueva: (ctx) => ({ beneficiary_id: ctx.b.beneficiaryIds.a, paid_on: "2026-11-05", amount: "1.00" }),
     cambio: { note: "cambiada" },
+  },
+  {
+    nombre: "pay_settlement_items",
+    // Una liquidación de 1,00 y su única parte, en el cobro E1: suman lo mismo, así que la liquidación cuadra.
+    nueva: async (ctx) => ({
+      settlement_id: await insertar(ctx.client, "pay_settlements", {
+        beneficiary_id: ctx.b.beneficiaryIds.a,
+        paid_on: "2026-11-05",
+        amount: "1.00",
+      }),
+      transaction_id: ctx.txId,
+      beneficiary_id: ctx.b.beneficiaryIds.a,
+      amount: "1.00",
+    }),
+    cambio: { created_at: "2026-01-01T00:00:00+00:00" },
   },
   {
     nombre: "pay_holidays",
