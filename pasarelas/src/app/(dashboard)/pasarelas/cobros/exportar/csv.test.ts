@@ -28,6 +28,7 @@ function e1(patch: Partial<TxListItem> = {}): TxListItem {
     receiptsCount: 0,
     feesPaidBy: "nosotros",
     buyerFees: "0.00",
+    retention: "0.00",
     schemeId: DEMO.schemeId,
     reference: "pi_demo_1",
     note: null,

@@ -1,10 +1,18 @@
 import { describe, expect, test } from "vitest";
-import { buyerFeesOf, parseBreakdown } from "./breakdown";
+import { buyerFeesOf, parseBreakdown, retentionOf } from "./breakdown";
 import { DEMO, cfgDemo } from "./demo.fixture";
 import { add, sub } from "./money";
 import { PayRuleError } from "./rules";
 import type { PayRuleCode } from "./rules";
-import type { AllocWrite, GatewayCfg, PayConfig, TxFields, TxSnapshot, TxWrite } from "./types";
+import type {
+  AllocWrite,
+  GatewayCfg,
+  PayConfig,
+  RetentionShareWrite,
+  TxFields,
+  TxSnapshot,
+  TxWrite,
+} from "./types";
 import {
   ESTIMATE_REFRESH_SUMMARY,
   PAY_STATE_TEXT,
@@ -86,13 +94,14 @@ function withPayPal(cfg: PayConfig): PayConfig {
     active: true,
     feeVersions: [{ id: "fv-paypal-1", pct: "3.49", fixed: "0.49", effectiveFrom: "2000-01-01", note: null }],
     extras: [],
+    retention: { pct: "0", days: 0, recipients: [] },
   });
   return cfg;
 }
 
 // ─── Una base de mentira: guarda lo que el plan manda y hace cumplir los mismos cuadres que la base real ────
 
-type Row = { fields: TxFields; allocations: AllocWrite[]; saves: number };
+type Row = { fields: TxFields; allocations: AllocWrite[]; retentionShares: RetentionShareWrite[]; saves: number };
 const rows = new WeakMap<TxSnapshot, Row>();
 
 const FIELD_NAMES: (keyof TxFields)[] = [
@@ -127,10 +136,11 @@ const FIELD_NAMES: (keyof TxFields)[] = [
   "deletedAt",
   "feesPaidBy",
   "buyerFees",
+  "retentionAmount",
 ];
 
 /** Las restricciones y disparadores de `pay_transactions`, más la coherencia entre columnas y desglose. */
-function expectRowIsSound({ fields: f, allocations }: Row): void {
+function expectRowIsSound({ fields: f, allocations, retentionShares }: Row): void {
   const b = f.breakdown;
   // El desglose sobrevive la ida y vuelta por la base (jsonb) sin perder ni cambiar nada.
   expect(parseBreakdown(JSON.parse(JSON.stringify(b)))).toEqual(b);
@@ -200,6 +210,15 @@ function expectRowIsSound({ fields: f, allocations }: Row): void {
   if (f.feesPaidBy === "nosotros") expect(f.buyerFees).toBe("0.00");
   // El disparador del reparto: la suma de lo asignado es exactamente la base.
   expect(add(...allocations.map((line) => line.amount))).toBe(f.allocBaseAmount);
+  // Lo retenido sale del desglose congelado; pay_transactions_retention_amount_check y el disparador de sus partes.
+  const retention = retentionOf(b);
+  expect(f.retentionAmount).toBe(retention?.amount ?? "0.00");
+  expect(retentionShares).toEqual(
+    retention?.shares.map((share) => ({ beneficiaryId: share.beneficiaryId, amount: share.amount })) ?? [],
+  );
+  expect(add(...retentionShares.map((share) => share.amount))).toBe(f.retentionAmount);
+  expect(sub(f.retentionAmount, "0.00").startsWith("-")).toBe(false);
+  expect(sub(f.grossAmount, f.retentionAmount).startsWith("-")).toBe(false);
   // pay_transactions_estimated_window_check, y además canónica: un solo día se guarda sin «desde».
   if (f.estimatedDepositFrom !== null) {
     expect(f.estimatedDepositOn).not.toBeNull();
@@ -236,6 +255,7 @@ function save(write: TxWrite, prev?: TxSnapshot): TxSnapshot {
     expect(write.expectedUpdatedAt).toBeNull();
     expect(Object.keys(write.fields).sort()).toEqual([...FIELD_NAMES].sort());
     expect(write.allocations).not.toBeNull();
+    expect(write.retentionShares).not.toBeNull();
     expect(write.event.data?.antes).toBeNull();
   } else {
     expect(write.mode).toBe("update");
@@ -245,14 +265,16 @@ function save(write: TxWrite, prev?: TxSnapshot): TxSnapshot {
       expect(FIELD_NAMES).toContain(name);
       expect(write.fields[name], `«${name}» va en la escritura sin haber cambiado`).not.toEqual(before.fields[name]);
     }
-    // El reparto se reescribe si y solo si cambia el desglose.
+    // El reparto y las partes de lo retenido se reescriben si y solo si cambia el desglose.
     expect(write.allocations !== null).toBe("breakdown" in write.fields);
+    expect(write.retentionShares !== null).toBe("breakdown" in write.fields);
     expect(write.event.data?.antes).toEqual(photoOf(before.fields));
   }
 
   const row: Row = {
     fields: { ...before?.fields, ...write.fields } as TxFields,
     allocations: write.allocations ?? before?.allocations ?? [],
+    retentionShares: write.retentionShares ?? before?.retentionShares ?? [],
     saves: (before?.saves ?? 0) + 1,
   };
   expectRowIsSound(row);
@@ -282,6 +304,7 @@ function save(write: TxWrite, prev?: TxSnapshot): TxSnapshot {
     receiptsCount: 0,
     feesPaidBy: f.feesPaidBy,
     buyerFees: f.buyerFees,
+    retention: f.retentionAmount,
     schemeId: f.schemeId,
     reference: f.reference,
     note: f.note,
@@ -798,6 +821,8 @@ describe("planCreate", () => {
       // Sin decir quién pagó la comisión, la pagó el negocio: lo de siempre, y nada de los compradores.
       feesPaidBy: "nosotros",
       buyerFees: "0.00",
+      // Stripe no retiene nada.
+      retentionAmount: "0.00",
     });
     expect(write.fields.breakdown?.lines.map((line) => [line.kind, line.amount])).toEqual([
       ["pasarela", "3.20"],
@@ -2228,6 +2253,116 @@ describe("ventanas de depósito («de 3 a 5 días»)", () => {
 });
 
 // ─── Recalcular ─────────────────────────────────────────────────────────────────────────────────────────────
+
+describe("la retención de la pasarela", () => {
+  /** Stripe retiene el 5 % durante 30 días para los Grupos A y B, mitad y mitad. */
+  function withRetention(cfg: PayConfig): PayConfig {
+    stripe(cfg).retention = {
+      pct: "5",
+      days: 30,
+      recipients: [
+        { beneficiaryId: DEMO.beneficiaryIds.a, pct: "50" },
+        { beneficiaryId: DEMO.beneficiaryIds.b, pct: "50" },
+      ],
+    };
+    return cfg;
+  }
+  const retentionShares = (write: TxWrite) => write.retentionShares?.map((share) => share.amount);
+
+  test("planCreate: lo retenido (5 % de 100,00) y sus partes salen del desglose y se escriben con las comisiones", () => {
+    const write = planCreate(withRetention(cfgDemo()), inputE1());
+    expect(write.fields).toMatchObject({ feesTotal: "9.70", netAmount: "90.30", retentionAmount: "5.00" });
+    expect(write.retentionShares).toEqual([
+      { beneficiaryId: DEMO.beneficiaryIds.a, amount: "2.50" },
+      { beneficiaryId: DEMO.beneficiaryIds.b, amount: "2.50" },
+    ]);
+    // El reparto no cambia: la retención no es una comisión.
+    expect(shares(write)).toEqual(["45.15", "27.09", "18.06"]);
+    save(write);
+  });
+
+  test("lo que ya existe (sin retención) da exactamente lo de hoy: 0,00 y ninguna parte", () => {
+    const write = planCreate(cfgDemo(), inputE1());
+    expect(write.fields.retentionAmount).toBe("0.00");
+    expect(write.retentionShares).toEqual([]);
+    expect(write.fields.breakdown?.rules.gateway).not.toHaveProperty("retention");
+    save(write);
+  });
+
+  test("cada camino que escribe las comisiones escribe lo retenido: reembolso, disputa, fallido y reabrir", () => {
+    const cfg = withRetention(cfgDemo());
+    const tx = save(planCreate(cfg, inputE1()));
+
+    const partial = planRefund(tx, { amount: "40.00", on: "2026-11-16" });
+    expect(partial.fields.retentionAmount).toBe("3.00");
+    expect(retentionShares(partial)).toEqual(["1.50", "1.50"]);
+    save(partial, tx);
+
+    const total = planRefundTotal(tx, "100.00");
+    expect(total.fields.retentionAmount).toBe("0.00");
+    expect(retentionShares(total)).toEqual(["0.00", "0.00"]);
+    save(total, tx);
+
+    const opened = save(planDispute(tx, { action: "abrir", on: "2026-11-16" }), tx);
+    const lost = planDispute(opened, { action: "perder", on: "2026-11-20" });
+    expect(lost.fields.retentionAmount).toBe("0.00");
+    save(lost, opened);
+
+    const failed = save(planFail(tx), tx);
+    expect(failed.retention).toBe("0.00");
+    const reopened = planReopen(failed);
+    expect(reopened.fields.retentionAmount).toBe("5.00");
+    expect(retentionShares(reopened)).toEqual(["2.50", "2.50"]);
+    save(reopened, failed);
+  });
+
+  test("editar sin tocar el cálculo no toca las partes; cambiar de pasarela trae la retención de la nueva", () => {
+    const cfg = withPayPal(withRetention(cfgDemo()));
+    const tx = save(planCreate(cfg, inputE1()));
+    const note = planEdit(cfg, tx, { note: "Nota" });
+    expect(note.retentionShares).toBeNull();
+    expect(note.fields).not.toHaveProperty("retentionAmount");
+
+    const moved = planEdit(cfg, tx, { gatewayId: "gw-paypal", extraIds: [] });
+    expect(moved.fields.retentionAmount).toBe("0.00");
+    expect(moved.retentionShares).toEqual([]);
+    save(moved, tx);
+  });
+
+  test("editar la fecha o el monto conserva la retención congelada, aunque la pasarela ya no retenga", () => {
+    const tx = save(planCreate(withRetention(cfgDemo()), inputE1()));
+    const amount = planEdit(cfgDemo(), tx, { grossOriginal: "200.00" });
+    expect(amount.fields.retentionAmount).toBe("10.00");
+    expect(retentionShares(amount)).toEqual(["5.00", "5.00"]);
+    save(amount, tx);
+    const moved = planEdit(cfgDemo(), tx, { occurredAt: "2026-11-16T15:30:00Z" });
+    expect(moved.fields).not.toHaveProperty("retentionAmount");
+    const saved = save(moved, tx);
+    expect(saved.breakdown.rules.gateway.retention?.pct).toBe("5");
+    expect(saved.retention).toBe("5.00");
+  });
+
+  test("planRecalc trae la retención vigente a un cobro registrado antes de que existiera, y lo dice", () => {
+    const tx = savedE1();
+    const { write, changes } = planRecalc(withRetention(cfgDemo()), tx, "hoy", "2026-11-20");
+    expect(write.fields.retentionAmount).toBe("5.00");
+    expect(retentionShares(write)).toEqual(["2.50", "2.50"]);
+    expect(write.fields).not.toHaveProperty("netAmount");
+    expect(changes).toEqual([
+      { key: "retention", label: "Retenido", before: "—", after: "5.00" },
+      { key: `retention:${DEMO.beneficiaryIds.a}`, label: "Retenido · Grupo A", before: "—", after: "2.50" },
+      { key: `retention:${DEMO.beneficiaryIds.b}`, label: "Retenido · Grupo B", before: "—", after: "2.50" },
+    ]);
+    const recalculated = save(write, tx);
+    // Ya al día: recalcular otra vez no escribe nada.
+    expect(planRecalc(withRetention(cfgDemo()), recalculated, "hoy", "2026-11-20").write.fields).toEqual({});
+    // Y si la pasarela deja de retener, recalcular se la quita.
+    const removed = planRecalc(cfgDemo(), recalculated, "hoy", "2026-11-20").write;
+    expect(removed.fields.retentionAmount).toBe("0.00");
+    expect(removed.retentionShares).toEqual([]);
+    save(removed, recalculated);
+  });
+});
 
 describe("planRecalc", () => {
   test("«vigente desde mañana», con la tarifa de hoy: el cobro del 13 pasa a pagar 3,80 y el antes y después lo dice", () => {

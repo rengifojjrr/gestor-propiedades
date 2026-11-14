@@ -28,6 +28,7 @@ const tx = (id: string, patch: Partial<LeanTx> = {}): LeanTx => ({
   receiptsCount: 0,
   feesPaidBy: "nosotros",
   buyerFees: "0.00",
+  retention: "0.00",
   ...patch,
 });
 
@@ -139,6 +140,10 @@ describe("summarize: 6 filas en USD y 2 en EUR", () => {
       pendingCount: 2,
       depositedNet: "331.95", // u1 + u2 + u3 = 90,30 + 193,90 + 47,75
       depositedCount: 3,
+      // Ninguna pasarela retuvo nada: lo que llega al banco es el neto.
+      retention: "0.00",
+      pendingPayout: "108.96",
+      depositedPayout: "331.95",
     });
   });
 
@@ -156,6 +161,9 @@ describe("summarize: 6 filas en USD y 2 en EUR", () => {
       pendingCount: 1,
       depositedNet: "57.96",
       depositedCount: 1,
+      retention: "0.00",
+      pendingPayout: "38.54",
+      depositedPayout: "57.96",
     });
   });
 
@@ -427,6 +435,9 @@ describe("quién paga la comisión: la venta y las comisiones del negocio", () =
       pendingCount: 2,
       depositedNet: "0.00",
       depositedCount: 0,
+      retention: "0.00",
+      pendingPayout: "1099.84",
+      depositedPayout: "0.00",
     });
     expect(usd?.byMonth).toEqual([
       { month: "2026-11", gross: "1140.00", sale: "1109.54", fees: "9.70", buyerFees: "30.46", net: "1099.84", count: 2 },
@@ -589,6 +600,7 @@ describe("por caer: una sola definición para la tarjeta y para los próximos de
         bankAccountId: "cta-a",
         currency: "USD",
         net: "143.20",
+        payout: "143.20",
         count: 2,
         ids: ["normal", "parcial"],
         overdue: false,
@@ -605,6 +617,7 @@ describe("por caer: una sola definición para la tarjeta y para los próximos de
         bankAccountId: "cta-a",
         currency: "USD",
         net: "143.20",
+        payout: "143.20",
         count: 2,
         ids: ["normal", "parcial"],
         overdue: true,
@@ -616,6 +629,51 @@ describe("por caer: una sola definición para la tarjeta y para los próximos de
     const ganada = tx("ganada", { disputeState: "ganada", estimatedDepositOn: "2026-11-10" });
     expect(summarize([ganada], HOY).USD?.totals).toMatchObject({ pendingNet: "90.30", pendingCount: 1 });
     expect(upcomingDeposits([ganada], HOY).map((deposito) => deposito.ids)).toEqual([["ganada"]]);
+  });
+});
+
+describe("la retención: «Por caer» y «Depositado» son lo que llega al banco", () => {
+  /** E10 por caer: neto 970,80 del que OTF Demo retuvo 50,00. */
+  const e10 = tx("e10", {
+    gatewayId: "pas-otf",
+    ...monto("1000.00", "29.20", "970.80"),
+    retention: "50.00",
+    estimatedDepositOn: "2026-11-10",
+  });
+  /** E1 ya depositado, con 5,00 retenidos. */
+  const depositado = tx("depositado", { status: "depositado", depositedOn: HOY, retention: "5.00" });
+  /** Un fallido no cuenta en nada (su retenido es 0). */
+  const fallido = tx("fallido", { status: "fallido", ...monto("100.00", "0.00", "0.00"), gross: "0.00" });
+
+  test("el total retenido se suma aparte; neto, comisiones y bruto no cambian", () => {
+    expect(summarize([e10, depositado, fallido], HOY).USD?.totals).toMatchObject({
+      count: 2,
+      gross: "1100.00",
+      fees: "38.90",
+      net: "1061.10",
+      retention: "55.00",
+      pendingNet: "970.80",
+      pendingPayout: "920.80",
+      depositedNet: "90.30",
+      depositedPayout: "85.30",
+    });
+  });
+
+  test("los próximos depósitos dicen lo que llega al banco junto al neto", () => {
+    const otro = tx("otro", { estimatedDepositOn: "2026-11-10" });
+    expect(upcomingDeposits([e10, otro], HOY)).toEqual([
+      {
+        date: "2026-11-10",
+        from: "2026-11-10",
+        bankAccountId: "cta-a",
+        currency: "USD",
+        net: "1061.10",
+        payout: "1011.10",
+        count: 2,
+        ids: ["e10", "otro"],
+        overdue: false,
+      },
+    ]);
   });
 });
 
@@ -708,9 +766,9 @@ describe("upcomingDeposits", () => {
 
   test("con las filas a mano: primero el atrasado; fuera el depositado, el fallido y el reembolsado", () => {
     expect(upcomingDeposits(FILAS, HOY)).toEqual([
-      { date: "2026-11-04", from: "2026-11-04", bankAccountId: "cta-a", currency: "USD", net: "32.06", count: 1, ids: ["u4"], overdue: true },
-      { date: HOY, from: HOY, bankAccountId: "cta-eur", currency: "EUR", net: "38.54", count: 1, ids: ["e2"], overdue: false },
-      { date: "2026-11-10", from: "2026-11-10", bankAccountId: "cta-b", currency: "USD", net: "76.90", count: 1, ids: ["u5"], overdue: false },
+      { date: "2026-11-04", from: "2026-11-04", bankAccountId: "cta-a", currency: "USD", net: "32.06", payout: "32.06", count: 1, ids: ["u4"], overdue: true },
+      { date: HOY, from: HOY, bankAccountId: "cta-eur", currency: "EUR", net: "38.54", payout: "38.54", count: 1, ids: ["e2"], overdue: false },
+      { date: "2026-11-10", from: "2026-11-10", bankAccountId: "cta-b", currency: "USD", net: "76.90", payout: "76.90", count: 1, ids: ["u5"], overdue: false },
     ]);
   });
 
@@ -742,10 +800,10 @@ describe("upcomingDeposits", () => {
     ];
     expect(upcomingDeposits(filas, HOY)).toEqual([
       // A igual fecha: por moneda y luego por cuenta.
-      { date: "2026-11-10", from: "2026-11-10", bankAccountId: "cta-a", currency: "EUR", net: "90.30", count: 1, ids: ["otra-moneda"], overdue: false },
-      { date: "2026-11-10", from: "2026-11-10", bankAccountId: "cta-a", currency: "USD", net: "122.36", count: 2, ids: ["b", "a"], overdue: false },
-      { date: "2026-11-10", from: "2026-11-10", bankAccountId: "cta-b", currency: "USD", net: "90.30", count: 1, ids: ["otra-cuenta"], overdue: false },
-      { date: "2026-11-11", from: "2026-11-11", bankAccountId: "cta-a", currency: "USD", net: "90.30", count: 1, ids: ["otra-fecha"], overdue: false },
+      { date: "2026-11-10", from: "2026-11-10", bankAccountId: "cta-a", currency: "EUR", net: "90.30", payout: "90.30", count: 1, ids: ["otra-moneda"], overdue: false },
+      { date: "2026-11-10", from: "2026-11-10", bankAccountId: "cta-a", currency: "USD", net: "122.36", payout: "122.36", count: 2, ids: ["b", "a"], overdue: false },
+      { date: "2026-11-10", from: "2026-11-10", bankAccountId: "cta-b", currency: "USD", net: "90.30", payout: "90.30", count: 1, ids: ["otra-cuenta"], overdue: false },
+      { date: "2026-11-11", from: "2026-11-11", bankAccountId: "cta-a", currency: "USD", net: "90.30", payout: "90.30", count: 1, ids: ["otra-fecha"], overdue: false },
     ]);
   });
 
@@ -796,7 +854,7 @@ describe("upcomingDeposits", () => {
       porCaer("normal", "2026-11-10", { ...monto("33.33", "1.27", "32.06") }),
     ];
     expect(upcomingDeposits(filas, HOY)).toEqual([
-      { date: "2026-11-10", from: "2026-11-10", bankAccountId: "cta-a", currency: "USD", net: "31.95", count: 2, ids: ["cuota-fija", "normal"], overdue: false },
+      { date: "2026-11-10", from: "2026-11-10", bankAccountId: "cta-a", currency: "USD", net: "31.95", payout: "31.95", count: 2, ids: ["cuota-fija", "normal"], overdue: false },
     ]);
   });
 

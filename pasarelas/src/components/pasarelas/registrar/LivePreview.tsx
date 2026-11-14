@@ -107,6 +107,7 @@ function fixFor(code: PayRuleCode, companyId: string): { href: string; label: st
     case "pasarela":
     case "opcion":
     case "sin_tarifa":
+    case "retencion":
       return { href: "/pasarelas/pasarelas", label: "Revisar las pasarelas" };
     case "esquema":
     case "sin_version":

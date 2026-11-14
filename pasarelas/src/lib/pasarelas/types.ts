@@ -28,6 +28,20 @@ export type FeesPaidBy = 'nosotros' | 'comprador';
 
 // ─── Reglas congeladas ──────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Lo que la pasarela retiene de cada cobro y a quién le cae cuando lo libera. No es una comisión: es una parte del neto
+ * que la pasarela le paga directo a esas personas (no llega al banco del negocio) y cuenta como un pago que ya
+ * recibieron de lo que les toca en el reparto.
+ */
+export type RetentionRule = {
+  /** El porcentaje del bruto vigente que retiene; siempre mayor que 0 (sin retención, la regla no existe). */
+  pct: Pct;
+  /** Días corridos que lo retiene: se libera el día del cobro más estos días. */
+  days: number;
+  /** A quién le cae, cada una con su porcentaje de lo retenido (suman 100). */
+  recipients: { beneficiaryId: string; name: string; pct: Pct }[];
+};
+
 export type GatewayRule = {
   id: string;
   name: string;
@@ -38,6 +52,11 @@ export type GatewayRule = {
   disputeFee: Money;
   /** Comisión real informada por la pasarela (importación). Si existe, reemplaza a pct + fixed. */
   feeOverride?: Money;
+  /**
+   * La retención de la pasarela, solo si retiene más de 0 %. Sin la clave no retiene nada: así quedan los desgloses
+   * congelados antes de existir la retención, y los de una pasarela que no retiene.
+   */
+  retention?: RetentionRule;
 };
 
 export type ExtraRule = {
@@ -153,6 +172,9 @@ export type ExtraCfg = Omit<ExtraRule, "payoutDaysOverrideMax"> & {
   kind: "opcion" | "internacional";
 };
 
+/** La retención configurada en una pasarela: `pct` "0" = no retiene (y sin personas). */
+export type RetentionCfg = { pct: Pct; days: number; recipients: { beneficiaryId: string; pct: Pct }[] };
+
 export type GatewayCfg = {
   id: string;
   name: string;
@@ -165,6 +187,8 @@ export type GatewayCfg = {
   active: boolean;
   feeVersions: FeeVersionCfg[];
   extras: ExtraCfg[];
+  /** Lo que retiene de cada cobro y a quién le cae (`pay_gateways.retention_*` y sus personas). */
+  retention: RetentionCfg;
 };
 
 export type CompanyCfg = {
@@ -271,6 +295,8 @@ export type LeanTx = {
    * son `fees − buyerFees`, y lo facturado, `gross − buyerFees`.
    */
   buyerFees: Money;
+  /** Lo que retuvo la pasarela (`retentionOf` de su desglose): no llega al banco. Lo que llega es `net − retention`. */
+  retention: Money;
 };
 
 /** El cobro completo guardado (lo que hace falta para planear un cambio). */
@@ -328,9 +354,14 @@ export type TxFields = {
   feesPaidBy: FeesPaidBy;
   /** Lo que pagaron los compradores: sale del desglose y se escribe con `feesTotal`. */
   buyerFees: Money;
+  /** Lo que retuvo la pasarela: sale del desglose y se escribe con `feesTotal`. */
+  retentionAmount: Money;
 };
 
 export type AllocWrite = { beneficiaryId: string; amount: Money; base: AllocBase; pct: Pct; isRemainder: boolean };
+
+/** Lo que recibe una persona de lo retenido en un cobro (`pay_retention_shares`). */
+export type RetentionShareWrite = { beneficiaryId: string; amount: Money };
 
 /** Una escritura lista para la función pay_save_transactions. */
 export type TxWrite = {
@@ -341,5 +372,7 @@ export type TxWrite = {
   expectedUpdatedAt: string | null;
   /** null = no tocar el reparto. */
   allocations: AllocWrite[] | null;
+  /** null = no tocar las partes de lo retenido. Van y vuelven con el reparto: cuando cambia el desglose. */
+  retentionShares: RetentionShareWrite[] | null;
   event: { kind: EventKind; summary: string; data: Record<string, unknown> | null };
 };

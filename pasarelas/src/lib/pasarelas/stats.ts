@@ -7,6 +7,9 @@
  * (`buyerFees`, la pasarela, sus opciones y la plataforma de lo que el comprador sigue pagando). Lo facturado es el
  * bruto menos eso, y las comisiones del negocio, las demás: el costo de un reembolso o de una disputa
  * (`businessFigures`). El bruto sigue siendo todo lo cobrado.
+ *
+ * Lo que retiene una pasarela (`retention`) no es una comisión: el neto lo incluye, pero no llega al banco (le cae a
+ * ciertas personas). «Por caer» y «Depositado» se dicen además con lo que de verdad llega al banco: neto − retenido.
  */
 import type { Decimal } from "decimal.js";
 import { addDays, daysBetween, monthKey } from "./dates";
@@ -45,6 +48,12 @@ export type Totals = Figures & {
   pendingCount: number;
   depositedNet: Money;
   depositedCount: number;
+  /** Lo que retuvieron las pasarelas (no llega al banco). */
+  retention: Money;
+  /** Lo que llega al banco de lo que está por caer: su neto menos lo retenido. */
+  pendingPayout: Money;
+  /** Lo que llegó al banco de lo depositado: su neto menos lo retenido. */
+  depositedPayout: Money;
 };
 
 export type CurrencySummary = {
@@ -83,6 +92,8 @@ export type DepositGroup = {
   bankAccountId: string | null;
   currency: Currency;
   net: Money;
+  /** Lo que llega al banco: el neto menos lo que retuvieron las pasarelas. */
+  payout: Money;
   count: number;
   ids: string[];
   overdue: boolean;
@@ -128,6 +139,14 @@ export function businessFigures(
  */
 function costPct(fees: Money, sale: Money): Pct | null {
   return cmp(sale, ZERO) > 0 ? pctOf(fees, sale) : null;
+}
+
+/** Lo que llega al banco de un cobro: su neto menos lo que retuvo la pasarela. */
+const payoutOfRow = (row: LeanTx): Money => sub(row.net, row.retention);
+
+/** Lo retenido y lo que llega al banco de filas de UNA moneda. */
+function retainedOf(rows: readonly LeanTx[]): { retention: Money; payout: Money } {
+  return { retention: add(ZERO, ...rows.map((row) => row.retention)), payout: add(ZERO, ...rows.map(payoutOfRow)) };
 }
 
 /** Suma de filas de UNA moneda (quien llama ya las separó). */
@@ -189,8 +208,10 @@ function lagOf(rows: readonly LeanTx[]): Lag | null {
  */
 function summarizeCurrency(rows: readonly LeanTx[]): CurrencySummary {
   const all = sumRows(rows);
-  const pending = sumRows(rows.filter(isPending));
-  const deposited = sumRows(rows.filter(isDeposited));
+  const pendingRows = rows.filter(isPending);
+  const depositedRows = rows.filter(isDeposited);
+  const pending = sumRows(pendingRows);
+  const deposited = sumRows(depositedRows);
   return {
     totals: {
       ...all,
@@ -200,6 +221,9 @@ function summarizeCurrency(rows: readonly LeanTx[]): CurrencySummary {
       pendingCount: pending.count,
       depositedNet: deposited.net,
       depositedCount: deposited.count,
+      retention: retainedOf(rows).retention,
+      pendingPayout: retainedOf(pendingRows).payout,
+      depositedPayout: retainedOf(depositedRows).payout,
     },
     byMonth: [...groupBy(rows, (row) => monthKey(row.occurredOn))]
       .map(([month, group]) => ({ month, ...sumRows(group) }))
@@ -309,12 +333,14 @@ export function upcomingDeposits(rows: readonly LeanTx[], today: ISODate, days =
     const group = groups.get(key);
     if (group) {
       group.net = add(group.net, row.net);
+      group.payout = add(group.payout, payoutOfRow(row));
       group.count += 1;
       group.ids.push(row.id);
       if (from < group.from) group.from = from;
     } else {
       const { bankAccountId, currency } = row;
-      groups.set(key, { date, from, bankAccountId, currency, net: add(row.net), count: 1, ids: [row.id], overdue });
+      const payout = payoutOfRow(row);
+      groups.set(key, { date, from, bankAccountId, currency, net: add(row.net), payout, count: 1, ids: [row.id], overdue });
     }
   }
   return [...groups.values()].sort(

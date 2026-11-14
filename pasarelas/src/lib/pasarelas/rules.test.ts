@@ -4,11 +4,14 @@ import { DEMO, cfgDemo } from "./demo.fixture";
 import {
   PAY_RULE_TEXT,
   PayRuleError,
+  RETENTION_ISSUE_TEXT,
   defaultExtraIds,
   feeExemptIdsOf,
   reResolve,
   resolvePayout,
   resolveRules,
+  retentionRecipientsTotal,
+  validateRetention,
 } from "./rules";
 import type { PayRuleCode } from "./rules";
 import type { ExtraCfg, ExtraRule, GatewayCfg, PayConfig, Rules, Selection } from "./types";
@@ -99,6 +102,7 @@ function withPayPal(cfg: PayConfig): PayConfig {
     active: true,
     feeVersions: [{ id: "fv-paypal-1", pct: "3.49", fixed: "0.49", effectiveFrom: "2000-01-01", note: null }],
     extras: [extra("ex-paypal-divisa", { name: "Cambio de divisa", pct: "4", sort: 0 })],
+    retention: { pct: "0", days: 0, recipients: [] },
   });
   return cfg;
 }
@@ -163,6 +167,7 @@ describe("PayRuleError", () => {
       "sin_tarifa",
       "sin_version",
       "nadie_paga_comision",
+      "retencion",
     ];
     expect(Object.keys(PAY_RULE_TEXT).sort()).toEqual([...codes].sort());
     const texts = codes.map((code) => PAY_RULE_TEXT[code]);
@@ -479,6 +484,96 @@ describe("resolveRules", () => {
 });
 
 // ─── reResolve ──────────────────────────────────────────────────────────────────────────────────────────────
+
+describe("resolveRules: la retención de la pasarela", () => {
+  /** Stripe retiene el 5 % durante 30 días para los Grupos A y B, mitad y mitad (con ceros de relleno, como la base). */
+  function withRetention(cfg: PayConfig): PayConfig {
+    stripe(cfg).retention = {
+      pct: "5.0000",
+      days: 30,
+      recipients: [
+        { beneficiaryId: DEMO.beneficiaryIds.a, pct: "50.0000" },
+        { beneficiaryId: DEMO.beneficiaryIds.b, pct: "50.0000" },
+      ],
+    };
+    return cfg;
+  }
+
+  test("se congela en la regla de la pasarela, con el nombre de cada persona y los porcentajes normalizados", () => {
+    expect(resolveRules(withRetention(cfgDemo()), selE1()).gateway.retention).toEqual({
+      pct: "5",
+      days: 30,
+      recipients: [
+        { beneficiaryId: DEMO.beneficiaryIds.a, name: "Grupo A", pct: "50" },
+        { beneficiaryId: DEMO.beneficiaryIds.b, name: "Grupo B", pct: "50" },
+      ],
+    });
+  });
+
+  test("con 0 % la regla no lleva la clave: el desglose queda como el de una pasarela que nunca retuvo", () => {
+    expect(resolveRules(cfgDemo(), selE1())).toEqual(rulesE1());
+    expect(resolveRules(cfgDemo(), selE1()).gateway).not.toHaveProperty("retention");
+  });
+
+  test("una persona que ya no está en la configuración: error «retencion»", () => {
+    const cfg = withRetention(cfgDemo());
+    cfg.beneficiaries = cfg.beneficiaries.filter((b) => b.id !== DEMO.beneficiaryIds.b);
+    expectRuleError(() => resolveRules(cfg, selE1({ schemeId: null })), "retencion");
+  });
+
+  test("editar la fecha conserva la retención congelada; cambiar de pasarela trae la de la nueva", () => {
+    const frozen = resolveRules(cfgDemo(), selE1());
+    const now = withRetention(cfgDemo());
+    expect(reResolve(frozen, now, selE1({ occurredOn: "2026-11-16" }), { ...NOTHING, date: true }).gateway).not.toHaveProperty(
+      "retention",
+    );
+    const paypal = withPayPal(withRetention(cfgDemo()));
+    const retained = resolveRules(paypal, selE1());
+    const moved = reResolve(retained, paypal, selE1({ gatewayId: "gw-paypal", extraIds: [] }), {
+      ...NOTHING,
+      gateway: true,
+    });
+    expect(moved.gateway).not.toHaveProperty("retention");
+    const back = reResolve(moved, paypal, selE1(), { ...NOTHING, gateway: true });
+    expect(back.gateway.retention?.pct).toBe("5");
+  });
+});
+
+describe("validateRetention", () => {
+  const person = (beneficiaryId: string, pct: string) => ({ beneficiaryId, pct });
+
+  test("con 0 % y sin personas, o con más de 0 % y personas que suman 100, se puede guardar", () => {
+    expect(validateRetention({ pct: "0", recipients: [] })).toEqual([]);
+    expect(validateRetention({ pct: "5", recipients: [person("a", "50"), person("b", "50")] })).toEqual([]);
+    expect(validateRetention({ pct: "100", recipients: [person("a", "33.3333"), person("b", "66.6667")] })).toEqual(
+      [],
+    );
+  });
+
+  test("con 0 % no hay personas; con más de 0 % hay al menos una", () => {
+    expect(validateRetention({ pct: "0", recipients: [person("a", "100")] })).toEqual(["personas_sin_pct"]);
+    expect(validateRetention({ pct: "5", recipients: [] })).toEqual(["sin_personas"]);
+  });
+
+  test("las personas suman exactamente 100 y ninguna está dos veces", () => {
+    expect(validateRetention({ pct: "5", recipients: [person("a", "50"), person("b", "49.9999")] })).toEqual([
+      "no_suma_100",
+    ]);
+    expect(validateRetention({ pct: "5", recipients: [person("a", "50"), person("a", "50")] })).toEqual([
+      "persona_repetida",
+    ]);
+    expect(validateRetention({ pct: "5", recipients: [person("a", "60"), person("a", "60")] })).toEqual([
+      "persona_repetida",
+      "no_suma_100",
+    ]);
+  });
+
+  test("cada problema tiene su texto y la suma se escribe sin ceros de relleno", () => {
+    expect(Object.values(RETENTION_ISSUE_TEXT).every((text) => text.length > 10)).toBe(true);
+    expect(retentionRecipientsTotal([person("a", "50.0000"), person("b", "49.5000")])).toBe("99.5");
+    expect(retentionRecipientsTotal([])).toBe("0");
+  });
+});
 
 describe("reResolve", () => {
   /** Reglas viejas, inconfundibles: nada de esto está ya en la configuración. */

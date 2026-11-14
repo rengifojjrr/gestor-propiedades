@@ -44,6 +44,7 @@ function savedE1(): TxSnapshot {
     receiptsCount: 0,
     feesPaidBy: "nosotros",
     buyerFees: "0.00",
+    retention: "0.00",
     schemeId: DEMO.schemeId,
     reference: null,
     note: null,

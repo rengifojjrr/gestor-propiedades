@@ -7,7 +7,7 @@
  * configuración, `PayRuleError` (rules.ts). Un monto cobrado o un instante mal escritos los rechazan el cálculo
  * y las fechas con `RangeError`: validar la forma de lo que entra es cosa de quien llama.
  */
-import { buyerFeesOf, compute, diff, recalc, recompute } from "./breakdown";
+import { buyerFeesOf, compute, diff, recalc, recompute, retentionOf } from "./breakdown";
 import { estimateDepositWindow, formatDate, nyDate, type DateWindow } from "./dates";
 import { ZERO, isMoney } from "./decimal";
 import { add, cmp, formatMoney } from "./money";
@@ -26,6 +26,7 @@ import type {
   Lifecycle,
   Money,
   PayConfig,
+  RetentionShareWrite,
   Selection,
   TxFields,
   TxSnapshot,
@@ -139,7 +140,8 @@ export type EditTxInput = Partial<
 
 /**
  * Las columnas que salen del desglose: cuando se recalcula, se escriben las que hayan cambiado. Lo que pagaron los
- * compradores va siempre junto con las comisiones: todo camino que escribe `feesTotal` pasa por aquí.
+ * compradores y lo que retuvo la pasarela van siempre junto con las comisiones: todo camino que escribe `feesTotal`
+ * pasa por aquí (alta e importación, edición, reembolso, disputa, fallido, reabrir y recalcular).
  */
 function derived(b: Breakdown) {
   return {
@@ -158,6 +160,7 @@ function derived(b: Breakdown) {
     disputeState: b.state.dispute,
     feesPaidBy: b.state.feesPaidBy,
     buyerFees: buyerFeesOf(b),
+    retentionAmount: retentionOf(b)?.amount ?? ZERO,
   } satisfies Partial<TxFields>;
 }
 
@@ -196,6 +199,7 @@ function columns(tx: TxSnapshot): TxFields {
     deletedAt: tx.deletedAt,
     feesPaidBy: tx.feesPaidBy,
     buyerFees: tx.buyerFees,
+    retentionAmount: tx.retention,
   };
 }
 
@@ -214,6 +218,14 @@ function allocationsOf(b: Breakdown): AllocWrite[] {
     pct: line.pct,
     isRemainder: line.isRemainder,
   }));
+}
+
+/**
+ * Lo que recibe cada persona de lo retenido, como filas de `pay_retention_shares`. Sin retención, ninguna. Suman
+ * exactamente lo retenido (`retentionAmount`).
+ */
+function retentionSharesOf(b: Breakdown): RetentionShareWrite[] {
+  return (retentionOf(b)?.shares ?? []).map((share) => ({ beneficiaryId: share.beneficiaryId, amount: share.amount }));
 }
 
 /**
@@ -268,7 +280,7 @@ function sameValue(a: unknown, b: unknown): boolean {
 
 /**
  * La escritura de un cambio sobre un cobro guardado. De `next` solo quedan las columnas que de verdad cambian
- * (`undefined` = sin tocar); el reparto se reescribe si y solo si cambia el desglose.
+ * (`undefined` = sin tocar); el reparto y las partes de lo retenido se reescriben si y solo si cambia el desglose.
  */
 function update(
   tx: TxSnapshot,
@@ -289,6 +301,7 @@ function update(
     fields,
     expectedUpdatedAt: tx.updatedAt,
     allocations: fields.breakdown === undefined ? null : allocationsOf(fields.breakdown),
+    retentionShares: fields.breakdown === undefined ? null : retentionSharesOf(fields.breakdown),
     event: { kind, summary, data: { antes: photo(before), despues: photo({ ...before, ...fields }), ...extra } },
   };
 }
@@ -394,6 +407,7 @@ export function planCreate(cfg: PayConfig, input: NewTxInput, kind: "creado" | "
     fields,
     expectedUpdatedAt: null,
     allocations: allocationsOf(b),
+    retentionShares: retentionSharesOf(b),
     event: {
       kind,
       summary: `Cobro de ${formatMoney(b.gross, b.currency)} por ${rules.gateway.name}`,

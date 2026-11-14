@@ -50,6 +50,7 @@ export function cfgDemo(): PayConfig {
         disputeFee: "15.00",
         active: true,
         feeVersions: [{ id: DEMO.feeVersionId, pct: "2.9", fixed: "0.30", effectiveFrom: "2000-01-01", note: null }],
+        retention: { pct: "0", days: 0, recipients: [] },
         extras: [
           {
             id: DEMO.extraId,

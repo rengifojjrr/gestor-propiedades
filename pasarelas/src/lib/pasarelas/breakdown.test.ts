@@ -1,11 +1,21 @@
 import { describe, expect, test } from "vitest";
 import { allocate } from "./allocate";
-import { buyerFeesOf, compute, diff, parseBreakdown, recalc, recompute } from "./breakdown";
+import {
+  buyerFeesOf,
+  compute,
+  diff,
+  parseBreakdown,
+  payoutOf,
+  recalc,
+  recompute,
+  retentionOf,
+  retentionReleaseOn,
+} from "./breakdown";
 import { D, isMoney } from "./decimal";
 import { sub } from "./money";
 import { PayRuleError } from "./rules";
 import { businessFigures } from "./stats";
-import type { Breakdown, ExtraRule, Rules, SchemeRule, State } from "./types";
+import type { Breakdown, ExtraRule, RetentionRule, Rules, SchemeRule, State } from "./types";
 
 // ─── Datos de ejemplo (inventados) ──────────────────────────────────────────────────────────────────────────
 
@@ -557,6 +567,174 @@ describe("compute: partes que no pagan comisión", () => {
   });
 });
 
+// ─── La retención de la pasarela ────────────────────────────────────────────────────────────────────────────
+
+/** OTF Demo retiene el 5 % durante 30 días para Titular A y Titular B, mitad y mitad. */
+const OTF_RETENTION: RetentionRule = {
+  pct: "5",
+  days: 30,
+  recipients: [
+    { beneficiaryId: "ben-ta", name: "Titular A", pct: "50" },
+    { beneficiaryId: "ben-tb", name: "Titular B", pct: "50" },
+  ],
+};
+
+/**
+ * E10: OTF Demo (2,9 % + 0,20; no devuelve la comisión) con su retención, sin opciones ni plataforma, y el esquema
+ * «Sobre el neto»: Grupo A 60 %, Grupo B 30 %, Titular A 5 % y Titular B 5 %, los dos titulares sin comisión.
+ */
+function rulesE10(retention: RetentionRule | null = OTF_RETENTION): Rules {
+  return {
+    gateway: {
+      id: "gw-otf",
+      name: "OTF Demo",
+      feeVersionId: "fv-otf",
+      pct: "2.9",
+      fixed: "0.20",
+      refundsReturnFee: false,
+      disputeFee: "0.00",
+      ...(retention === null ? {} : { retention }),
+    },
+    extras: [],
+    platform: null,
+    scheme: {
+      schemeId: "sch-otf",
+      versionId: "sv-otf",
+      name: "Sobre el neto",
+      base: "neto",
+      lines: [
+        { beneficiaryId: "ben-ga", name: "Grupo A", pct: "60", feeExempt: false },
+        { beneficiaryId: "ben-gb", name: "Grupo B", pct: "30", feeExempt: false },
+        { beneficiaryId: "ben-ta", name: "Titular A", pct: "5", feeExempt: true },
+        { beneficiaryId: "ben-tb", name: "Titular B", pct: "5", feeExempt: true },
+      ],
+      remainder: null,
+    },
+  };
+}
+
+describe("retentionOf: lo que retiene la pasarela", () => {
+  const e10 = compute(rulesE10(), paid("1000.00"), "USD");
+  const allocRows = (b: Breakdown) => b.alloc.lines.map((l) => [l.name, l.amount]);
+  const sharesOf = (b: Breakdown) => retentionOf(b)?.shares.map((s) => [s.name, s.pct, s.amount]);
+
+  test("E10: retiene 50,00 (25,00 a cada titular), se libera el 10 dic 2026 y llega al banco 920,80", () => {
+    expect([e10.gross, e10.feesTotal, e10.net]).toEqual(["1000.00", "29.20", "970.80"]);
+    expect(retentionOf(e10)).toEqual({
+      pct: "5",
+      days: 30,
+      amount: "50.00",
+      shares: [
+        { beneficiaryId: "ben-ta", name: "Titular A", pct: "50", amount: "25.00" },
+        { beneficiaryId: "ben-tb", name: "Titular B", pct: "50", amount: "25.00" },
+      ],
+    });
+    expect(retentionReleaseOn("2026-11-10", OTF_RETENTION.days)).toBe("2026-12-10");
+    expect(payoutOf(e10)).toBe("920.80");
+    // El reparto es el de E9 con los titulares: 870,80 en proporción 60:30 da 580,5333 y 290,2666; truncados suman
+    // 870,79 y el centavo va al de mayor resto, el Grupo B.
+    expect(allocRows(e10)).toEqual([
+      ["Grupo A", "580.53"],
+      ["Grupo B", "290.27"],
+      ["Titular A", "50.00"],
+      ["Titular B", "50.00"],
+    ]);
+  });
+
+  test("E10b: reembolso total: no retiene nada y llega al banco lo mismo que el neto (−29,20)", () => {
+    const r = recompute(e10, { refunded: "1000.00" });
+    expect([r.gross, r.feesTotal, r.net]).toEqual(["0.00", "29.20", "-29.20"]);
+    expect(retentionOf(r)?.amount).toBe("0.00");
+    expect(sharesOf(r)).toEqual([
+      ["Titular A", "50", "0.00"],
+      ["Titular B", "50", "0.00"],
+    ]);
+    expect(payoutOf(r)).toBe("-29.20");
+    // Como E9b: los titulares en 0 y los grupos se reparten −29,20 con el mayor resto de siempre (19,466 y 9,733).
+    expect(allocRows(r)).toEqual([
+      ["Grupo A", "-19.47"],
+      ["Grupo B", "-9.73"],
+      ["Titular A", "0.00"],
+      ["Titular B", "0.00"],
+    ]);
+  });
+
+  test("E10c: reembolso parcial de 400: retiene 30,00 (15,00 · 15,00) sobre el bruto vigente de 600", () => {
+    const r = recompute(e10, { refunded: "400.00" });
+    // Pasarela r(600 × 2,9 % + 0,20) = 17,60 y costo del reembolso 29,20 − 17,60 = 11,60: el neto es 570,80.
+    expect([r.gross, r.feesTotal, r.net]).toEqual(["600.00", "29.20", "570.80"]);
+    expect(sharesOf(r)).toEqual([
+      ["Titular A", "50", "15.00"],
+      ["Titular B", "50", "15.00"],
+    ]);
+    expect(retentionOf(r)?.amount).toBe("30.00");
+    expect(payoutOf(r)).toBe("540.80");
+    expect(allocRows(r)).toEqual([
+      ["Grupo A", "340.53"],
+      ["Grupo B", "170.27"],
+      ["Titular A", "30.00"],
+      ["Titular B", "30.00"],
+    ]);
+  });
+
+  test("E10d: fallido: no retiene nada y no llega nada", () => {
+    const r = recompute(e10, { failed: true });
+    expect(retentionOf(r)?.amount).toBe("0.00");
+    expect(payoutOf(r)).toBe("0.00");
+  });
+
+  test("un desglose sin retención (o de antes de existir) no retiene nada: llega al banco el neto", () => {
+    const plain = compute(rulesE10(null), paid("1000.00"), "USD");
+    expect(retentionOf(plain)).toBeNull();
+    expect(payoutOf(plain)).toBe("970.80");
+    expect(retentionOf(e1)).toBeNull();
+    expect(payoutOf(e1)).toBe("90.30");
+  });
+
+  test("la retención no es una comisión: neto, comisiones, venta, reparto y lo de los compradores no cambian", () => {
+    for (const state of [paid("1000.00"), paidByBuyer("1000.00"), { ...paid("1000.00"), refunded: "400.00" }]) {
+      const withIt = compute(rulesE10(), state, "USD");
+      const without = compute(rulesE10(null), state, "USD");
+      const { rules: _withRules, ...numbers } = withIt;
+      const { rules: _withoutRules, ...same } = without;
+      expect(numbers).toEqual(same);
+      expect(buyerFeesOf(withIt)).toBe(buyerFeesOf(without));
+    }
+  });
+
+  test("al centavo, mitad hacia arriba, y las partes por mayor resto: suman exactamente lo retenido", () => {
+    const thirds: RetentionRule = {
+      pct: "2.5",
+      days: 7,
+      recipients: [
+        { beneficiaryId: "x", name: "Titular A", pct: "33.3333" },
+        { beneficiaryId: "y", name: "Titular B", pct: "33.3333" },
+        { beneficiaryId: "z", name: "Grupo A", pct: "33.3334" },
+      ],
+    };
+    // 33,33 × 2,5 % = 0,83325 → 0,83; 83 centavos en tercios: 27 cada uno y los 2 que sobran a los de mayor resto.
+    const r = compute(rulesE10(thirds), paid("33.33"), "USD");
+    expect(retentionOf(r)?.amount).toBe("0.83");
+    expect(retentionOf(r)?.shares.map((s) => s.amount)).toEqual(["0.28", "0.27", "0.28"]);
+    // 10,10 × 5 % = 0,505 → 0,51: el mismo redondeo que las líneas de comisión.
+    expect(retentionOf(compute(rulesE10(), paid("10.10"), "USD"))?.amount).toBe("0.51");
+  });
+
+  test("viaja congelada en las reglas: recompute la conserva y recalc toma la nueva (o ninguna)", () => {
+    expect(recompute(e10, { refunded: "400.00" }).rules.gateway.retention).toEqual(OTF_RETENTION);
+    const before = compute(rulesE10(null), paid("1000.00"), "USD");
+    const after = recalc(before, rulesE10());
+    expect(retentionOf(after)?.amount).toBe("50.00");
+    expect(retentionOf(recalc(e10, rulesE10(null)))).toBeNull();
+  });
+
+  test("la fecha en que se libera es la del cobro más los días corridos, aunque caiga en fin de semana", () => {
+    expect(retentionReleaseOn("2026-11-10", 0)).toBe("2026-11-10");
+    expect(retentionReleaseOn("2026-11-13", 1)).toBe("2026-11-14");
+    expect(retentionReleaseOn("2026-12-15", 30)).toBe("2027-01-14");
+  });
+});
+
 // ─── Reembolsos ─────────────────────────────────────────────────────────────────────────────────────────────
 
 describe("compute: reembolsos", () => {
@@ -1052,6 +1230,22 @@ describe("diff", () => {
     ]);
   });
 
+  test("recalcular para traer la retención: «Retenido» y lo de cada persona pasan de «—» a su monto", () => {
+    const before = compute(rulesE10(null), paid("1000.00"), "USD");
+    const after = recalc(before, rulesE10());
+    expect(diff(before, after)).toEqual([
+      { key: "retention", label: "Retenido", before: "—", after: "50.00" },
+      { key: "retention:ben-ta", label: "Retenido · Titular A", before: "—", after: "25.00" },
+      { key: "retention:ben-tb", label: "Retenido · Titular B", before: "—", after: "25.00" },
+    ]);
+    // Al revés, la retención que se quita.
+    expect(diff(after, before).map((row) => [row.key, row.after])).toEqual([
+      ["retention", "—"],
+      ["retention:ben-ta", "—"],
+      ["retention:ben-tb", "—"],
+    ]);
+  });
+
   test("un cobro que pasa a fallido pierde todas sus líneas", () => {
     expect(diff(e1, recompute(e1, { failed: true })).map((row) => [row.key, row.before, row.after])).toEqual([
       ["gross", "100.00", "0.00"],
@@ -1131,6 +1325,18 @@ describe("parseBreakdown", () => {
     const scheme = schemeOf(e1.rules);
     const badLine = { ...scheme.lines[0], feeExempt: "true" };
     expect(() => parseBreakdown({ ...stored(e1), rules: { ...e1.rules, scheme: { ...scheme, lines: [badLine] } } })).toThrow();
+  });
+
+  test("la retención congelada se lee tal cual; sin ella, el desglose no la trae", () => {
+    const e10 = compute(rulesE10(), paid("1000.00"), "USD");
+    expect(parseBreakdown(JSON.parse(JSON.stringify(e10)))).toEqual(e10);
+    const plain = parseBreakdown(JSON.parse(JSON.stringify(e1)));
+    expect(plain.rules.gateway).not.toHaveProperty("retention");
+    const broken = JSON.parse(JSON.stringify(e10));
+    broken.rules.gateway.retention.days = 1.5;
+    expect(() => parseBreakdown(broken)).toThrow();
+    broken.rules.gateway.retention = { ...OTF_RETENTION, extra: true };
+    expect(() => parseBreakdown(broken)).toThrow();
   });
 
   test("quién pagó la comisión es «nosotros» o «comprador»; nada más", () => {
@@ -1417,6 +1623,77 @@ describe("propiedades con 2 000 cobros generados", () => {
   test("todo desglose generado se puede guardar y volver a leer", () => {
     for (const { b } of cases) {
       expect(parseBreakdown(JSON.parse(JSON.stringify(b))), label(b)).toEqual(b);
+    }
+  });
+});
+
+describe("propiedades de la retención con 1 000 cobros generados", () => {
+  const rnd = mulberry32(20261115);
+  const int = (min: number, max: number) => min + Math.floor(rnd() * (max - min + 1));
+  const chance = (oneIn: number) => int(1, oneIn) === 1;
+  const moneyText = (cents: number) => `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`;
+  const pctText = (tenThousandths: number) =>
+    `${Math.floor(tenThousandths / 10_000)}.${String(tenThousandths % 10_000).padStart(4, "0")}`;
+
+  /** De 1 a 4 personas con porcentajes que suman exactamente 100. */
+  function randomRetention(): RetentionRule {
+    const cuts = [...new Set(Array.from({ length: int(0, 3) }, () => int(1, 999_999)))].sort((x, y) => x - y);
+    const edges = [0, ...cuts, 1_000_000];
+    return {
+      pct: pctText(int(1, 1_000_000)),
+      days: int(0, 365),
+      recipients: edges.slice(1).map((edge, i) => ({
+        beneficiaryId: `ben-${i}`,
+        name: `Titular ${i}`,
+        pct: pctText(edge - (edges[i] as number)),
+      })),
+    };
+  }
+
+  const cases = Array.from({ length: 1000 }, () => {
+    const gross = chance(8) ? int(1, 500) : int(1, 5_000_000);
+    const refunded = chance(2) ? 0 : chance(4) ? gross : int(0, gross);
+    const state: State = {
+      grossOriginal: moneyText(gross),
+      refunded: moneyText(refunded),
+      dispute: ([null, null, "abierta", "ganada", "perdida"] as const)[int(0, 4)] as State["dispute"],
+      failed: chance(15),
+      feesPaidBy: chance(3) ? "comprador" : "nosotros",
+    };
+    return compute(rulesE10(randomRetention()), state, "USD");
+  });
+  const sum = (xs: string[]) => xs.reduce((acc, x) => acc.plus(x), new D(0));
+  const label = (b: Breakdown) => JSON.stringify({ retention: b.rules.gateway.retention, state: b.state });
+
+  test("los casos generados cubren fallidos, reembolsos totales y varias personas", () => {
+    expect(cases.filter((b) => b.state.failed).length).toBeGreaterThan(30);
+    expect(cases.filter((b) => b.state.refunded === b.state.grossOriginal).length).toBeGreaterThan(50);
+    expect(cases.filter((b) => (b.rules.gateway.retention?.recipients.length ?? 0) > 2).length).toBeGreaterThan(200);
+  });
+
+  test("las partes suman exactamente lo retenido, ninguna es negativa y todas son montos", () => {
+    for (const b of cases) {
+      const r = retentionOf(b);
+      if (r === null) throw new Error("Todos los casos retienen");
+      expect(sum(r.shares.map((s) => s.amount)).eq(r.amount), label(b)).toBe(true);
+      expect([r.amount, ...r.shares.map((s) => s.amount)].every(isMoney), label(b)).toBe(true);
+      expect(r.shares.every((s) => !new D(s.amount).isNegative()), label(b)).toBe(true);
+    }
+  });
+
+  test("lo retenido es pct × bruto vigente al centavo, y nunca pasa del bruto vigente", () => {
+    for (const b of cases) {
+      const amount = retentionOf(b)?.amount ?? "0.00";
+      const exact = new D(b.gross).times(b.rules.gateway.retention?.pct ?? "0").div(100);
+      expect(new D(amount).minus(exact).abs().lte("0.005"), label(b)).toBe(true);
+      expect(new D(amount).lte(b.gross), label(b)).toBe(true);
+      if (b.state.failed) expect(amount, label(b)).toBe("0.00");
+    }
+  });
+
+  test("lo que llega al banco es el neto menos lo retenido", () => {
+    for (const b of cases) {
+      expect(payoutOf(b), label(b)).toBe(sub(b.net, retentionOf(b)?.amount ?? "0.00"));
     }
   });
 });

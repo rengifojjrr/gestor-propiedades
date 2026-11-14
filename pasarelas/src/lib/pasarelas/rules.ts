@@ -5,7 +5,7 @@
  * Todo monto sale canónico ("0.30") y todo porcentaje sin ceros de relleno ("2.9"), venga como venga en la
  * configuración: `compute` exige montos canónicos y el desglose se guarda tal cual.
  */
-import { dec, normPct, toMoney } from "./decimal";
+import { D, dec, normPct, toMoney } from "./decimal";
 import { NO_FEE_PAYER_TEXT } from "./schemes";
 import type {
   DayType,
@@ -16,7 +16,10 @@ import type {
   ISODate,
   Money,
   PayConfig,
+  Pct,
   PlatformRule,
+  RetentionCfg,
+  RetentionRule,
   Rules,
   SchemeRule,
   Selection,
@@ -33,7 +36,8 @@ export type PayRuleCode =
   | "esquema"
   | "sin_tarifa"
   | "sin_version"
-  | "nadie_paga_comision";
+  | "nadie_paga_comision"
+  | "retencion";
 
 /** El mensaje de cada error de reglas, para mostrarlo tal cual. */
 export const PAY_RULE_TEXT: Record<PayRuleCode, string> = {
@@ -46,6 +50,7 @@ export const PAY_RULE_TEXT: Record<PayRuleCode, string> = {
   sin_version: "El esquema de reparto no tiene ninguna versión.",
   // Lo lanza el reparto (`compute`): todas las partes marcadas «No paga comisión» y sin «Resto» que la pague.
   nadie_paga_comision: NO_FEE_PAYER_TEXT,
+  retencion: "Una de las personas que reciben la retención de la pasarela ya no existe.",
 };
 
 /** Lo elegido no se puede resolver con la configuración: falta algo o no corresponde. */
@@ -57,6 +62,39 @@ export class PayRuleError extends Error {
     this.name = "PayRuleError";
     this.code = code;
   }
+}
+
+// ─── La retención configurada ───────────────────────────────────────────────────────────────────────────────
+
+/** Lo que no cumple la retención de una pasarela (las mismas reglas que defiende `pay_save_gateway_retention`). */
+export type RetentionIssue = "sin_personas" | "personas_sin_pct" | "no_suma_100" | "persona_repetida";
+
+export const RETENTION_ISSUE_TEXT: Record<RetentionIssue, string> = {
+  sin_personas: "Elige a quién le cae lo retenido.",
+  personas_sin_pct: "Sin porcentaje retenido no hay a quién le caiga: quita a las personas o escribe el %.",
+  no_suma_100: "Los porcentajes de las personas tienen que sumar exactamente 100 %.",
+  persona_repetida: "Una persona está dos veces: déjala una sola vez.",
+};
+
+/** Lo que suman los porcentajes de las personas de una retención, sin ceros de relleno ("100", "99.5"). */
+export function retentionRecipientsTotal(recipients: readonly { pct: Pct }[]): Pct {
+  return normPct(recipients.reduce((sum, recipient) => sum.plus(dec(recipient.pct)), new D(0)));
+}
+
+/**
+ * Lo que no cumple una retención, en orden: con 0 % no hay personas; con más de 0 % hay al menos una, ninguna dos
+ * veces, y sus porcentajes suman exactamente 100. Vacío si se puede guardar. Los rangos de cada número (0 a 100 %,
+ * 0 a 365 días, cada persona más de 0 %) los valida quien lee el formulario.
+ */
+export function validateRetention(r: Pick<RetentionCfg, "pct" | "recipients">): RetentionIssue[] {
+  if (!dec(r.pct).gt(0)) return r.recipients.length === 0 ? [] : ["personas_sin_pct"];
+  if (r.recipients.length === 0) return ["sin_personas"];
+  const issues: RetentionIssue[] = [];
+  if (new Set(r.recipients.map((recipient) => recipient.beneficiaryId)).size !== r.recipients.length) {
+    issues.push("persona_repetida");
+  }
+  if (!dec(retentionRecipientsTotal(r.recipients)).eq(100)) issues.push("no_suma_100");
+  return issues;
 }
 
 // ─── Las piezas de las reglas, una por una ──────────────────────────────────────────────────────────────────
@@ -78,8 +116,27 @@ function feeRule(gateway: GatewayCfg, on: ISODate): Pick<GatewayRule, "feeVersio
   return { feeVersionId: version.id, pct: normPct(version.pct), fixed: money(version.fixed) };
 }
 
+/**
+ * Lo que retiene la pasarela hoy, con el nombre de cada persona; `null` si no retiene (0 %). La configuración es la
+ * vigente: no tiene versiones, y cada cobro la congela al registrarse (o al recalcularse).
+ */
+function retentionRule(cfg: PayConfig, gateway: GatewayCfg): RetentionRule | null {
+  const { pct, days, recipients } = gateway.retention;
+  if (!dec(pct).gt(0)) return null;
+  return {
+    pct: normPct(pct),
+    days,
+    recipients: recipients.map((recipient) => {
+      const beneficiary = cfg.beneficiaries.find((candidate) => candidate.id === recipient.beneficiaryId);
+      if (beneficiary === undefined) throw new PayRuleError("retencion");
+      return { beneficiaryId: beneficiary.id, name: beneficiary.name, pct: normPct(recipient.pct) };
+    }),
+  };
+}
+
 function gatewayRule(cfg: PayConfig, sel: Selection, on: ISODate): GatewayRule {
   const gateway = gatewayOf(cfg, sel.gatewayId);
+  const retention = retentionRule(cfg, gateway);
   return {
     id: gateway.id,
     name: gateway.name,
@@ -88,6 +145,8 @@ function gatewayRule(cfg: PayConfig, sel: Selection, on: ISODate): GatewayRule {
     disputeFee: money(gateway.disputeFee),
     // Sin comisión informada la clave no existe: el desglose guardado no admite un `undefined`.
     ...(sel.feeOverride === undefined ? {} : { feeOverride: money(sel.feeOverride) }),
+    // Igual sin retención: así un cobro de una pasarela que no retiene queda como antes de existir la retención.
+    ...(retention === null ? {} : { retention }),
   };
 }
 
@@ -223,9 +282,10 @@ export function feeExemptIdsOf(rules: Rules): string[] {
 /**
  * Las reglas de un cobro que se edita: solo se vuelve a resolver lo que cambió y lo demás conserva lo congelado
  * en `prev`, aunque la configuración ya sea otra (spec §5.2).
- *  - `gateway`: la pasarela entera (con la tarifa de la fecha) y sus opciones; la comisión informada vieja no se
- *    arrastra.
- *  - `date`: solo la tarifa de la pasarela y la versión del esquema que rigen en la fecha nueva.
+ *  - `gateway`: la pasarela entera (con la tarifa de la fecha y su retención de hoy) y sus opciones; la comisión
+ *    informada vieja no se arrastra.
+ *  - `date`: solo la tarifa de la pasarela y la versión del esquema que rigen en la fecha nueva (la retención
+ *    congelada se queda).
  *  - `extras`: las opciones. `channel`: la plataforma. `scheme`: el esquema.
  *  - `amount`: cambió el monto o la moneda. La comisión informada era la de otro monto (o de otra moneda): se
  *    descarta y vale la tarifa congelada.

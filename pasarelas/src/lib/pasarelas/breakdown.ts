@@ -6,7 +6,9 @@
 import type { Decimal } from "decimal.js";
 import { z } from "zod";
 import { allocate, allocateInProportion } from "./allocate";
+import { addDays } from "./dates";
 import { D, ZERO, dec, isMoney, normPct, r2, toMoney } from "./decimal";
+import { sub } from "./money";
 import { PayRuleError } from "./rules";
 import { someonePaysFees } from "./schemes";
 import type {
@@ -17,6 +19,7 @@ import type {
   Currency,
   DiffRow,
   FeesPaidBy,
+  ISODate,
   LineKind,
   Money,
   Pct,
@@ -270,6 +273,54 @@ export function buyerFeesOf(b: Breakdown): Money {
   return toMoney(paid.reduce((sum, line) => sum.plus(dec(line.amount)), new D(0)));
 }
 
+// ─── Lo que retiene la pasarela ─────────────────────────────────────────────────────────────────────────────
+
+/** Lo que la pasarela retuvo de un cobro y lo que le cae a cada persona cuando lo libera. */
+export type Retention = {
+  pct: Pct;
+  /** Días corridos que lo retiene (ver `retentionReleaseOn`). */
+  days: number;
+  amount: Money;
+  /** Una por persona, en el orden de la regla; suman exactamente `amount`. */
+  shares: { beneficiaryId: string; name: string; pct: Pct; amount: Money }[];
+};
+
+/**
+ * Lo que retuvo la pasarela de un cobro, según la regla congelada en su desglose (`rules.gateway.retention`): el
+ * porcentaje del bruto vigente, al centavo y con el mismo redondeo que las líneas de comisión, repartido entre sus
+ * personas por mayor resto (`allocate`: la suma es exacta). Con reembolso es sobre lo que queda cobrado; fallido, el
+ * bruto vigente es 0 y no retiene nada. `null` si la pasarela no retenía al congelar el cobro (o el desglose es de
+ * antes de existir la retención).
+ *
+ * La retención no es una comisión: no cambia el neto, ni las comisiones, ni el reparto. Es una parte del neto que la
+ * pasarela le paga directo a esas personas: no llega al banco del negocio (`payoutOf`).
+ */
+export function retentionOf(b: Breakdown): Retention | null {
+  const rule = b.rules.gateway.retention;
+  if (rule === undefined) return null;
+  const amount = toMoney(fee(dec(b.gross), rule.pct, new D(0)));
+  const amounts = allocate(
+    amount,
+    rule.recipients.map((recipient) => recipient.pct),
+  );
+  return {
+    pct: rule.pct,
+    days: rule.days,
+    amount,
+    shares: rule.recipients.map((recipient, i) => ({ ...recipient, amount: amounts[i] as Money })),
+  };
+}
+
+/** Lo que llega al banco de un cobro: el neto menos lo que retuvo la pasarela. Sin retención, el neto. */
+export function payoutOf(b: Breakdown): Money {
+  return sub(b.net, retentionOf(b)?.amount ?? ZERO);
+}
+
+/** El día en que la pasarela libera lo retenido: el del cobro más los días corridos de la retención. */
+export function retentionReleaseOn(occurredOn: ISODate, days: number): ISODate {
+  return addDays(occurredOn, days);
+}
+
 // ─── diff ───────────────────────────────────────────────────────────────────────────────────────────────────
 
 const LINE_ORDER: Record<LineKind, number> = { pasarela: 1, reembolso: 2, opcion: 3, plataforma: 4, disputa: 5 };
@@ -293,6 +344,21 @@ function cells(b: Breakdown): Cell[] {
       label: line.name,
       amount: line.amount,
       order: 8,
+    })),
+    ...retentionCells(retentionOf(b)),
+  ];
+}
+
+/** Lo retenido y lo de cada persona, después del reparto. Sin retención no hay filas (se ven como «—»). */
+function retentionCells(retention: Retention | null): Cell[] {
+  if (retention === null) return [];
+  return [
+    { key: "retention", label: "Retenido", amount: retention.amount, order: 9 },
+    ...retention.shares.map((share) => ({
+      key: `retention:${share.beneficiaryId}`,
+      label: `Retenido · ${share.name}`,
+      amount: share.amount,
+      order: 10,
     })),
   ];
 }
@@ -334,6 +400,14 @@ const zBreakdown = z.strictObject({
       refundsReturnFee: z.boolean(),
       disputeFee: zMoney,
       feeOverride: zMoney.optional(),
+      // Solo si la pasarela retenía al congelar el cobro; los desgloses de antes no la traen.
+      retention: z
+        .strictObject({
+          pct: zPct,
+          days: z.int(),
+          recipients: z.array(z.strictObject({ beneficiaryId: z.string(), name: z.string(), pct: zPct })),
+        })
+        .optional(),
     }),
     extras: z.array(
       z.strictObject({
