@@ -13,6 +13,7 @@ import { requireSession } from "@/lib/auth/session";
 import { todayNY, totalsOf, type Currency, type PayConfig } from "@/lib/pasarelas";
 import { createClient } from "@/lib/supabase/server";
 import { getPayConfig } from "@/server/pasarelas/queries/session-config";
+import { payoutStatuses } from "@/server/pasarelas/queries/settlements";
 import { leanTx, listTx, parseTxFilters, type TxFilters as Filters } from "@/server/pasarelas/queries/transactions";
 
 export const metadata: Metadata = { title: "Cobros" };
@@ -35,6 +36,7 @@ const MORE_FILTERS = [
   "currency",
   "status",
   "receipt",
+  "payout",
 ] as const satisfies readonly (keyof Filters)[];
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -140,8 +142,11 @@ export default async function CobrosPage({ searchParams }: PageProps<"/pasarelas
     listTx(supabase, filters, sort, page, today, PAGE_SIZE, cfg),
     leanTx(supabase, filters, today, cfg),
   ]);
+  const payouts = await payoutStatuses(supabase, list.rows);
   const totals = totalsOf(lean);
-  const rows: TxRowView[] = list.rows.map(withNames(cfg));
+  const rows: TxRowView[] = list.rows
+    .map(withNames(cfg))
+    .map((tx) => ({ ...tx, payout: payouts.get(tx.id) ?? null }));
   const query = queryOf(sp);
   const exportHref = (formato: string | null) => hrefWith(EXPORT_PATH, query, { formato });
   const first = (page - 1) * PAGE_SIZE + 1;

@@ -9,6 +9,12 @@ import { callAction } from "../callAction";
 import { OPEN_FAILED_TEXT, openSignedPdf } from "../receipts/openPdf";
 import { refreshQuietly } from "../receipts/refresh";
 
+/** Lo que dice el borrado de una liquidación ligada a sus cobros: que se desmarcan. */
+function coversText(covers: number): string {
+  if (covers === 0) return "";
+  return covers === 1 ? " Su cobro se desmarca." : ` Sus ${covers} cobros se desmarcan.`;
+}
+
 const DELETE_UNSURE_TEXT =
   "No se pudo confirmar si la liquidación se borró por un fallo de conexión. Mira cómo quedó antes de repetirlo.";
 
@@ -19,10 +25,13 @@ const DELETE_UNSURE_TEXT =
  */
 export function SettlementActions({
   id,
+  covers = 0,
   receiptMime,
   description,
 }: {
   id: string;
+  /** De cuántos cobros es la liquidación (0 si es de las de siempre): al borrarla, a esos vuelve a faltarles. */
+  covers?: number;
   /** El tipo del comprobante, o `null` si no tiene. */
   receiptMime: string | null;
   /** Qué se borra, dicho en claro: «el pago de $45,15 del vie 13 nov 2026». */
@@ -122,7 +131,7 @@ export function SettlementActions({
         onConfirm={remove}
         pending={pending}
         title="¿Borrar esta liquidación?"
-        description={`Se borra ${description}${receiptMime ? " y su comprobante" : ""}, y el saldo vuelve a como estaba antes. No se puede deshacer.`}
+        description={`Se borra ${description}${receiptMime ? " y su comprobante" : ""}, y el saldo vuelve a como estaba antes.${coversText(covers)} No se puede deshacer.`}
         confirmLabel="Borrar liquidación"
         variant="danger"
       />

@@ -31,6 +31,9 @@ const RECEIPT_OPTIONS: Option[] = [
   { value: "sin", label: "Sin comprobante" },
 ];
 
+/** Los cobros con alguna parte del reparto a la que le falta algo o a la que se le pagó de más. */
+const PAYOUT_OPTIONS: Option[] = [{ value: "pendiente", label: "Reparto pendiente" }];
+
 /** Los órdenes que no son el de siempre (más recientes primero, que es quitar el parámetro). */
 const SORT_OPTIONS: Option[] = [
   { value: "fecha_asc", label: "Más antiguos primero" },
@@ -40,8 +43,8 @@ const SORT_OPTIONS: Option[] = [
 ];
 
 /**
- * Búsqueda, período, orden y «Más filtros» (empresa, canal, pasarela, cuenta, moneda, estado y comprobante), todo
- * en la URL con las claves que entiende `parseTxFilters`. Cambiar un filtro vuelve a la primera página.
+ * Búsqueda, período, orden y «Más filtros» (empresa, canal, pasarela, cuenta, moneda, estado, comprobante y
+ * reparto), todo en la URL con las claves que entiende `parseTxFilters`. Cambiar un filtro vuelve a la primera página.
  */
 export function TxFilters({ companies, channels, gateways, accounts, currencies, activeMore }: TxFiltersProps) {
   return (
@@ -66,6 +69,7 @@ export function TxFilters({ companies, channels, gateways, accounts, currencies,
             <UrlSelect param="moneda" label="Moneda" options={currencies} />
             <UrlSelect param="estado" label="Estado" allLabel="Todos" options={STATUS_OPTIONS} />
             <UrlSelect param="comprobante" label="Comprobante" allLabel="Con o sin comprobante" options={RECEIPT_OPTIONS} />
+            <UrlSelect param="reparto" label="Reparto" allLabel="Todos" options={PAYOUT_OPTIONS} />
           </div>
         </details>
       </div>

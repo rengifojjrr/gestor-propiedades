@@ -1,19 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { Checkbox, DateText, Money, TBody, THead, Table, Td, Th, Tr } from "@/components/ui";
+import { Checkbox, DateText, Money, TBody, THead, Table, Td, Th, Tr, cn } from "@/components/ui";
 import { depositWindowOf } from "@/lib/pasarelas/dates";
 import { cmp, isZero } from "@/lib/pasarelas/money";
+import type { PayoutStatus } from "@/lib/pasarelas/payouts";
 import type { ISODate } from "@/lib/pasarelas/types";
 import type { TxListItem } from "@/server/pasarelas/dto";
 import { DepositWindowShort, isWindow } from "./DepositWindow";
+import { payoutMarkText } from "./payoutText";
 import { StatusBadge } from "./StatusBadge";
 import { txName } from "./statusChanges";
 import { SelectAllCheckbox, useTxSelection } from "./TxBulkBar";
 import { TxStatusMenu } from "./TxStatusMenu";
 
-/** Un cobro de la lista con los nombres ya resueltos contra la configuración. */
-export type TxRowView = TxListItem & { companyName: string; channelName: string | null; gatewayName: string };
+/**
+ * Un cobro de la lista con los nombres ya resueltos contra la configuración, y lo que se le debe a cada parte de su
+ * reparto (`null` si no tiene reparto, o si es fallido o está en la papelera).
+ */
+export type TxRowView = TxListItem & {
+  companyName: string;
+  channelName: string | null;
+  gatewayName: string;
+  payout: PayoutStatus | null;
+};
 
 /** El nombre de la casilla que elige el cobro: «Seleccionar el cobro pi_123». */
 export const selectLabel = (tx: TxRowView): string => `Seleccionar el cobro ${txName(tx)}`;
@@ -102,6 +112,16 @@ export function RetainedMark({ tx }: { tx: TxRowView }) {
   );
 }
 
+/** La marca del reparto de un cobro: «Reparto pagado», o «Reparto: 2 de 4 pagados». Nada si no tiene reparto. */
+export function PayoutMark({ tx }: { tx: TxRowView }) {
+  if (tx.payout === null) return null;
+  return (
+    <span className={cn("text-sm", tx.payout.pending ? "text-ink-soft" : "font-semibold text-brand")}>
+      {payoutMarkText(tx.payout)}
+    </span>
+  );
+}
+
 /**
  * La lista de cobros como tabla (desde 768 px), con una casilla por fila para elegir y, bajo el estado, «Cambiar
  * estado».
@@ -138,6 +158,7 @@ export function TxTable({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
                 <span className="text-sm text-ink-soft">
                   {tx.companyName} · {tx.gatewayName}
                 </span>
+                <PayoutMark tx={tx} />
               </span>
             </Td>
             <Td>

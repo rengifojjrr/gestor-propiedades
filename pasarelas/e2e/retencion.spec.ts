@@ -130,7 +130,9 @@ async function expectE10(scope: Page | Locator): Promise<void> {
   await expect(share(scope, "Grupo B")).toContainText("$290,27");
   for (const name of ["Titular A", "Titular B"]) {
     await expect(share(scope, name)).toContainText("$50,00");
-    await expect(share(scope, name)).toContainText("ya recibió $25,00 de la retención · falta $25,00");
+    await expect(share(scope, name)).toContainText("ya recibió $25,00 de la retención");
+    // En la vista previa, «· falta $25,00»; en el detalle lo dice el estado de pago de la parte: «Falta $25,00».
+    await expect(share(scope, name)).toContainText(/falta \$25,00/i);
   }
 }
 

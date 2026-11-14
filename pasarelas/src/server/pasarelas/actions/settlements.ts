@@ -5,6 +5,7 @@ import { z } from "zod";
 import { isZero, neg } from "@/lib/pasarelas";
 import { runAction } from "../action";
 import * as ops from "../ops/settlements";
+import { listOwed, type NamedOwedGroup } from "../queries/settlements";
 import type { ActionResult } from "../result";
 import { zCurrency, zDate, zId, zMoney, zOptionalText, zPositiveMoney } from "../zod";
 
@@ -103,6 +104,19 @@ export async function recordPayouts(input: unknown): Promise<ActionResult<{ crea
   });
   return runAction(z.object({ payouts: z.array(zPayout).min(1).max(MAX_PAYOUTS) }), input, ({ supabase }, { payouts }) =>
     ops.recordPayouts(supabase, payouts),
+  );
+}
+
+/**
+ * «Pagar repartos…» de los cobros elegidos: lo que se le debe ahora a cada parte en ellos, por moneda, con su nombre
+ * y lo de cada cobro. Solo lee: no revalida nada.
+ */
+export async function owedForTransactions(input: unknown): Promise<ActionResult<{ groups: NamedOwedGroup[] }>> {
+  return runAction(
+    z.object({ ids: z.array(zId).min(1).max(MAX_PAYOUT_ITEMS) }),
+    input,
+    async ({ supabase }, { ids }) => ({ groups: await listOwed(supabase, ids) }),
+    { revalidate: [] },
   );
 }
 

@@ -3,7 +3,7 @@ import { Suspense, type ReactNode } from "react";
 import { Badge, Card, CardBody, CardHeader, CardTitle, DateText, Money, Pagination, Percent } from "@/components/ui";
 import { formatDate } from "@/lib/pasarelas/dates";
 import { cmp, formatMoney, neg } from "@/lib/pasarelas/money";
-import type { Settlement } from "@/server/pasarelas/dto";
+import type { SettlementItemView, SettlementView } from "@/server/pasarelas/queries/settlements";
 import type { AllocationMovement } from "@/server/pasarelas/queries/splits";
 import { SettlementActions } from "./SettlementActions";
 
@@ -106,14 +106,48 @@ export function AllocationMovements({
   );
 }
 
-/** Lo que ya se le pagó (o lo que devolvió), con su comprobante. */
+/**
+ * De qué cobros es una liquidación ligada a sus cobros: cada uno con su enlace (por su referencia o su fecha) y lo
+ * de ese cobro.
+ */
+function CoveredTxs({ items, currency }: { items: readonly SettlementItemView[]; currency: string }) {
+  return (
+    <div className="flex flex-col">
+      <p className="text-sm text-ink-soft">{items.length === 1 ? "De este cobro:" : `De estos ${items.length} cobros:`}</p>
+      <ul aria-label="Cobros que paga" className="flex flex-col">
+        {items.map((item) => (
+          <li key={item.transactionId} className="flex flex-wrap items-center justify-between gap-x-4">
+            <Link
+              href={`/pasarelas/cobros/${item.transactionId}`}
+              className="inline-flex min-h-11 min-w-0 items-center break-all text-brand hover:underline"
+            >
+              {item.reference ?? (
+                <>
+                  Cobro del&nbsp;
+                  <DateText value={item.occurredOn} />
+                </>
+              )}
+              <span className="sr-only">
+                {" "}
+                de {formatMoney(item.grossOriginal, item.currency)}
+              </span>
+            </Link>
+            <Money value={item.amount} currency={currency} className="text-sm" />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Lo que ya se le pagó (o lo que devolvió), con su comprobante y, si es de ciertos cobros, de cuáles. */
 export function SettlementMovements({
   rows,
   total,
   page,
   pageSize,
 }: {
-  rows: readonly Settlement[];
+  rows: readonly SettlementView[];
   total: number;
   page: number;
   pageSize: number;
@@ -144,8 +178,10 @@ export function SettlementMovements({
               </div>
               <Money value={row.amount} currency={row.currency} className="font-semibold" />
             </div>
+            {row.items.length === 0 ? null : <CoveredTxs items={row.items} currency={row.currency} />}
             <SettlementActions
               id={row.id}
+              covers={row.items.length}
               receiptMime={row.receiptPath === null ? null : row.receiptMime}
               // «la devolución de $10,00»: ya dice que es una devolución, el monto va sin el signo menos.
               description={`${kind} de ${formatMoney(refund ? neg(row.amount) : row.amount, row.currency)} del ${formatDate(row.paidOn)}`}

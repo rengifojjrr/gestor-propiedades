@@ -6,13 +6,14 @@ import { requireSession } from "@/lib/auth/session";
 import { formatMoney, todayNY } from "@/lib/pasarelas";
 import { createClient } from "@/lib/supabase/server";
 import { getPayConfig } from "@/server/pasarelas/queries/session-config";
+import { listTxPayouts, payoutStatuses } from "@/server/pasarelas/queries/settlements";
 import { getTx } from "@/server/pasarelas/queries/transactions";
 
 export const metadata: Metadata = { title: "Cobro" };
 
 /**
- * El detalle de un cobro: el desglose congelado, el reparto, los comprobantes, el historial y lo que se puede hacer
- * con él según su estado. Un cobro de la papelera también se ve, para restaurarlo. Si no existe (o no es del
+ * El detalle de un cobro: el desglose congelado, el reparto (con lo pagado a cada parte), los comprobantes, el
+ * historial y lo que se puede hacer con él según su estado. Un cobro de la papelera también se ve, para restaurarlo. Si no existe (o no es del
  * usuario), 404.
  */
 export default async function CobroPage({ params }: PageProps<"/pasarelas/cobros/[id]">) {
@@ -22,6 +23,9 @@ export default async function CobroPage({ params }: PageProps<"/pasarelas/cobros
   const tx = await getTx(supabase, id);
   if (tx === null) notFound();
   const trashed = tx.deletedAt !== null;
+  const today = todayNY(new Date());
+  const [statuses, payments] = await Promise.all([payoutStatuses(supabase, [tx]), listTxPayouts(supabase, tx.id)]);
+  const names = Object.fromEntries(cfg.beneficiaries.map((beneficiary) => [beneficiary.id, beneficiary.name]));
 
   return (
     <>
@@ -30,7 +34,12 @@ export default async function CobroPage({ params }: PageProps<"/pasarelas/cobros
         description={tx.reference === null ? undefined : <span className="break-all">{tx.reference}</span>}
         back={trashed ? { href: "/pasarelas/papelera", label: "Papelera" } : { href: "/pasarelas/cobros", label: "Cobros" }}
       />
-      <TxDetail tx={tx} cfg={cfg} today={todayNY(new Date())} />
+      <TxDetail
+        tx={tx}
+        cfg={cfg}
+        today={today}
+        payouts={{ transactionId: tx.id, status: statuses.get(tx.id) ?? null, payments, names, today }}
+      />
     </>
   );
 }

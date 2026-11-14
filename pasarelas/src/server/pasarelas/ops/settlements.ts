@@ -7,7 +7,7 @@ import {
 import { ZERO, add, cmp, fitsOwed, type Currency, type ISODate, type Money } from "@/lib/pasarelas";
 import type { Db } from "../dto";
 import { UserError } from "../errors";
-import { payoutStatuses } from "../queries/settlements";
+import { owedByTx } from "../queries/settlements";
 import { chunked } from "../queries/transactions";
 import { RECEIPTS_BUCKET, fileProblem, storedFile } from "./receipts";
 import { emptyFolder } from "./transactions";
@@ -224,24 +224,18 @@ const PAYOUT_ALREADY_SAVED = "pay_payout_already_saved";
  */
 async function checkOwed(supabase: Db, payouts: readonly PayoutInput[]): Promise<void> {
   if (payouts.length === 0) return;
-  const txIds = [...new Set(payouts.flatMap((payout) => payout.items.map((item) => item.transactionId)))];
-  const pages = await Promise.all(
-    chunked(txIds).map((chunk) =>
-      supabase.from("pay_transactions").select("id, status, deleted_at, currency").in("id", chunk).throwOnError(),
-    ),
-  );
-  const txs = pages.flatMap((page) => page.data);
-  const currencyOf = new Map(txs.map((tx) => [tx.id, tx.currency]));
-  const statuses = await payoutStatuses(
+  const txs = await owedByTx(
     supabase,
-    txs.map((tx) => ({ id: tx.id, status: tx.status, deletedAt: tx.deleted_at })),
+    payouts.flatMap((payout) => payout.items.map((item) => item.transactionId)),
   );
+  const byId = new Map(txs.map((tx) => [tx.transactionId, tx]));
   const wanted = new Map<string, { owed: Money; amount: Money }>();
   for (const payout of payouts) {
     for (const item of payout.items) {
-      if (currencyOf.get(item.transactionId) !== payout.currency) throw new UserError(PAYOUT_CHANGED_TEXT);
+      const tx = byId.get(item.transactionId);
+      if (tx?.currency !== payout.currency) throw new UserError(PAYOUT_CHANGED_TEXT);
       const key = `${item.transactionId} ${payout.beneficiaryId}`;
-      const part = statuses.get(item.transactionId)?.parts.find((p) => p.beneficiaryId === payout.beneficiaryId);
+      const part = tx.status?.parts.find((candidate) => candidate.beneficiaryId === payout.beneficiaryId);
       const sofar = wanted.get(key)?.amount ?? ZERO;
       wanted.set(key, { owed: part?.owed ?? ZERO, amount: add(sofar, item.amount) });
     }

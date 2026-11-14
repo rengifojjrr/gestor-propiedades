@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AllocationList } from "@/components/pasarelas/AllocationList";
+import { AllocationList, type PayoutsView } from "@/components/pasarelas/AllocationList";
 import { BreakdownCard } from "@/components/pasarelas/BreakdownCard";
 import { ORIGIN_LABEL, isOption, originOf } from "@/components/pasarelas/gateways/international";
 import { Alert, Card, CardBody, CardHeader, CardTitle, DateText, DateTimeText } from "@/components/ui";
@@ -138,13 +138,15 @@ export type TxDetailProps = {
   cfg: PayConfig;
   /** Hoy en Nueva York. */
   today: ISODate;
+  /** Lo pagado a cada parte del reparto y lo que falta, con sus acciones. */
+  payouts?: PayoutsView;
 };
 
 /**
- * El detalle de un cobro: su estado y sus acciones, sus datos, el desglose congelado, el reparto, los comprobantes
- * y el historial. En el celular, una columna; en el escritorio ancho, dos.
+ * El detalle de un cobro: su estado y sus acciones, sus datos, el desglose congelado, el reparto (con lo pagado a
+ * cada parte), los comprobantes y el historial. En el celular, una columna; en el escritorio ancho, dos.
  */
-export function TxDetail({ tx, cfg, today }: TxDetailProps) {
+export function TxDetail({ tx, cfg, today, payouts }: TxDetailProps) {
   // A los componentes del navegador solo va el cobro: el reparto, los comprobantes y el historial se pintan aquí.
   const { allocations: _allocations, receipts, events, ...snapshot } = tx;
   const trashed = tx.deletedAt !== null;
@@ -166,7 +168,7 @@ export function TxDetail({ tx, cfg, today }: TxDetailProps) {
               <CardTitle>Reparto</CardTitle>
             </CardHeader>
             <CardBody>
-              <AllocationList breakdown={tx.breakdown} />
+              <AllocationList breakdown={tx.breakdown} payouts={payouts} />
             </CardBody>
           </Card>
         </div>

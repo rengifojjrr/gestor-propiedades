@@ -7,6 +7,7 @@ import { markInTransit, trashTransactions } from "@/server/pasarelas/actions/tra
 import { ActionError } from "../ActionError";
 import { callAction, failureOf, type ActionFailure } from "../callAction";
 import { DepositDialog } from "./DepositDialog";
+import { PayoutsDialog } from "./PayoutsDialog";
 import { batchDone, cobros } from "./plural";
 import { RecalcDialog } from "./RecalcDialog";
 
@@ -173,7 +174,7 @@ export function SelectAllCheckbox({ visibleLabel = false }: { visibleLabel?: boo
 
 // ─── La barra ───────────────────────────────────────────────────────────────────────────────────────────────
 
-type Dialogs = "deposit" | "recalc" | "trash" | null;
+type Dialogs = "deposit" | "recalc" | "trash" | "payouts" | null;
 
 export type TxBulkBarProps = {
   /** Los cobros de la página con su moneda (para pintar el antes y el después al recalcular). */
@@ -264,6 +265,9 @@ export function TxBulkBar({ transactions, today }: TxBulkBarProps) {
           <Button onClick={() => open("recalc")} disabled={pending}>
             Recalcular
           </Button>
+          <Button onClick={() => open("payouts")} disabled={pending}>
+            Pagar repartos…
+          </Button>
           <Button variant="danger" onClick={() => open("trash")} disabled={pending}>
             A la papelera
           </Button>
@@ -281,6 +285,7 @@ export function TxBulkBar({ transactions, today }: TxBulkBarProps) {
         onlyPending
       />
       <RecalcDialog transactions={chosenTransactions} open={dialog === "recalc"} onClose={close} onDone={done} />
+      <PayoutsDialog ids={ids} open={dialog === "payouts"} onClose={close} onDone={done} today={today} />
       <ConfirmDialog
         open={dialog === "trash"}
         onClose={close}

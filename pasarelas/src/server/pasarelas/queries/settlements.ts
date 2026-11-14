@@ -1,6 +1,6 @@
 import "server-only";
-import { ZERO, dec, payoutStatus, toMoney } from "@/lib/pasarelas";
-import type { BeneficiaryAmount, Currency, ISODate, Money, PayoutStatus } from "@/lib/pasarelas";
+import { ZERO, dec, owedByPart, payoutStatus, toMoney } from "@/lib/pasarelas";
+import type { BeneficiaryAmount, Currency, ISODate, Money, OwedGroup, PayoutStatus } from "@/lib/pasarelas";
 import { SETTLEMENT_COLUMNS, toSettlement, type Db, type Settlement } from "../dto";
 import { EXACT_COUNT, readAll } from "./paging";
 import { readPage, type MovementsPage } from "./splits";
@@ -155,6 +155,48 @@ export async function payoutStatuses(
       }),
     ]),
   );
+}
+
+/** Un cobro con su moneda y lo que se le debe a cada parte de su reparto. */
+export type TxOwed = { transactionId: string; currency: Currency; status: PayoutStatus | null };
+
+/**
+ * Lo que se le debe a cada parte en cada uno de esos cobros, leído ahora de la base, con la moneda de cada cobro. Los
+ * que no existen (o son de otro usuario) no vienen.
+ */
+export async function owedByTx(supabase: Db, txIds: readonly string[]): Promise<TxOwed[]> {
+  const pages = await Promise.all(
+    chunked([...new Set(txIds)]).map((chunk) =>
+      supabase.from("pay_transactions").select("id, status, deleted_at, currency").in("id", chunk).throwOnError(),
+    ),
+  );
+  const txs = pages.flatMap((page) => page.data);
+  const statuses = await payoutStatuses(
+    supabase,
+    txs.map((tx) => ({ id: tx.id, status: tx.status, deletedAt: tx.deleted_at })),
+  );
+  return txs.map((tx) => ({ transactionId: tx.id, currency: tx.currency, status: statuses.get(tx.id) ?? null }));
+}
+
+/** Lo que se le debe a una parte en varios cobros de una moneda, con su nombre. */
+export type NamedOwedGroup = OwedGroup & { name: string };
+
+/**
+ * «Pagar repartos…» de esos cobros: lo que se le debe a cada parte, por moneda (`owedByPart` del motor), con su
+ * nombre. Las que no deben nada no vienen. En orden de moneda y, dentro de cada una, de nombre.
+ */
+export async function listOwed(supabase: Db, txIds: readonly string[]): Promise<NamedOwedGroup[]> {
+  const groups = owedByPart(await owedByTx(supabase, txIds));
+  if (groups.length === 0) return [];
+  const { data } = await supabase
+    .from("pay_beneficiaries")
+    .select("id, name")
+    .in("id", [...new Set(groups.map((group) => group.beneficiaryId))])
+    .throwOnError();
+  const names = new Map(data.map((row) => [row.id, row.name]));
+  return groups
+    .map((group) => ({ ...group, name: names.get(group.beneficiaryId) ?? "Beneficiario que ya no existe" }))
+    .sort((a, b) => a.currency.localeCompare(b.currency) || a.name.localeCompare(b.name, "es"));
 }
 
 /**

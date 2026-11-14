@@ -7,7 +7,7 @@ import { createGateway, saveGatewayRetention } from "@/server/pasarelas/ops/gate
 import { deleteSettlement, recordPayouts, type PayoutInput } from "@/server/pasarelas/ops/settlements";
 import { saveScheme } from "@/server/pasarelas/ops/splits";
 import { createTx, failTx, purgeTx, refundTx, trashTx } from "@/server/pasarelas/ops/transactions";
-import { listSettlements, listTxPayouts, payoutStatuses } from "@/server/pasarelas/queries/settlements";
+import { listOwed, listSettlements, listTxPayouts, payoutStatuses } from "@/server/pasarelas/queries/settlements";
 import { getSnapshots, leanTx, listTx, parseTxFilters } from "@/server/pasarelas/queries/transactions";
 import { createUser, expectRejected, seedBasics, unwrap, type Basics, type Db, type TestUser } from "./helpers";
 
@@ -643,6 +643,38 @@ describe("recordPayouts: pagar desde un cobro o desde la lista", () => {
     expect(await failureText(recordPayouts(e10.db, [pay(e10.ids.ga, [[failed, "1.00"]])]))).toBe(
       PAYOUT_CHANGED_TEXT,
     );
+  });
+
+  it("P3 en la lista: lo que se le debe a cada parte en los cobros elegidos, por moneda y por nombre", async () => {
+    const e10 = await setupE10();
+    const [t1, t2, refunded, eur] = [
+      await chargeE10(e10),
+      await chargeE10(e10),
+      await chargeE10(e10),
+      await chargeE10(e10, { currency: "EUR" }),
+    ];
+    const groups = await listOwed(e10.db, [t1, t2]);
+    expect(groups.map((group) => [group.name, group.currency, group.owed, group.items.length])).toEqual([
+      ["Grupo A", "USD", "1161.06", 2],
+      ["Grupo B", "USD", "580.54", 2],
+      ["Titular A", "USD", "50.00", 2],
+      ["Titular B", "USD", "50.00", 2],
+    ]);
+    // Pagadas las de un cobro y reembolsado del todo después: a cada parte se le pagó de más (en EUR, aparte).
+    await recordPayouts(e10.db, payAllE10(e10, refunded));
+    await refundTx(e10.db, refunded, { amount: "1000.00", on: "2026-11-15" });
+    const mixed = await listOwed(e10.db, [refunded, eur, randomUUID()]);
+    expect(mixed.map((group) => [group.name, group.currency, group.owed])).toEqual([
+      ["Grupo A", "EUR", "580.53"],
+      ["Grupo B", "EUR", "290.27"],
+      ["Titular A", "EUR", "25.00"],
+      ["Titular B", "EUR", "25.00"],
+      ["Grupo A", "USD", "-600.00"],
+      ["Grupo B", "USD", "-300.00"],
+      ["Titular A", "USD", "-25.00"],
+      ["Titular B", "USD", "-25.00"],
+    ]);
+    expect(await listOwed(e10.db, [])).toEqual([]);
   });
 
   it("P5: lo pagado en un cobro, con los otros cobros de cada liquidación; deshacer la borra con sus partes", async () => {
