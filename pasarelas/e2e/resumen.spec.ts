@@ -3,6 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { ZONE, addDays, formatDate, todayNY, wallTimeToInstant } from "../src/lib/pasarelas/dates";
 import type { Currency, ISODate } from "../src/lib/pasarelas/types";
 import { signInAal1, unwrap, type Db } from "../tests/integration/helpers";
+import { waitForStillToasts } from "./avisos";
 import { expectNoHorizontalOverflow } from "./axe";
 import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
 import { serverData } from "./server-data";
@@ -121,6 +122,8 @@ test.beforeAll(async () => {
 });
 
 async function checkScreen(page: Page): Promise<void> {
+  // Un aviso a medio entrar tiene el texto translúcido y axe lo mide como falta de contraste.
+  await waitForStillToasts(page);
   await expectNoSeriousAxe(page);
   await expectNoHorizontalOverflow(page);
 }
