@@ -21,7 +21,8 @@ function e1() {
   return compute(rules, PAID, "USD");
 }
 
-const html = (breakdown: ReturnType<typeof e1>) => renderToStaticMarkup(createElement(BreakdownCard, { breakdown }));
+const html = (breakdown: ReturnType<typeof e1>, occurredOn?: string) =>
+  renderToStaticMarkup(createElement(BreakdownCard, { breakdown, occurredOn }));
 /** El texto que ve la persona, con un espacio donde había etiquetas. */
 const text = (markup: string) => markup.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 /** El texto del elemento marcado con ese `data-testid`. */
@@ -144,5 +145,63 @@ describe("BreakdownCard", () => {
     expect(markup).not.toContain("<li");
     expect(text(markup)).toContain("Sin comisiones.");
     expect(byTestId(markup, "neto")).toBe("$0,00");
+  });
+
+  describe("la retención de la pasarela", () => {
+    /** E10 en la configuración de ejemplo: Stripe como «OTF Demo» (2,9 % + 0,20) que retiene el 5 % 30 días. */
+    function e10(refunded = "0.00") {
+      const cfg = cfgDemo();
+      const stripe = cfg.gateways[0];
+      if (stripe === undefined) throw new Error("Falta la pasarela de ejemplo");
+      stripe.name = "OTF Demo";
+      stripe.feeVersions = [{ id: DEMO.feeVersionId, pct: "2.9", fixed: "0.20", effectiveFrom: "2000-01-01", note: null }];
+      stripe.retention = {
+        pct: "5",
+        days: 30,
+        recipients: [
+          { beneficiaryId: DEMO.beneficiaryIds.a, pct: "50" },
+          { beneficiaryId: DEMO.beneficiaryIds.b, pct: "50" },
+        ],
+      };
+      const rules = resolveRules(cfg, {
+        companyId: DEMO.companyId,
+        channelId: null,
+        gatewayId: DEMO.gatewayId,
+        extraIds: [],
+        schemeId: DEMO.schemeId,
+        occurredOn: "2026-11-10",
+      });
+      return compute(rules, { ...PAID, grossOriginal: "1000.00", refunded }, "USD");
+    }
+
+    it("E10: cuánto retiene, a quién le cae y cuánto, hacia qué fecha se libera, y lo que llega al banco", () => {
+      const markup = html(e10(), "2026-11-10");
+      expect(byTestId(markup, "neto")).toBe("$970,80");
+      expect(text(markup)).toContain("Retiene OTF Demo (5 %) $50,00");
+      const shares = [...markup.matchAll(/<li data-testid="retencion-persona"[^>]*>(.*?)<\/li>/g)].map((m) =>
+        text(m[1] ?? ""),
+      );
+      expect(shares).toEqual(["Grupo A $25,00", "Grupo B $25,00"]);
+      expect(text(markup)).toContain("Se libera hacia el jue 10 dic 2026");
+      expect(byTestId(markup, "llega-al-banco")).toBe("$920,80");
+    });
+
+    it("sin la fecha del cobro no dice cuándo se libera; con reembolso total retiene 0 y llega el neto", () => {
+      expect(text(html(e10()))).not.toContain("Se libera");
+      const refunded = html(e10("1000.00"), "2026-11-10");
+      expect(text(refunded)).toContain("Retiene OTF Demo (5 %) $0,00");
+      expect(byTestId(refunded, "llega-al-banco")).toBe("-$29,20");
+      expect(byTestId(refunded, "llega-al-banco")).toBe(byTestId(refunded, "neto"));
+      // Sin nada retenido, nadie recibe nada ni hay nada que liberar.
+      expect(refunded).not.toContain('data-testid="retencion-persona"');
+      expect(text(refunded)).not.toContain("Se libera");
+      expect(text(refunded)).toContain("Sin nada cobrado, no retiene nada.");
+    });
+
+    it("una pasarela que no retiene no dice nada de la retención ni de lo que llega al banco", () => {
+      const markup = html(e1(), "2026-11-13");
+      expect(text(markup)).not.toContain("Retiene");
+      expect(byTestId(markup, "llega-al-banco")).toBeNull();
+    });
   });
 });

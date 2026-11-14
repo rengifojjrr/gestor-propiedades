@@ -160,7 +160,7 @@ export function TxDetail({ tx, cfg, today }: TxDetailProps) {
       <div className="grid gap-5 xl:grid-cols-2 xl:items-start">
         <div className="flex min-w-0 flex-col gap-5">
           <DataCard tx={tx} cfg={cfg} />
-          <BreakdownCard breakdown={tx.breakdown} />
+          <BreakdownCard breakdown={tx.breakdown} occurredOn={tx.occurredOn} />
           <Card>
             <CardHeader>
               <CardTitle>Reparto</CardTitle>

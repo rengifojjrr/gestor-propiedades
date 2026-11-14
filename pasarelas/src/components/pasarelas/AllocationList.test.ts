@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { buyerFeesOf, compute, recompute, resolveRules, type Selection } from "@/lib/pasarelas";
+import { buyerFeesOf, compute, recompute, resolveRules, type Rules, type Selection } from "@/lib/pasarelas";
 import { DEMO, cfgDemo } from "@/lib/pasarelas/demo.fixture";
 import { AllocationList } from "./AllocationList";
 
@@ -145,5 +145,100 @@ describe("AllocationList", () => {
     const markup = html(compute(resolveRules(cfgDemo(), { ...E1, schemeId: null }), PAID, "USD"));
     expect(markup).not.toContain("<li");
     expect(text(markup)).toBe("Este cobro no se reparte.");
+  });
+
+  describe("la retención de la pasarela", () => {
+    /** E1 por una Stripe que retiene el 5 % para `recipients` (por defecto, A y B, mitad y mitad). */
+    function retained(recipients: string[] = [DEMO.beneficiaryIds.a, DEMO.beneficiaryIds.b], scheme = true) {
+      const cfg = cfgDemo();
+      const stripe = cfg.gateways[0];
+      if (stripe === undefined) throw new Error("Falta la pasarela de ejemplo");
+      const pct = recipients.length === 1 ? "100" : "50";
+      stripe.retention = { pct: "5", days: 30, recipients: recipients.map((beneficiaryId) => ({ beneficiaryId, pct })) };
+      cfg.beneficiaries.push({ id: "ben-titular", name: "Titular A", kind: "persona", active: true });
+      return compute(resolveRules(cfg, { ...E1, schemeId: scheme ? DEMO.schemeId : null }), PAID, "USD");
+    }
+
+    it("E10: cada titular ya recibió 25,00 de la retención y le faltan 25,00 de sus 50,00", () => {
+      const rules: Rules = {
+        gateway: {
+          id: "gw-otf",
+          name: "OTF Demo",
+          feeVersionId: "fv-otf",
+          pct: "2.9",
+          fixed: "0.20",
+          refundsReturnFee: false,
+          disputeFee: "0.00",
+          retention: {
+            pct: "5",
+            days: 30,
+            recipients: [
+              { beneficiaryId: "ben-ta", name: "Titular A", pct: "50" },
+              { beneficiaryId: "ben-tb", name: "Titular B", pct: "50" },
+            ],
+          },
+        },
+        extras: [],
+        platform: null,
+        scheme: {
+          schemeId: "sch-otf",
+          versionId: "sv-otf",
+          name: "Sobre el neto",
+          base: "neto",
+          lines: [
+            { beneficiaryId: "ben-ga", name: "Grupo A", pct: "60", feeExempt: false },
+            { beneficiaryId: "ben-gb", name: "Grupo B", pct: "30", feeExempt: false },
+            { beneficiaryId: "ben-ta", name: "Titular A", pct: "5", feeExempt: true },
+            { beneficiaryId: "ben-tb", name: "Titular B", pct: "5", feeExempt: true },
+          ],
+          remainder: null,
+        },
+      };
+      const markup = html(compute(rules, { ...PAID, grossOriginal: "1000.00" }, "USD"));
+      expect(items(markup)).toEqual([
+        "Grupo A 60 % $580,53",
+        "Grupo B 30 % $290,27",
+        "Titular A no paga comisión 5 % $50,00 ya recibió $25,00 de la retención · falta $25,00",
+        "Titular B no paga comisión 5 % $50,00 ya recibió $25,00 de la retención · falta $25,00",
+      ]);
+      expect(text(markup)).not.toContain("adelanto");
+    });
+
+    it("a cada persona que recibe retención: lo que ya recibió y lo que falta", () => {
+      // 100,00 retiene 5,00: 2,50 a A (que tiene 45,15) y 2,50 a B (27,09).
+      const markup = html(retained());
+      expect(items(markup)).toEqual([
+        "Grupo A 50 % $45,15 ya recibió $2,50 de la retención · falta $42,65",
+        "Grupo B 30 % $27,09 ya recibió $2,50 de la retención · falta $24,59",
+        "Grupo C 20 % $18,06",
+      ]);
+      expect(text(markup)).not.toContain("adelanto");
+    });
+
+    it("si alguien recibe retención sin estar en el reparto, lo advierte: es un adelanto y su saldo baja", () => {
+      const markup = text(html(retained(["ben-titular"])));
+      expect(markup).toContain(
+        "Titular A recibe $5,00 de la retención pero no está en el reparto de este cobro: es un adelanto y su saldo baja.",
+      );
+      // Sin esquema, todos los que reciben retención están fuera del reparto.
+      const unshared = text(html(retained([DEMO.beneficiaryIds.a], false)));
+      expect(unshared).toContain("Este cobro no se reparte.");
+      expect(unshared).toContain("Grupo A recibe $5,00 de la retención pero no está en el reparto de este cobro");
+    });
+
+    it("con un reembolso total ya no recibió nada: sin marcas ni advertencias", () => {
+      const markup = text(html(recompute(retained(["ben-titular"]), { refunded: "100.00" })));
+      expect(markup).not.toContain("retención");
+    });
+
+    it("si lo retenido pasa de su parte, lo de más es un adelanto", () => {
+      const cfg = cfgDemo();
+      const stripe = cfg.gateways[0];
+      if (stripe === undefined) throw new Error("Falta la pasarela de ejemplo");
+      stripe.retention = { pct: "50", days: 30, recipients: [{ beneficiaryId: DEMO.beneficiaryIds.c, pct: "100" }] };
+      // 100,00 retiene 50,00 para C, que solo tiene 18,06 del reparto.
+      const markup = html(compute(resolveRules(cfg, E1), PAID, "USD"));
+      expect(items(markup)[2]).toBe("Grupo C 20 % $18,06 ya recibió $50,00 de la retención · $31,94 de adelanto");
+    });
   });
 });

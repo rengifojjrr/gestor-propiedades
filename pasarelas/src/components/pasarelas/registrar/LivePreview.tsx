@@ -41,7 +41,7 @@ export type PreviewInput = {
 type Preview =
   | { kind: "incompleto"; text: string }
   | { kind: "falta"; code: PayRuleCode }
-  | { kind: "listo"; breakdown: Breakdown; estimated: DateWindow; manual: boolean };
+  | { kind: "listo"; breakdown: Breakdown; occurredOn: ISODate; estimated: DateWindow; manual: boolean };
 
 /**
  * El cálculo de la vista previa, con el mismo motor y la misma configuración que usa el servidor al guardar:
@@ -80,12 +80,12 @@ function previewOf(cfg: PayConfig, input: PreviewInput): Preview {
     const breakdown = compute(rules, state, input.currency);
     if (isISODate(input.manualEstimate)) {
       const day = input.manualEstimate;
-      return { kind: "listo", breakdown, estimated: { from: day, to: day }, manual: true };
+      return { kind: "listo", breakdown, occurredOn, estimated: { from: day, to: day }, manual: true };
     }
     const { days, daysMax, dayType } = resolvePayout(cfg, selection, rules.extras);
     const holidays = new Set(cfg.holidays);
     const estimated = estimateDepositWindow({ occurredOn, days, daysMax, dayType, holidays });
-    return { kind: "listo", breakdown, estimated, manual: false };
+    return { kind: "listo", breakdown, occurredOn, estimated, manual: false };
   } catch (error) {
     if (error instanceof PayRuleError) return { kind: "falta", code: error.code };
     throw error;
@@ -143,7 +143,7 @@ export function LivePreview({ cfg, input }: { cfg: PayConfig; input: PreviewInpu
 
       {preview.kind === "listo" ? (
         <>
-          <BreakdownCard breakdown={preview.breakdown} />
+          <BreakdownCard breakdown={preview.breakdown} occurredOn={preview.occurredOn} />
           <Card>
             <CardHeader>
               <CardTitle>Reparto</CardTitle>
