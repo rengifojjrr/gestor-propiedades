@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { summarize, upcomingDeposits, type LeanTx, type PayConfig } from "@/lib/pasarelas";
-import { chooseCurrency, companiesWithoutScheme, depositParts, monthRows, splitRows, summaryScope } from "./summary";
+import { moneyInTransit, summarize, upcomingDeposits, type LeanTx, type PayConfig } from "@/lib/pasarelas";
+import {
+  chooseCurrency,
+  companiesWithoutScheme,
+  depositParts,
+  monthRows,
+  splitRows,
+  summaryScope,
+  transitView,
+  type TransitGroup,
+  type TransitTx,
+} from "./summary";
 
 /** Un cobro mínimo de 100,00 sin comisiones. */
 function tx(patch: Partial<LeanTx> = {}): LeanTx {
@@ -289,5 +299,78 @@ describe("depositParts", () => {
       ["2026-11-12", "2026-11-12", 500],
       ["2026-11-12", "2026-11-10", 1],
     ]);
+  });
+});
+
+describe("transitView", () => {
+  const TODAY = "2026-11-16";
+  /** Un cobro por caer con su referencia. */
+  const open = (id: string, patch: Partial<LeanTx> = {}): TransitTx => ({ ...tx({ id, ...patch }), reference: `R-${id}` });
+  const view = (rows: TransitTx[], size?: number) =>
+    transitView(moneyInTransit({ open: rows, deposited: [], retained: [] }, "USD", TODAY), "USD", TODAY, size);
+
+  it("cada grupo, o cada parte de uno grande, trae sus cobros uno por uno, en su fase", () => {
+    const transit = view(
+      [
+        open("a1", { occurredOn: "2026-11-02", estimatedDepositOn: "2026-11-12" }),
+        open("b1", { estimatedDepositOn: "2026-11-17" }),
+        open("b2", { estimatedDepositOn: "2026-11-17" }),
+        open("b3", { estimatedDepositOn: "2026-11-17" }),
+        open("c1", { estimatedDepositOn: "2026-12-06" }),
+      ],
+      2,
+    );
+    const shape = (group: TransitGroup) => [
+      group.date,
+      group.part,
+      group.payout,
+      group.items.map((item) => [item.tx.reference, item.label]),
+    ];
+    expect(transit.soon.map(shape)).toEqual([
+      ["2026-11-12", null, "100.00", [["R-a1", "Debió llegar hace 4 días"]]],
+      [
+        "2026-11-17",
+        { index: 1, of: 2 },
+        "200.00",
+        [
+          ["R-b1", "Llega mañana"],
+          ["R-b2", "Llega mañana"],
+        ],
+      ],
+      ["2026-11-17", { index: 2, of: 2 }, "100.00", [["R-b3", "Llega mañana"]]],
+    ]);
+    expect(transit.later.map(shape)).toEqual([["2026-12-06", null, "100.00", [["R-c1", "Llega en 20 días"]]]]);
+    expect(transit.total).toEqual({ payout: "500.00", count: 5 });
+  });
+
+  it("cada grupo dice su fase con su propia ventana: de la más temprana de sus cobros a su fecha", () => {
+    const transit = view([
+      open("a1", { occurredOn: "2026-11-02", estimatedDepositOn: "2026-11-12" }),
+      open("b1", { estimatedDepositFrom: "2026-11-16", estimatedDepositOn: "2026-11-18" }),
+      open("b2", { estimatedDepositFrom: "2026-11-17", estimatedDepositOn: "2026-11-18" }),
+    ]);
+    expect(transit.soon.map((group) => [group.phase, group.label])).toEqual([
+      ["atrasado", "Debió llegar hace 4 días"],
+      ["hoy", "Hoy o hasta el mié 18"],
+    ]);
+    // Cada cobro conserva la suya.
+    expect(transit.soon[1]?.items.map((item) => item.label)).toEqual(["Hoy o hasta el mié 18", "Llega en 1–2 días"]);
+  });
+
+  it("«Ya debió llegar» y el total llevan a la lista con exactamente esos cobros, en la moneda", () => {
+    const transit = view([
+      open("a1", { occurredOn: "2026-11-02", estimatedDepositOn: "2026-11-12" }),
+      open("a2", { occurredOn: "2026-11-04", estimatedDepositOn: "2026-11-13" }),
+      open("b1", { occurredOn: "2026-11-15", estimatedDepositOn: "2026-11-17" }),
+    ]);
+    expect(transit.links).toEqual({
+      overdue: "/pasarelas/cobros?periodo=personalizado&desde=2026-11-02&hasta=2026-11-04&estado=atrasado&moneda=USD",
+      total: "/pasarelas/cobros?periodo=personalizado&desde=2026-11-02&hasta=2026-11-15&estado=por_caer&moneda=USD",
+    });
+  });
+
+  it("sin cobros en esa tarjeta, no hay enlace", () => {
+    expect(view([open("b1", { estimatedDepositOn: "2026-11-17" })]).links.overdue).toBeNull();
+    expect(view([]).links).toEqual({ overdue: null, total: null });
   });
 });

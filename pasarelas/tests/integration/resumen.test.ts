@@ -130,8 +130,9 @@ describe("loadSummary", () => {
       },
     ]);
 
-    // Los depósitos: todo lo por caer, sin período (el de octubre también), solo en USD. El de la disputa no.
-    expect(view.deposits).toEqual([
+    // «Dinero en camino»: todo lo por caer, sin período (el de octubre también), solo en USD. El de la disputa,
+    // aparte: detenido.
+    expect(view.transit?.soon).toEqual([
       {
         date: "2026-10-22",
         from: "2026-10-22",
@@ -144,6 +145,9 @@ describe("loadSummary", () => {
         ids: expect.any(Array),
         overdue: true,
         part: null,
+        phase: "atrasado",
+        label: "Debió llegar hace 29 días",
+        items: expect.any(Array),
       },
       {
         date: "2026-11-13",
@@ -156,9 +160,13 @@ describe("loadSummary", () => {
         ids: expect.any(Array),
         overdue: true,
         part: null,
+        phase: "atrasado",
+        label: "Debió llegar hace 7 días",
+        items: expect.any(Array),
       },
     ]);
-    expect(view.depositWindow).toEqual({ from: TODAY, to: "2026-12-03" });
+    expect(view.transit?.total).toEqual({ payout: "10836.00", count: USD_COUNT });
+    expect(view.transit?.held).toEqual({ payout: "90.30", count: 1 });
 
     expect(view.splits).toEqual([
       { beneficiaryId: b.beneficiaryIds.a, assigned: "5418.00", settled: "100.00", balance: "5313.15" },
@@ -197,7 +205,7 @@ describe("loadSummary", () => {
     expect(view.currency).toBe("EUR");
     expect(view.defaultCurrency).toBe("USD");
     expect(view.summary?.totals).toMatchObject({ count: 1, gross: "100.00", net: "90.30" });
-    expect(view.deposits.map((group) => [group.currency, group.net])).toEqual([["EUR", "90.30"]]);
+    expect(view.transit?.soon.map((group) => [group.currency, group.net])).toEqual([["EUR", "90.30"]]);
     expect(view.splits).toEqual([
       { beneficiaryId: b.beneficiaryIds.a, assigned: "45.15", settled: "0.00", balance: "45.15" },
       { beneficiaryId: b.beneficiaryIds.b, assigned: "27.09", settled: "0.00", balance: "27.09" },
@@ -217,7 +225,7 @@ describe("loadSummary", () => {
       currency: null,
       summary: null,
       months: [{ month: "2026-11", count: 0 }],
-      deposits: [],
+      transit: null,
       splits: [],
       notices: { withoutReceipt: null, overdue: null, disputes: null, companiesWithoutScheme: [] },
     });

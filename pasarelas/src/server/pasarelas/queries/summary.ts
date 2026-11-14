@@ -1,36 +1,53 @@
 import "server-only";
 import { hrefWith } from "@/components/ui/url";
 import {
+  RECENT_DEPOSIT_DAYS,
   ZERO,
   add,
   addDays,
   sub,
   dec,
-  isOverdue,
   isZero,
   monthKey,
   monthLabel,
+  moneyInTransit,
   summarize,
   toMoney,
-  upcomingDeposits,
+  transitCurrencies,
+  transitLabel,
+  transitPhase,
 } from "@/lib/pasarelas";
-import type { Currency, CurrencySummary, DepositGroup, ISODate, LeanTx, Money, PayConfig } from "@/lib/pasarelas";
-import type { Db } from "../dto";
+import type {
+  Currency,
+  CurrencySummary,
+  DepositGroup,
+  ISODate,
+  InTransit,
+  LeanTx,
+  Money,
+  PayConfig,
+  RetainedRow,
+  TransitItem,
+  TransitPhase,
+  TransitRows,
+} from "@/lib/pasarelas";
+import { LEAN_TX_COLUMNS, toLeanTx, type Db } from "../dto";
 import { SAVE_BATCH_SIZE } from "../tx-save";
 import { EXACT_COUNT, readAll as readAllRows, type PageRead } from "./paging";
 import { chunked, leanTx, parseTxFilters, type TxFilters } from "./transactions";
 
 /**
- * Lo que pinta el Resumen (`/pasarelas`). Los totales del período salen del motor (`summarize`) sobre TODAS las
- * filas del filtro (`leanTx`, con el mismo constructor de filtros que la lista de cobros); los repartos, de lo
- * asignado a los cobros del período, de lo liquidado en el período y del saldo de toda la historia (vista
- * `pay_beneficiary_balances`). Todo se entrega en UNA moneda: nunca un total mezclado.
+ * Lo que pinta el Resumen (`/pasarelas`). Arriba, «Dinero en camino»: lo que está por caer ahora mismo, sin
+ * importar el período ni los filtros (`moneyInTransit` del motor). Los totales del período salen del motor
+ * (`summarize`) sobre TODAS las filas del filtro (`leanTx`, con el mismo constructor de filtros que la lista de
+ * cobros); los repartos, de lo asignado a los cobros del período, de lo liquidado en el período y del saldo de toda
+ * la historia (vista `pay_beneficiary_balances`). Todo se entrega en UNA moneda: nunca un total mezclado.
  */
 
-/** Los días de «próximos depósitos», contando hoy. */
-export const SUMMARY_DAYS = 14;
-
 const TX_LIST = "/pasarelas/cobros";
+
+/** Los días que una pasarela puede retener como mucho (`pay_gateways_retention_days_check`). */
+const MAX_RETENTION_DAYS = 365;
 
 /** Las claves de la URL que el Resumen filtra, en el orden en que pasan a los enlaces de la lista de cobros. */
 const SCOPE_KEYS = ["periodo", "desde", "hasta", "empresa", "canal", "pasarela"] as const;
@@ -82,6 +99,26 @@ export type SummaryNotices = {
   yearsWithoutHolidays: number[];
 };
 
+/** Un cobro de «Dinero en camino»: la fila mínima y su referencia, para nombrarlo en la lista. */
+export type TransitTx = LeanTx & { reference: string | null };
+
+/**
+ * Un grupo por fecha y cuenta para marcar depositado (o una de sus partes), con sus cobros uno por uno y su propia
+ * fase: la de su ventana, de la más temprana de sus cobros (`from`) a su fecha (`date`).
+ */
+export type TransitGroup = DepositPart & { phase: TransitPhase; label: string; items: TransitItem<TransitTx>[] };
+
+/**
+ * «Dinero en camino» en una moneda, listo para pintar: lo del motor, con los grupos ya partidos en lotes que se
+ * marcan depositado de una vez y cada uno con sus cobros, y los enlaces de las tarjetas que tienen filtro en la
+ * lista de cobros («atrasado» y «por caer»; `null` si no hay ningún cobro).
+ */
+export type TransitView = Omit<InTransit<TransitTx>, "items" | "soon" | "later"> & {
+  soon: TransitGroup[];
+  later: TransitGroup[];
+  links: { overdue: string | null; total: string | null };
+};
+
 export type SummaryView = {
   period: { from: ISODate; to: ISODate };
   /** Todas las monedas que aparecen en algo de la pantalla, en orden alfabético. */
@@ -95,13 +132,8 @@ export type SummaryView = {
   /** El resumen del período en `currency`; `null` si no hubo cobros que cuenten. */
   summary: CurrencySummary | null;
   months: MonthRow[];
-  /**
-   * Lo atrasado y lo que cae en los próximos días, en `currency`, en partes que se marcan depositado de una vez
-   * (`depositParts`). No depende del período.
-   */
-  deposits: DepositPart[];
-  /** Los días que cubre `deposits` (además de lo atrasado), ambos incluidos. */
-  depositWindow: { from: ISODate; to: ISODate };
+  /** «Dinero en camino» en `currency`, sin importar el período ni los filtros; `null` sin moneda. */
+  transit: TransitView | null;
   splits: SplitRow[];
   notices: SummaryNotices;
   links: { pending: string };
@@ -172,11 +204,11 @@ export function companiesWithoutScheme(
     .map(({ id, name, defaultSchemeId }) => ({ id, name, schemeInactive: defaultSchemeId !== null }));
 }
 
-/** Un grupo de próximos depósitos; `part` dice cuál de sus partes es, si no cabe en un solo lote. */
+/** Un grupo para marcar depositado; `part` dice cuál de sus partes es, si no cabe en un solo lote. */
 export type DepositPart = DepositGroup & { part: { index: number; of: number } | null };
 
 /**
- * Los grupos de próximos depósitos, con los de más de `size` cobros (lo más que se marca depositado de una vez)
+ * Los grupos para marcar depositado, con los de más de `size` cobros (lo más que se marca depositado de una vez)
  * partidos en partes de `size` como mucho, cada una con su neto, lo que llega al banco y desde cuándo pueden caer
  * sus cobros (la más temprana de sus ventanas). `rows`: los cobros de esos grupos.
  */
@@ -205,6 +237,52 @@ export function depositParts(
       part: { index: index + 1, of: parts.length },
     }));
   });
+}
+
+/**
+ * «Dinero en camino» listo para pintar: cada grupo partido en lotes (`depositParts`), cada lote con su fase y sus
+ * cobros en el orden del motor, y los enlaces a la lista con exactamente los cobros de «Ya debió llegar» y del
+ * total (el período justo de esos cobros, en la moneda; sin los filtros del Resumen, que aquí no rigen).
+ */
+export function transitView(
+  transit: InTransit<TransitTx>,
+  currency: Currency,
+  today: ISODate,
+  size: number = SAVE_BATCH_SIZE,
+): TransitView {
+  const { items, soon, later, ...figures } = transit;
+  const byId = new Map(items.map((item) => [item.tx.id, item]));
+  const withItems = (groups: readonly DepositGroup[]): TransitGroup[] =>
+    depositParts(
+      groups,
+      items.map((item) => item.tx),
+      size,
+    ).map((part) => {
+      const window = { from: part.from, to: part.date };
+      return {
+        ...part,
+        phase: transitPhase(window, today),
+        label: transitLabel(window, today),
+        items: part.ids.flatMap((id) => byId.get(id) ?? []),
+      };
+    });
+  const link = (rows: readonly LeanTx[], estado: string): string | null =>
+    rows.length === 0 ? null : hrefWith(TX_LIST, "", { ...spanOf(rows), estado, moneda: currency });
+  return {
+    ...figures,
+    soon: withItems(soon),
+    later: withItems(later),
+    links: {
+      overdue: link(
+        items.filter((item) => item.phase === "atrasado").map((item) => item.tx),
+        "atrasado",
+      ),
+      total: link(
+        items.map((item) => item.tx),
+        "por_caer",
+      ),
+    },
+  };
 }
 
 /** El primer día del mes siguiente. */
@@ -359,6 +437,80 @@ export async function beneficiaryBalances(supabase: Db): Promise<BeneficiaryBala
   });
 }
 
+/** Los pasos del ciclo del dinero de un cobro que todavía no se depositó ni falló. */
+const OPEN = ["registrado", "en_transito"] as const;
+
+/** Lo retenido de un cobro y los días de su regla congelada, leídos del desglose sin traerlo entero. */
+const RETAINED_COLUMNS = "id, occurred_on, currency, retention_amount::text, days:breakdown->rules->gateway->retention->days";
+
+/** Lo retenido de un cobro: los días salen de la regla congelada en su desglose. */
+function toRetainedRow(row: {
+  id: string;
+  occurred_on: ISODate;
+  currency: Currency;
+  retention_amount: string;
+  days: unknown;
+}): RetainedRow {
+  if (typeof row.days !== "number" || !Number.isInteger(row.days)) {
+    throw new Error("Un cobro con retención llegó sin los días de su regla congelada (rules.gateway.retention).");
+  }
+  return {
+    id: row.id,
+    occurredOn: row.occurred_on,
+    currency: row.currency,
+    retention: money(row.retention_amount),
+    days: row.days,
+  };
+}
+
+/**
+ * Lo que lee «Dinero en camino», de toda la historia y fuera de la papelera (la RLS deja solo lo del usuario): los
+ * cobros sin depositar ni fallar, con su referencia (lo por caer y lo detenido por disputa los separa el motor);
+ * los depositados desde hace 29 días; y los que tienen algo retenido y pueden no haberlo liberado todavía, con los
+ * días de su regla congelada (`breakdown->rules->gateway->retention->days`). Qué cuenta lo decide `moneyInTransit`.
+ */
+export async function transitRows(supabase: Db, today: ISODate): Promise<TransitRows<TransitTx>> {
+  const [open, deposited, retained] = await Promise.all([
+    readAll((from, to) =>
+      supabase
+        .from("pay_transactions")
+        .select(`${LEAN_TX_COLUMNS}, reference`, EXACT_COUNT)
+        .is("deleted_at", null)
+        .in("status", OPEN)
+        .order("id")
+        .range(from, to)
+        .throwOnError(),
+    ),
+    readAll((from, to) =>
+      supabase
+        .from("pay_transactions")
+        .select(LEAN_TX_COLUMNS, EXACT_COUNT)
+        .is("deleted_at", null)
+        .eq("status", "depositado")
+        .gte("deposited_on", addDays(today, 1 - RECENT_DEPOSIT_DAYS))
+        .order("id")
+        .range(from, to)
+        .throwOnError(),
+    ),
+    readAll((from, to) =>
+      supabase
+        .from("pay_transactions")
+        .select(RETAINED_COLUMNS, EXACT_COUNT)
+        .is("deleted_at", null)
+        .gt("retention_amount", ZERO)
+        .gte("occurred_on", addDays(today, -MAX_RETENTION_DAYS))
+        .order("id")
+        .range(from, to)
+        .throwOnError(),
+    ),
+  ]);
+  return {
+    open: open.map((row) => ({ ...toLeanTx(row), reference: row.reference })),
+    deposited: deposited.map(toLeanTx),
+    retained: retained.map(toRetainedRow),
+  };
+}
+
 // ─── El Resumen entero ──────────────────────────────────────────────────────────────────────────────────────
 
 /** Para un enlace a la lista que no depende del período: el período justo de esos cobros. */
@@ -373,9 +525,10 @@ function notice(count: number, href: () => string): Notice | null {
 }
 
 /**
- * El Resumen: los totales y gráficos del período, los próximos depósitos (lo atrasado y lo que cae en 14 días, sin
- * importar el período: lo que cae mañana puede ser de un cobro del mes pasado), los repartos y los avisos. Los
- * filtros de empresa, canal y pasarela rigen en todo, salvo en lo liquidado y el saldo, que no son de un cobro.
+ * El Resumen: «Dinero en camino» (lo que está por caer ahora, de toda la historia, sin los filtros: lo que cae
+ * mañana puede ser de un cobro del mes pasado), los totales y gráficos del período, los repartos y los avisos. Los
+ * filtros de empresa, canal y pasarela rigen en todo lo demás, salvo en lo liquidado y el saldo, que no son de un
+ * cobro.
  */
 export async function loadSummary(
   supabase: Db,
@@ -385,21 +538,21 @@ export async function loadSummary(
 ): Promise<SummaryView> {
   const scope = summaryScope(sp, today);
   const { from = today, to = today, ...where } = scope.filters;
-  const [periodRows, pendingRows, disputedRows, balances, settlements] = await Promise.all([
+  const [periodRows, overdueRows, disputedRows, balances, settlements, transit] = await Promise.all([
     leanTx(supabase, scope.filters, today, cfg),
-    leanTx(supabase, { ...where, status: "por_caer" }, today, cfg),
+    leanTx(supabase, { ...where, status: "atrasado" }, today, cfg),
     leanTx(supabase, { ...where, status: "en_disputa" }, today, cfg),
     beneficiaryBalances(supabase),
     periodSettlements(supabase, { from, to }),
+    transitRows(supabase, today),
   ]);
   const allocations = await periodAllocations(supabase, periodRows);
 
   const byCurrency = summarize(periodRows, today);
-  const groups = upcomingDeposits(pendingRows, today, SUMMARY_DAYS);
   const { currencies, currency, defaultCurrency } = chooseCurrency(
     byCurrency,
     [
-      ...groups.map((group) => group.currency),
+      ...transitCurrencies(transit, today),
       ...allocations.map((line) => line.currency),
       ...settlements.map((line) => line.currency),
       ...balances.filter((row) => !isZero(row.balance)).map((row) => row.currency),
@@ -409,7 +562,6 @@ export async function loadSummary(
   );
   const summary = currency === null ? null : (byCurrency[currency] ?? null);
   const list = (changes: Record<string, string | null>) => hrefWith(TX_LIST, scope.query, changes);
-  const overdueRows = pendingRows.filter((row) => isOverdue(row, today));
   const year = Number(today.slice(0, 4));
 
   return {
@@ -420,11 +572,7 @@ export async function loadSummary(
     periodCurrencies: Object.keys(byCurrency).sort(byText),
     summary,
     months: monthRows({ from, to }, summary?.byMonth ?? []),
-    deposits: depositParts(
-      groups.filter((group) => group.currency === currency),
-      pendingRows,
-    ),
-    depositWindow: { from: today, to: addDays(today, SUMMARY_DAYS - 1) },
+    transit: currency === null ? null : transitView(moneyInTransit(transit, currency, today), currency, today),
     splits: splitRows(
       currency,
       allocations,

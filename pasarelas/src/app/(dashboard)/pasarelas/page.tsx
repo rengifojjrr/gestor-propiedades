@@ -5,12 +5,12 @@ import { CompanyRanking } from "@/components/pasarelas/summary/CompanyRanking";
 import { filterSummary } from "@/components/pasarelas/summary/filter-summary";
 import { GatewayCost } from "@/components/pasarelas/summary/GatewayCost";
 import { GatewayShare } from "@/components/pasarelas/summary/GatewayShare";
+import { MoneyInTransit } from "@/components/pasarelas/summary/MoneyInTransit";
 import { MonthChart } from "@/components/pasarelas/summary/MonthChart";
 import { Notices } from "@/components/pasarelas/summary/Notices";
 import { SplitsTable } from "@/components/pasarelas/summary/SplitsTable";
 import { StatCards } from "@/components/pasarelas/summary/StatCards";
 import { SummaryFilters } from "@/components/pasarelas/summary/SummaryFilters";
-import { UpcomingDeposits } from "@/components/pasarelas/summary/UpcomingDeposits";
 import { ButtonLink, DateText, EmptyState, PageHeader } from "@/components/ui";
 import { hrefWith } from "@/components/ui/url";
 import { requireSession } from "@/lib/auth/session";
@@ -67,9 +67,9 @@ function listOf(items: readonly string[]): string {
 }
 
 /**
- * Resumen: los filtros (período, empresa, canal, pasarela y moneda) en la URL; las cifras y los gráficos del
- * período en una sola moneda; lo que cae en los próximos 14 días con «Marcar depositado» por grupo; los repartos
- * por beneficiario y los avisos.
+ * Resumen: arriba, «Dinero en camino» (lo que está por caer ahora, sin importar el período ni los filtros, con
+ * «Marcar depositado» por grupo); los filtros (período, empresa, canal, pasarela y moneda) en la URL; las cifras y
+ * los gráficos del período en una sola moneda; los repartos por beneficiario y los avisos.
  */
 export default async function ResumenPage({ searchParams }: PageProps<"/pasarelas">) {
   await requireSession();
@@ -92,6 +92,16 @@ export default async function ResumenPage({ searchParams }: PageProps<"/pasarela
     <>
       <PageHeader title="Resumen" />
       <div className="flex flex-col gap-8">
+        {view.transit === null || currency === null ? null : (
+          <MoneyInTransit
+            transit={view.transit}
+            currency={currency}
+            today={today}
+            showCurrency={view.currencies.length > 1}
+            names={{ company: companyName, gateway: gatewayName, account: accountName }}
+          />
+        )}
+
         <div className="flex flex-col gap-3">
           <SummaryFilters
             {...filterOptions(cfg, filters.companyId, filters.channelId)}
@@ -149,29 +159,7 @@ export default async function ResumenPage({ searchParams }: PageProps<"/pasarela
 
         <Notices notices={view.notices} />
 
-        {currency === null ? null : (
-          <>
-            <UpcomingDeposits
-              groups={view.deposits.map((group) => ({
-                date: group.date,
-                from: group.from,
-                // Un grupo de más cobros de los que se marcan de una vez va por partes: «… · parte 1 de 2».
-                accountName:
-                  group.part === null
-                    ? accountName(group.bankAccountId)
-                    : `${accountName(group.bankAccountId)} · parte ${group.part.index} de ${group.part.of}`,
-                payout: group.payout,
-                count: group.count,
-                ids: group.ids,
-                overdue: group.overdue,
-              }))}
-              currency={currency}
-              today={today}
-              window={view.depositWindow}
-            />
-            <SplitsTable rows={view.splits} currency={currency} nameOf={beneficiaryName} />
-          </>
-        )}
+        {currency === null ? null : <SplitsTable rows={view.splits} currency={currency} nameOf={beneficiaryName} />}
       </div>
     </>
   );
