@@ -63,6 +63,7 @@ const CFG: PayConfig = {
   ],
   schemes: [],
   holidays: [],
+  loaders: [],
 };
 
 const paid = (grossOriginal: string): State => ({
@@ -182,6 +183,7 @@ function snapshot(b: Breakdown, patch: Partial<TxSnapshot> = {}): TxSnapshot {
     disputeClosedOn: null,
     deletedAt: null,
     updatedAt: "2026-11-10T17:00:00Z",
+    loaderId: null,
     breakdown: b,
     ...patch,
   };

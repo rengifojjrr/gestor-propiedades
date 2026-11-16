@@ -225,6 +225,12 @@ export type BankAccountCfg = { id: string; alias: string; last4: string | null; 
 
 export type BeneficiaryCfg = { id: string; name: string; kind: BeneficiaryKind; active: boolean };
 
+/**
+ * Un cargador: la persona que trajo la venta, para reportarle lo suyo (`pay_loaders`). Solo sirve para nombrarlo:
+ * no entra en ningún cálculo ni se congela. Uno inactivo no se ofrece al registrar; lo ya registrado lo conserva.
+ */
+export type LoaderCfg = { id: string; name: string; active: boolean };
+
 export type SchemeVersionCfg = {
   id: string;
   version: number;
@@ -247,6 +253,8 @@ export type PayConfig = {
   schemes: SchemeCfg[];
   /** Días sin movimiento bancario. */
   holidays: ISODate[];
+  /** Los cargadores, solo para nombrarlos (ver `LoaderCfg`). */
+  loaders: LoaderCfg[];
 };
 
 /** Lo que el dueño elige al registrar o editar un cobro. */
@@ -310,6 +318,8 @@ export type TxSnapshot = LeanTx & {
   disputeClosedOn: ISODate | null;
   deletedAt: string | null;
   updatedAt: string;
+  /** El cargador del cobro (`pay_loaders`), o `null`: solo para reportar, no cambia ninguna cifra. */
+  loaderId: string | null;
   breakdown: Breakdown;
 };
 
@@ -356,6 +366,8 @@ export type TxFields = {
   buyerFees: Money;
   /** Lo que retuvo la pasarela: sale del desglose y se escribe con `feesTotal`. */
   retentionAmount: Money;
+  /** El cargador: no sale del desglose ni lo cambia. */
+  loaderId: string | null;
 };
 
 export type AllocWrite = { beneficiaryId: string; amount: Money; base: AllocBase; pct: Pct; isRemainder: boolean };

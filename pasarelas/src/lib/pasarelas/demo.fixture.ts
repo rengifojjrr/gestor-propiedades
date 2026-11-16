@@ -108,5 +108,6 @@ export function cfgDemo(): PayConfig {
       },
     ],
     holidays: usBankHolidays(2026).map((holiday) => holiday.day),
+    loaders: [],
   };
 }

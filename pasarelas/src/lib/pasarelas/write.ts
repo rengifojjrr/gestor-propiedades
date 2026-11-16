@@ -114,6 +114,8 @@ export type NewTxInput = Selection & {
   estimatedDepositOn?: ISODate | null;
   /** Quién pagó la comisión. Por defecto, `nosotros`: lo de siempre. */
   feesPaidBy?: FeesPaidBy;
+  /** De qué cargador es la venta. Por defecto, de ninguno. Solo para reportar: no cambia ninguna cifra. */
+  loaderId?: string | null;
 };
 
 /** Lo que se quiere cambiar de un cobro: solo cuenta lo que viene (`undefined` = sin tocar). */
@@ -133,6 +135,7 @@ export type EditTxInput = Partial<
     | "bankAccountId"
     | "feesPaidBy"
     | "feeExemptIds"
+    | "loaderId"
   >
 >;
 
@@ -200,6 +203,7 @@ function columns(tx: TxSnapshot): TxFields {
     feesPaidBy: tx.feesPaidBy,
     buyerFees: tx.buyerFees,
     retentionAmount: tx.retention,
+    loaderId: tx.loaderId,
   };
 }
 
@@ -400,6 +404,7 @@ export function planCreate(cfg: PayConfig, input: NewTxInput, kind: "creado" | "
     depositedOn,
     bankAccountId: input.bankAccountId ?? automatic.bankAccountId,
     deletedAt: null,
+    loaderId: input.loaderId ?? null,
   };
   return {
     mode: "insert",
@@ -419,7 +424,7 @@ export function planCreate(cfg: PayConfig, input: NewTxInput, kind: "creado" | "
 /**
  * Un alta que llega con el id de un cobro ya guardado es el mismo envío repetido (una respuesta que se perdió) solo
  * si trae lo mismo que se guardó: monto, moneda, instante, empresa, pasarela, canal, opciones, quién pagó la
- * comisión, quién no la paga (si lo dice), esquema y referencia, y también lo de «Más opciones» (estado inicial y
+ * comisión, quién no la paga (si lo dice), esquema, referencia y cargador, y también lo de «Más opciones» (estado inicial y
  * fecha del depósito, cuenta destino, fecha estimada a mano y nota). Si algo difiere, la persona cambió datos
  * creyendo que no se había guardado: `ya_registrado`, para que no se dé por guardado lo que no se guardó. Sin cuenta
  * destino elegida vale la que haya puesto la app.
@@ -439,6 +444,7 @@ export function requireSameRegistration(tx: TxSnapshot, input: NewTxInput): void
     sameFeeExempt(tx, input.feeExemptIds) &&
     tx.schemeId === input.schemeId &&
     tx.reference === input.reference &&
+    tx.loaderId === (input.loaderId ?? null) &&
     tx.status === status &&
     (status !== "depositado" || tx.depositedOn === input.depositedOn) &&
     (input.bankAccountId == null || tx.bankAccountId === input.bankAccountId) &&
@@ -520,6 +526,7 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
     { label: "referencia", did: pick(input.reference, tx.reference) !== tx.reference },
     { label: "nota", did: pick(input.note, tx.note) !== tx.note },
     { label: "cuenta destino", did: pick(input.bankAccountId, tx.bankAccountId) !== tx.bankAccountId },
+    { label: "cargador", did: pick(input.loaderId, tx.loaderId) !== tx.loaderId },
   ].flatMap((item) => (item.did ? [item.label] : []));
   if (labels.length === 0) throw new PayStateError("sin_cambios");
   // Ya depositado, el cobro no puede pasar a un día posterior al de su depósito.
@@ -558,6 +565,7 @@ export function planEdit(cfg: PayConfig, tx: TxSnapshot, input: EditTxInput): Tx
       gatewayId: sel.gatewayId,
       reference: input.reference,
       note: input.note,
+      loaderId: input.loaderId,
       bankAccountId: movesAccount ? automatic().bankAccountId : input.bankAccountId,
       ...(movesDeposit ? estimatedColumns(automatic().window) : {}),
     },

@@ -49,6 +49,7 @@ const CFG: PayConfig = {
   beneficiaries: [],
   schemes: [],
   holidays: [],
+  loaders: [],
 };
 
 const params = (query: string) => new URLSearchParams(query);

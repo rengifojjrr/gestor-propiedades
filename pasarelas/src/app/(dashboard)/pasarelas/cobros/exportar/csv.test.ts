@@ -37,6 +37,7 @@ function e1(patch: Partial<TxListItem> = {}): TxListItem {
     disputeClosedOn: null,
     deletedAt: null,
     updatedAt: "2026-11-13T15:30:00.123456+00:00",
+    loaderId: null,
     ...patch,
   };
 }

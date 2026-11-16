@@ -76,6 +76,7 @@ function listRow(patch: Partial<TxListRow> = {}): TxListRow {
     dispute_closed_on: null,
     deleted_at: null,
     updated_at: "2026-11-13T15:31:07.847283+00:00",
+    loader_id: null,
     ...patch,
   };
 }
@@ -200,8 +201,13 @@ describe("toTxListItem", () => {
       deletedAt: "2026-11-14T10:00:00.123456+00:00",
       // Con sus microsegundos: es lo que compara el control optimista de la base.
       updatedAt: "2026-11-13T15:31:07.847283+00:00",
+      loaderId: null,
     });
     expect("breakdown" in item).toBe(false);
+  });
+
+  test("el cargador del cobro pasa tal cual", () => {
+    expect(toTxListItem(listRow({ loader_id: "ld-uno" })).loaderId).toBe("ld-uno");
   });
 });
 
@@ -528,6 +534,10 @@ describe("toPayConfig", () => {
         { ...line(DEMO.schemeVersionId, DEMO.beneficiaryIds.c, "20.0000", 2), fee_exempt: false },
       ],
       holidays: [{ day: "2026-11-26" }, { day: "2026-12-25" }],
+      loaders: [
+        { id: "ld-uno", name: "Cargador Uno", active: true },
+        { id: "ld-dos", name: "Cargador Dos", active: false },
+      ],
     };
   }
 
@@ -673,6 +683,11 @@ describe("toPayConfig", () => {
         { id: "sch-vacio", name: "Sin versiones", active: false, versions: [] },
       ],
       holidays: ["2026-11-26", "2026-12-25"],
+      // Los cargadores, también los inactivos: un cobro viejo puede tener uno que ya no se ofrece.
+      loaders: [
+        { id: "ld-uno", name: "Cargador Uno", active: true },
+        { id: "ld-dos", name: "Cargador Dos", active: false },
+      ],
     });
   });
 
@@ -691,6 +706,7 @@ describe("toPayConfig", () => {
       schemeVersions: rows().schemeVersions.slice(0, 1),
       schemeLines: rows().schemeLines.filter((line) => line.scheme_version_id === DEMO.schemeVersionId),
       holidays: cfg.holidays.map((day) => ({ day })),
+      loaders: [],
     });
     expect(fromRows).toEqual(cfg);
   });

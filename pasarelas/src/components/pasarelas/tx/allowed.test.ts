@@ -65,6 +65,7 @@ function apply(write: TxWrite, prev?: TxSnapshot): TxSnapshot {
     disputeClosedOn: f.disputeClosedOn,
     deletedAt: f.deletedAt,
     updatedAt: `2026-11-20T12:00:00Z`,
+    loaderId: f.loaderId,
     breakdown: parseBreakdown(JSON.parse(JSON.stringify(f.breakdown))),
   };
 }
@@ -104,6 +105,7 @@ function columnsOf(tx: TxSnapshot): TxFields {
     feesPaidBy: tx.feesPaidBy,
     buyerFees: tx.buyerFees,
     retentionAmount: tx.retention,
+    loaderId: tx.loaderId,
   };
 }
 

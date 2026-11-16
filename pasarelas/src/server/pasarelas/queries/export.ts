@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 
 /**
- * «Exportar todo»: la copia propia del dueño, en JSON. Todas las filas de las 20 tablas `pay_*` con todas sus
+ * «Exportar todo»: la copia propia del dueño, en JSON. Todas las filas de las 21 tablas `pay_*` con todas sus
  * columnas, leídas con la sesión de quien la pide (la RLS deja salir solo lo suyo; nada de `service_role`).
  * No incluye los archivos de los comprobantes: solo sus filas.
  */
@@ -13,7 +13,7 @@ export type ExportFile = {
   version: 1;
   /** El instante de la exportación (ISO 8601). */
   exportedAt: string;
-  /** Las 20 tablas `pay_*`, cada fila con todas sus columnas y el dinero como texto exacto ("90.30"). */
+  /** Las 21 tablas `pay_*`, cada fila con todas sus columnas y el dinero como texto exacto ("90.30"). */
   tables: Record<string, Record<string, unknown>[]>;
 };
 
@@ -222,6 +222,7 @@ const EXPORT_COLUMNS = {
     fees_paid_by: AS_IS,
     buyer_fees: TEXT,
     retention_amount: TEXT,
+    loader_id: AS_IS,
   },
   pay_retention_shares: {
     id: AS_IS,
@@ -289,6 +290,14 @@ const EXPORT_COLUMNS = {
     user_id: AS_IS,
     day: AS_IS,
     name: AS_IS,
+    created_at: AS_IS,
+  },
+  pay_loaders: {
+    id: AS_IS,
+    user_id: AS_IS,
+    name: AS_IS,
+    note: AS_IS,
+    active: AS_IS,
     created_at: AS_IS,
   },
 } as const satisfies { [Table in TableName]: Record<keyof RowOf<Table>, ColumnRead> };

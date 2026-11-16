@@ -11,6 +11,7 @@ import {
   FEE_VERSION_COLUMNS,
   GATEWAY_COLUMNS,
   HOLIDAY_COLUMNS,
+  LOADER_COLUMNS,
   RETENTION_RECIPIENT_COLUMNS,
   SCHEME_COLUMNS,
   SCHEME_LINE_COLUMNS,
@@ -49,6 +50,7 @@ export async function loadPayConfig(supabase: Db): Promise<PayConfig> {
     schemeVersions,
     schemeLines,
     holidays,
+    loaders,
   ] = await Promise.all([
     readAll((from, to) =>
       supabase
@@ -168,6 +170,15 @@ export async function loadPayConfig(supabase: Db): Promise<PayConfig> {
         .range(from, to)
         .throwOnError(),
     ),
+    readAll((from, to) =>
+      supabase
+        .from("pay_loaders")
+        .select(LOADER_COLUMNS, EXACT_COUNT)
+        .order("name")
+        .order("id")
+        .range(from, to)
+        .throwOnError(),
+    ),
   ]);
   return toPayConfig({
     companies,
@@ -183,6 +194,7 @@ export async function loadPayConfig(supabase: Db): Promise<PayConfig> {
     schemeVersions,
     schemeLines,
     holidays,
+    loaders,
   });
 }
 

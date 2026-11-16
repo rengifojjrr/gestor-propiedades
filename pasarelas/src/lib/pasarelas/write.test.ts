@@ -137,6 +137,7 @@ const FIELD_NAMES: (keyof TxFields)[] = [
   "feesPaidBy",
   "buyerFees",
   "retentionAmount",
+  "loaderId",
 ];
 
 /** Las restricciones y disparadores de `pay_transactions`, más la coherencia entre columnas y desglose. */
@@ -306,6 +307,7 @@ function save(write: TxWrite, prev?: TxSnapshot): TxSnapshot {
     buyerFees: f.buyerFees,
     retention: f.retentionAmount,
     schemeId: f.schemeId,
+    loaderId: f.loaderId,
     reference: f.reference,
     note: f.note,
     estimatedIsManual: f.estimatedIsManual,
@@ -384,6 +386,20 @@ describe("requireSameRegistration", () => {
     expect(() => requireSameRegistration(tx, inputE1())).not.toThrow();
     const sameInstant = inputE1({ occurredAt: "2026-11-13T10:30:00-05:00" });
     expect(() => requireSameRegistration(tx, sameInstant)).not.toThrow();
+  });
+
+  test("el mismo cargador otra vez pasa; sin decirlo, es «sin cargador»", () => {
+    expect(() => requireSameRegistration(savedE1({ loaderId: "ld-uno" }), inputE1({ loaderId: "ld-uno" }))).not.toThrow();
+    expect(() => requireSameRegistration(savedE1(), inputE1({ loaderId: null }))).not.toThrow();
+  });
+
+  test.each<[string, Partial<NewTxInput>, Partial<NewTxInput>]>([
+    ["cargador", {}, { loaderId: "ld-uno" }],
+    ["otro cargador", { loaderId: "ld-uno" }, { loaderId: "ld-dos" }],
+    ["cargador quitado", { loaderId: "ld-uno" }, { loaderId: null }],
+  ])("con otro cargador (%s) no es el mismo envío: lo dice", (_label, saved, again) => {
+    const tx = savedE1(saved);
+    expectStateError(() => requireSameRegistration(tx, inputE1({ ...saved, ...again })), "ya_registrado");
   });
 
   test("lo de «Más opciones» repetido igual también pasa: estado y fecha del depósito, cuenta, fecha a mano y nota", () => {
@@ -823,6 +839,8 @@ describe("planCreate", () => {
       buyerFees: "0.00",
       // Stripe no retiene nada.
       retentionAmount: "0.00",
+      // Sin decir de qué cargador es, sin cargador.
+      loaderId: null,
     });
     expect(write.fields.breakdown?.lines.map((line) => [line.kind, line.amount])).toEqual([
       ["pasarela", "3.20"],
@@ -869,6 +887,16 @@ describe("planCreate", () => {
     expect(write.fields.estimatedDepositOn).toBe(MARTES);
     expect([write.fields.feesTotal, write.fields.netAmount]).toEqual(["8.20", "91.80"]);
     expect(shares(write)).toEqual(["45.90", "27.54", "18.36"]);
+    save(write);
+  });
+
+  test("con su cargador: se guarda tal cual y no cambia ninguna cifra, ni el desglose ni el historial", () => {
+    const plain = planCreate(cfgDemo(), inputE1());
+    const write = planCreate(cfgDemo(), inputE1({ loaderId: "ld-uno" }));
+    expect(write.fields.loaderId).toBe("ld-uno");
+    expect({ ...write.fields, loaderId: null }).toEqual(plain.fields);
+    expect(write.allocations).toEqual(plain.allocations);
+    expect(write.event).toEqual(plain.event);
     save(write);
   });
 
@@ -1016,6 +1044,34 @@ describe("planCreate", () => {
 // ─── planEdit ───────────────────────────────────────────────────────────────────────────────────────────────
 
 describe("planEdit", () => {
+  test("solo el cargador: no cambia ninguna cifra ni el desglose; el historial dice «Editado: cargador»", () => {
+    const tx = savedE1();
+    const write = planEdit(cfgDemo(), tx, { loaderId: "ld-uno" });
+    expect(write.fields).toEqual({ loaderId: "ld-uno" });
+    expect(write.allocations).toBeNull();
+    expect(write.retentionShares).toBeNull();
+    expect(write.event.kind).toBe("editado");
+    expect(write.event.summary).toBe("Editado: cargador");
+    const assigned = save(write, tx);
+    expect(assigned.loaderId).toBe("ld-uno");
+
+    const changed = planEdit(cfgDemo(), assigned, { loaderId: "ld-dos" });
+    expect(changed.fields).toEqual({ loaderId: "ld-dos" });
+    expect(changed.event.summary).toBe("Editado: cargador");
+    const removed = planEdit(cfgDemo(), save(changed, assigned), { loaderId: null });
+    expect(removed.fields).toEqual({ loaderId: null });
+    expect(removed.event.summary).toBe("Editado: cargador");
+  });
+
+  test("el mismo cargador no es un cambio; con otros cambios, el cargador va al final del historial", () => {
+    const tx = savedE1({ loaderId: "ld-uno" });
+    expectStateError(() => planEdit(cfgDemo(), tx, { loaderId: "ld-uno" }), "sin_cambios");
+    const write = planEdit(cfgDemo(), tx, { grossOriginal: "200.00", note: "Cuota", loaderId: "ld-dos" });
+    expect(write.event.summary).toBe("Editado: monto, nota, cargador");
+    expect(write.fields).toMatchObject({ grossOriginal: "200.00", note: "Cuota", loaderId: "ld-dos" });
+    save(write, tx);
+  });
+
   test("solo el monto: las reglas quedan idénticas aunque la configuración ya sea otra", () => {
     const tx = savedE1();
     // Desde que se registró cambió todo: la tarifa de siempre, la opción, el canal y el reparto.

@@ -61,6 +61,7 @@ export const SCHEME_COLUMNS = "id, name, active";
 export const SCHEME_VERSION_COLUMNS = "id, scheme_id, version, base, remainder_beneficiary_id, effective_from";
 export const SCHEME_LINE_COLUMNS = "scheme_version_id, beneficiary_id, pct::text, sort, fee_exempt";
 export const HOLIDAY_COLUMNS = "day";
+export const LOADER_COLUMNS = "id, name, active";
 export const SETTLEMENT_COLUMNS =
   "id, beneficiary_id, paid_on, currency, amount::text, method, receipt_path, receipt_mime, receipt_size, note";
 
@@ -69,7 +70,7 @@ export const LEAN_TX_COLUMNS =
   "id, occurred_on, company_id, channel_id, gateway_id, bank_account_id, currency, gross_original::text, refunded_amount::text, gross_amount::text, fees_total::text, net_amount::text, status, dispute_state, estimated_deposit_on, estimated_deposit_from, deposited_on, receipts_count, fees_paid_by, buyer_fees::text, retention_amount::text";
 /** Lo que pinta la lista de cobros: la fila mínima más sus textos y sus fechas. Sin el desglose. */
 export const TX_LIST_COLUMNS =
-  `${LEAN_TX_COLUMNS}, occurred_at, scheme_id, reference, note, estimated_is_manual, dispute_opened_on, dispute_closed_on, deleted_at, updated_at` as const;
+  `${LEAN_TX_COLUMNS}, occurred_at, scheme_id, reference, note, estimated_is_manual, dispute_opened_on, dispute_closed_on, deleted_at, updated_at, loader_id` as const;
 /** El cobro completo, con su desglose congelado: lo que hace falta para planear un cambio. */
 export const TX_COLUMNS = `${TX_LIST_COLUMNS}, breakdown` as const;
 
@@ -158,6 +159,7 @@ export type SchemeLineRow = {
   fee_exempt: boolean;
 };
 export type HolidayRow = { day: string };
+export type LoaderRow = { id: string; name: string; active: boolean };
 export type SettlementRow = {
   id: string;
   beneficiary_id: string;
@@ -204,6 +206,7 @@ export type TxListRow = LeanTxRow & {
   dispute_closed_on: string | null;
   deleted_at: string | null;
   updated_at: string;
+  loader_id: string | null;
 };
 export type TxRow = TxListRow & { breakdown: Json };
 
@@ -233,6 +236,7 @@ export type ConfigRows = {
   schemeVersions: SchemeVersionRow[];
   schemeLines: SchemeLineRow[];
   holidays: HolidayRow[];
+  loaders: LoaderRow[];
 };
 
 // ─── Lo que se entrega ──────────────────────────────────────────────────────────────────────────────────────
@@ -473,6 +477,7 @@ export function toPayConfig(rows: ConfigRows): PayConfig {
       ),
     ),
     holidays: rows.holidays.map((row) => row.day),
+    loaders: rows.loaders.map((row) => ({ id: row.id, name: row.name, active: row.active })),
   };
 }
 
@@ -533,6 +538,7 @@ export function toTxListItem(row: TxListRow): TxListItem {
     disputeClosedOn: row.dispute_closed_on,
     deletedAt: row.deleted_at,
     updatedAt: row.updated_at,
+    loaderId: row.loader_id,
   };
 }
 

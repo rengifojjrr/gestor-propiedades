@@ -4,7 +4,7 @@ import { exportAll, type ExportFile } from "@/server/pasarelas/queries/export";
 import { createUser, e1Item, saveTransactions, seedBasics, unwrap, type Db, type TestUser } from "./helpers";
 
 /**
- * «Exportar todo»: la copia propia del dueño. Tiene que traer las 20 tablas con todas sus columnas, el dinero como
+ * «Exportar todo»: la copia propia del dueño. Tiene que traer las 21 tablas con todas sus columnas, el dinero como
  * texto exacto, las tablas largas enteras y nada de otro usuario.
  */
 
@@ -29,6 +29,7 @@ const TABLAS = [
   "pay_settlements",
   "pay_settlement_items",
   "pay_holidays",
+  "pay_loaders",
 ];
 /** Las vistas de totales no se exportan: se calculan de las tablas. */
 const VISTAS = ["pay_beneficiary_balances", "pay_company_totals", "pay_gateway_totals", "pay_bank_account_totals"];
@@ -81,6 +82,7 @@ let b: TestUser;
 let numericos: Map<string, string[]>;
 let exportado: ExportFile;
 let cobroId: string;
+let cargadorId: string;
 
 const filas = (tabla: string): Fila[] => exportado.tables[tabla] ?? [];
 
@@ -99,9 +101,15 @@ beforeAll(async () => {
     },
   });
   if (retencion.error) throw new Error(`retención: ${retencion.error.message}`);
+  // E1 es de «Cargador Uno»: así sale el catálogo de cargadores y el cargador del cobro.
+  const cargador = unwrap(
+    await a.client.from("pay_loaders").insert({ name: "Cargador Uno", note: "Trae las ventas de la tienda" }).select("id").single(),
+    "cargador",
+  );
+  cargadorId = cargador.id;
   const [cobro] = await saveTransactions(a.client, [
     {
-      ...e1Item(basics, { retention_amount: "5.00" }),
+      ...e1Item(basics, { retention_amount: "5.00", loader_id: cargador.id }),
       retention_shares: [{ beneficiary_id: basics.beneficiaryIds.a, amount: "5.00" }],
     },
   ]);
@@ -151,7 +159,7 @@ beforeAll(async () => {
 });
 
 describe("exportAll", () => {
-  it("lleva el formato, su versión, la fecha y hora, y las 20 tablas", () => {
+  it("lleva el formato, su versión, la fecha y hora, y las 21 tablas", () => {
     expect(exportado.format).toBe("pasarelas-export");
     expect(exportado.version).toBe(1);
     expect(exportado.exportedAt).toBe(AHORA);
@@ -209,7 +217,11 @@ describe("exportAll", () => {
       fees_paid_by: "nosotros",
       buyer_fees: "0.00",
       retention_amount: "5.00",
+      loader_id: cargadorId,
     });
+    expect(filas("pay_loaders")).toEqual([
+      expect.objectContaining({ id: cargadorId, name: "Cargador Uno", note: "Trae las ventas de la tienda", active: true }),
+    ]);
     expect(filas("pay_retention_shares")).toEqual([
       expect.objectContaining({ transaction_id: cobroId, amount: "5.00" }),
     ]);

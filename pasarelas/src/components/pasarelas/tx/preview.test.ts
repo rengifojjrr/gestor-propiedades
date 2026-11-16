@@ -53,6 +53,7 @@ function savedE1(): TxSnapshot {
     disputeClosedOn: null,
     deletedAt: null,
     updatedAt: "2026-11-13T15:31:00Z",
+    loaderId: null,
     breakdown: b,
   };
 }

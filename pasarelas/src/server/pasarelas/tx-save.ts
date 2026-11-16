@@ -51,6 +51,7 @@ const COLUMN_OF: Record<keyof TxFields, TxColumn> = {
   feesPaidBy: "fees_paid_by",
   buyerFees: "buyer_fees",
   retentionAmount: "retention_amount",
+  loaderId: "loader_id",
 };
 
 /** Un elemento de `p_items`: las columnas con su nombre de la base y el dinero como texto. */

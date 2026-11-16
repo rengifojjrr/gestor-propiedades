@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { planCreate, planDeposit, planRefund, planRevertDeposit } from "@/lib/pasarelas";
+import { planCreate, planDeposit, planEdit, planRefund, planRevertDeposit } from "@/lib/pasarelas";
 import type { TxSnapshot, TxWrite } from "@/lib/pasarelas";
 import { DEMO, cfgDemo } from "@/lib/pasarelas/demo.fixture";
 import { toRpcItem } from "./tx-save";
@@ -62,6 +62,7 @@ function savedE1(): TxSnapshot {
     disputeClosedOn: null,
     deletedAt: null,
     updatedAt: "2026-11-13T15:31:07.847283+00:00",
+    loaderId: null,
     breakdown: fields.breakdown,
   };
 }
@@ -114,6 +115,7 @@ describe("toRpcItem", () => {
       fees_paid_by: "nosotros",
       buyer_fees: "0.00",
       retention_amount: "0.00",
+      loader_id: null,
     });
     expect(item.allocations).toEqual([
       { beneficiary_id: DEMO.beneficiaryIds.a, amount: "45.15", base: "neto", pct: "50", is_remainder: false },
@@ -141,6 +143,15 @@ describe("toRpcItem", () => {
       retention_shares: null,
       event: expect.objectContaining({ kind: "depositado", summary: "Depositado el mar 17 nov 2026" }) as unknown,
     });
+  });
+
+  test("el cargador viaja como loader_id, solo él, sin reparto: no cambia ninguna cifra", () => {
+    const item = toRpcItem(planEdit(cfgDemo(), savedE1(), { loaderId: "ld-uno" }));
+
+    expect(item.tx).toEqual({ id: "tx-e1", loader_id: "ld-uno" });
+    expect(item.allocations).toBeNull();
+    expect(item.retention_shares).toBeNull();
+    expect(item.event).toMatchObject({ kind: "editado", summary: "Editado: cargador" });
   });
 
   test("una columna que se vacía viaja con null, no desaparece", () => {
