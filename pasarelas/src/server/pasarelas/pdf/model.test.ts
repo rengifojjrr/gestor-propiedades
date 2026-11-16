@@ -544,6 +544,25 @@ describe("pdfModel: cada cobro, del desglose congelado", () => {
     expect(onlyTx(snapshot(e10, { channelId: "ch-borrado" })).heading).toBe("Tienda Demo · —");
   });
 
+  test("el cargador del cobro va en su línea, por su nombre (también uno desactivado); sin cargador, nada", () => {
+    const cfg: PayConfig = {
+      ...CFG,
+      loaders: [
+        { id: "ld-uno", name: "Cargador Uno", active: true },
+        { id: "ld-dos", name: "Cargador Dos", active: false },
+      ],
+    };
+    const conRef = onlyTx(snapshot(e1, { reference: "pi_1", loaderId: "ld-uno" }), cfg);
+    expect(conRef.source).toBe("Stripe · Ref. pi_1 · USD · Cargador: Cargador Uno");
+    expect(onlyTx(snapshot(e1, { loaderId: "ld-dos" }), cfg).source).toBe("Stripe · USD · Cargador: Cargador Dos");
+    expect(onlyTx(snapshot(e1), cfg).source).toBe("Stripe · USD");
+    // Uno que ya no está en la configuración (no se puede borrar con cobros: sería una lectura vieja) no se nombra.
+    expect(onlyTx(snapshot(e1, { loaderId: "ld-otro" }), cfg).source).toBe("Stripe · USD · Cargador: —");
+    // Lo que dicen el desglose y el reparto no cambia: el cargador no es una regla.
+    const sin = onlyTx(snapshot(e1), cfg);
+    expect([conRef.breakdown, conRef.allocation]).toEqual([sin.breakdown, sin.allocation]);
+  });
+
   test("tres partes sin comisión se nombran con comas y «y»", () => {
     const scheme: SchemeRule = {
       ...SCHEME_E10,

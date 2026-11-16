@@ -15,6 +15,7 @@ const IDS = {
   channel: "44444444-4444-4444-8444-444444444444",
   gateway: "55555555-5555-4555-8555-555555555555",
   account: "66666666-6666-4666-8666-666666666666",
+  loader: "88888888-8888-4888-8888-888888888888",
 };
 
 const CFG: PayConfig = {
@@ -49,7 +50,7 @@ const CFG: PayConfig = {
   beneficiaries: [],
   schemes: [],
   holidays: [],
-  loaders: [],
+  loaders: [{ id: IDS.loader, name: "Cargador Uno", active: false }],
 };
 
 const params = (query: string) => new URLSearchParams(query);
@@ -118,13 +119,27 @@ describe("scopeText: qué abarca, en palabras", () => {
       status: "depositado",
       receipt: "sin",
       payout: "pendiente",
+      loaderId: IDS.loader,
       estimatedOn: "2026-11-16",
       q: "pi_1",
     };
     expect(scopeText(filtro(filters), 3, CFG, TODAY)).toBe(
       "Del dom 1 nov 2026 al sáb 14 nov 2026 · Empresa: Tienda Demo · Canal: Señales «en línea» · " +
         "Pasarela: OTF Demo · Cuenta destino: Cuenta principal ··4321 · Moneda: MXN · Estado: Depositado · " +
-        "Sin comprobante · Reparto pendiente · Caen el lun 16 nov 2026 · Búsqueda: «pi_1»",
+        "Sin comprobante · Reparto pendiente · Cargador: Cargador Uno · Caen el lun 16 nov 2026 · Búsqueda: «pi_1»",
+    );
+  });
+
+  test("el cargador: el suyo, «Sin cargador», o uno que ya no existe; también si llega por la URL", () => {
+    const day = { from: TODAY, to: TODAY };
+    const request = pdfRequestOf(params(`periodo=hoy&cargador=${IDS.loader}`), TODAY);
+    expect(request).toEqual(filtro({ ...day, loaderId: IDS.loader }));
+    expect(scopeText(request, 2, CFG, TODAY)).toBe("Hoy, sáb 14 nov 2026 · Cargador: Cargador Uno");
+    const sin = pdfRequestOf(params("periodo=hoy&cargador=sin"), TODAY);
+    expect(scopeText(sin, 2, CFG, TODAY)).toBe("Hoy, sáb 14 nov 2026 · Sin cargador");
+    const gone = "77777777-7777-4777-8777-777777777777";
+    expect(scopeText(filtro({ ...day, loaderId: gone }), 1, CFG, TODAY)).toBe(
+      "Hoy, sáb 14 nov 2026 · Cargador que ya no existe",
     );
   });
 

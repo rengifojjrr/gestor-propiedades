@@ -23,8 +23,8 @@ import type { TxListItem } from "@/server/pasarelas/dto";
  * temprana (la misma, si es un solo día). «Comisión pagada por» dice si la comisión la pagó el negocio o el
  * comprador, y «Comisiones pagadas por los compradores», cuánto de «Comisiones» pagaron ellos (el resto, el negocio:
  * el costo de un reembolso o de una disputa). «Retenido» es lo que retuvo la pasarela (no llega al banco) y «Retenido
- * para», lo que le cae a cada persona («Titular A 25,00 · Titular B 25,00»). Van al final para no mover las columnas
- * de quien ya usa el archivo.
+ * para», lo que le cae a cada persona («Titular A 25,00 · Titular B 25,00»). «Cargador» es el nombre del cargador del
+ * cobro (vacío si no tiene). Van al final para no mover las columnas de quien ya usa el archivo.
  */
 
 export const TX_CSV_HEADER = [
@@ -52,6 +52,7 @@ export const TX_CSV_HEADER = [
   "Comisiones pagadas por los compradores",
   "Retenido",
   "Retenido para",
+  "Cargador",
 ] as const;
 
 /** Las columnas de dinero: `toCsv` les pone el separador decimal del formato. */
@@ -105,6 +106,7 @@ export function txCsv(
   const beneficiaries = namesOf(cfg.beneficiaries);
   const channels = namesOf(cfg.channels);
   const gateways = namesOf(cfg.gateways);
+  const loaders = namesOf(cfg.loaders);
   const accounts = new Map(cfg.bankAccounts.map((account) => [account.id, account.alias]));
   const nameIn = (names: Map<string, string>, id: string | null): string | null =>
     id === null ? null : (names.get(id) ?? null);
@@ -136,6 +138,7 @@ export function txCsv(
       tx.buyerFees,
       tx.retention,
       sharesCell(shares.get(tx.id) ?? [], beneficiaries, fmt),
+      nameIn(loaders, tx.loaderId),
     ];
   });
   return toCsv(TX_CSV_HEADER, body, fmt, MONEY_COLUMNS);

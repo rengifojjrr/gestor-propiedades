@@ -80,6 +80,11 @@ function filterTexts(f: TxFilters, cfg: PayConfig): string[] {
     f.status === undefined ? null : `Estado: ${STATUS_FILTER_LABEL[f.status]}`,
     f.receipt === undefined ? null : RECEIPT_LABEL[f.receipt],
     f.payout === undefined ? null : PAYOUT_LABEL[f.payout],
+    f.loaderId === undefined
+      ? null
+      : f.loaderId === null
+        ? "Sin cargador"
+        : named(cfg.loaders, f.loaderId, "Cargador", "Cargador que ya no existe"),
     f.estimatedOn === undefined ? null : `Caen el ${formatDate(f.estimatedOn)}`,
     f.q === undefined ? null : `Búsqueda: «${f.q}»`,
   ].filter((text) => text !== null);

@@ -60,7 +60,7 @@ describe("txCsv", () => {
     expect(csv.startsWith("﻿")).toBe(true);
     expect(lines(csv)).toEqual([
       TX_CSV_HEADER.join(";"),
-      "2026-11-13;Escuela Demo;Escuela de marketing;Stripe;pi_demo_1;USD;100,00;0,00;100,00;9,70;9,7;90,30;Registrado;2026-11-13;;;Cuenta principal;0;;2026-11-13;Nosotros;0,00;0,00;",
+      "2026-11-13;Escuela Demo;Escuela de marketing;Stripe;pi_demo_1;USD;100,00;0,00;100,00;9,70;9,7;90,30;Registrado;2026-11-13;;;Cuenta principal;0;;2026-11-13;Nosotros;0,00;0,00;;",
     ]);
   });
 
@@ -68,7 +68,7 @@ describe("txCsv", () => {
     const csv = txCsv([e1()], cfgDemo(), CSV_STD);
     expect(csv.startsWith("﻿")).toBe(false);
     expect(lines(csv)[1]).toBe(
-      "2026-11-13,Escuela Demo,Escuela de marketing,Stripe,pi_demo_1,USD,100.00,0.00,100.00,9.70,9.7,90.30,Registrado,2026-11-13,,,Cuenta principal,0,,2026-11-13,Nosotros,0.00,0.00,",
+      "2026-11-13,Escuela Demo,Escuela de marketing,Stripe,pi_demo_1,USD,100.00,0.00,100.00,9.70,9.7,90.30,Registrado,2026-11-13,,,Cuenta principal,0,,2026-11-13,Nosotros,0.00,0.00,,",
     );
   });
 
@@ -98,7 +98,23 @@ describe("txCsv", () => {
       "Comisiones pagadas por los compradores",
       "Retenido",
       "Retenido para",
+      "Cargador",
     ]);
+  });
+
+  it("el cargador de cada cobro, al final, por su nombre (también uno desactivado); sin cargador, vacío", () => {
+    const cfg = cfgDemo();
+    cfg.loaders.push(
+      { id: "ld-uno", name: "Cargador Uno", active: true },
+      { id: "ld-dos", name: "Cargador Dos", active: false },
+    );
+    const rows = [e1({ loaderId: "ld-uno" }), e1({ id: "tx-2", loaderId: "ld-dos" }), e1({ id: "tx-3" })];
+    expect(lines(txCsv(rows, cfg, CSV_ES)).slice(1).map((row) => row.split(";")[24])).toEqual([
+      "Cargador Uno",
+      "Cargador Dos",
+      "",
+    ]);
+    expect(lines(txCsv(rows.slice(0, 1), cfg, CSV_STD))[1]?.split(",")[24]).toBe("Cargador Uno");
   });
 
   it("quién pagó la comisión y cuánto pagaron los compradores, al final", () => {
@@ -144,6 +160,7 @@ describe("txCsv", () => {
       "Nosotros",
       "0,00",
       "0,00",
+      "",
       "",
     ]);
   });
@@ -204,12 +221,12 @@ describe("txCsv", () => {
       ],
     ]);
     const es = lines(txCsv([e10, e1()], cfg, CSV_ES, shares)).slice(1);
-    expect(es.map((row) => row.split(";").slice(22))).toEqual([
+    expect(es.map((row) => row.split(";").slice(22, 24))).toEqual([
       ["50,00", "Titular A 25,00 · Titular B 25,00"],
       ["0,00", ""],
     ]);
     const std = lines(txCsv([e10], cfg, CSV_STD, shares))[1];
-    expect(std?.split(",").slice(22)).toEqual(["50.00", "Titular A 25.00 · Titular B 25.00"]);
+    expect(std?.split(",").slice(22, 24)).toEqual(["50.00", "Titular A 25.00 · Titular B 25.00"]);
     // Un beneficiario que ya no está en la configuración se nombra igual que en las pantallas.
     const gone = new Map([["tx-e10", [{ beneficiaryId: "ben-x", amount: "50.00" }]]]);
     expect(lines(txCsv([e10], cfg, CSV_ES, gone))[1]?.split(";")[23]).toBe("Beneficiario borrado 50,00");
@@ -223,7 +240,7 @@ describe("txCsv", () => {
         ],
       ],
     ]);
-    expect(lines(txCsv([e1({ id: "tx-e10" })], cfg, CSV_ES, none))[1]?.split(";").slice(22)).toEqual(["0,00", ""]);
+    expect(lines(txCsv([e1({ id: "tx-e10" })], cfg, CSV_ES, none))[1]?.split(";").slice(22, 24)).toEqual(["0,00", ""]);
   });
 
   it("sin cobros, solo el encabezado", () => {

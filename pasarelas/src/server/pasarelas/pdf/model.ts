@@ -345,7 +345,10 @@ function statusText(tx: TxSnapshot, today: ISODate): string {
     .join(" · ");
 }
 
-/** Los nombres de ahora; si ya no existen, los congelados en el desglose (como el detalle). */
+/**
+ * Los nombres de ahora; si ya no existen, los congelados en el desglose (como el detalle). El cargador no se congela:
+ * su nombre de ahora, como en la lista.
+ */
 function namesOf(tx: TxSnapshot, cfg: PayConfig) {
   const { rules } = tx.breakdown;
   const company = cfg.companies.find((item) => item.id === tx.companyId)?.name ?? "—";
@@ -354,7 +357,8 @@ function namesOf(tx: TxSnapshot, cfg: PayConfig) {
       ? null
       : (cfg.channels.find((item) => item.id === tx.channelId)?.name ?? rules.platform?.name ?? "—");
   const gateway = cfg.gateways.find((item) => item.id === tx.gatewayId)?.name ?? rules.gateway.name;
-  return { company, channel, gateway };
+  const loader = tx.loaderId === null ? null : (cfg.loaders.find((item) => item.id === tx.loaderId)?.name ?? "—");
+  return { company, channel, gateway, loader };
 }
 
 function pdfTx(tx: TxSnapshot, status: PayoutStatus | null, cfg: PayConfig, today: ISODate): PdfTx {
@@ -364,7 +368,12 @@ function pdfTx(tx: TxSnapshot, status: PayoutStatus | null, cfg: PayConfig, toda
     currency: tx.currency,
     heading: names.channel === null ? names.company : `${names.company} · ${names.channel}`,
     when: formatDateTime(tx.occurredAt),
-    source: [names.gateway, tx.reference === null ? null : `Ref. ${tx.reference}`, tx.currency]
+    source: [
+      names.gateway,
+      tx.reference === null ? null : `Ref. ${tx.reference}`,
+      tx.currency,
+      names.loader === null ? null : `Cargador: ${names.loader}`,
+    ]
       .filter((part) => part !== null)
       .join(" · "),
     status: statusText(tx, today),
