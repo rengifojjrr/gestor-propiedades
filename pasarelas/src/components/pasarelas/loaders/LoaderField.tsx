@@ -29,11 +29,11 @@ export function LoaderField({
       hint={
         loaders.length === 0 ? (
           <>
-            Todavía no tienes cargadores:{" "}
-            <Link href={LOADERS_PATH} className="font-semibold text-brand underline">
-              créalos en Cargadores
+            Todavía no tienes cargadores.
+            {/* En su propia línea, para que el enlace mida 44 px de alto sin estirar el renglón del texto. */}
+            <Link href={LOADERS_PATH} className="flex min-h-11 w-fit items-center font-semibold text-brand underline">
+              Créalos en Cargadores
             </Link>
-            .
           </>
         ) : (
           "Quien trajo la venta: así sabes a quién reportársela."
