@@ -29,6 +29,7 @@ export const zColumnMapping: z.ZodType<ColumnMapping> = z.object({
   status: zOptionalColumn,
   type: zOptionalColumn,
   note: zOptionalColumn,
+  loader: zOptionalColumn,
   fixedZone: z.string().max(100),
   decimal: z.enum([".", ","]),
   dateFormat: z.enum(["YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY"]),

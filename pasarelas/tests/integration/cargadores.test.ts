@@ -1,10 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
-import { add, totalsOf, type Currency, type NewTxInput, type Totals } from "@/lib/pasarelas";
+import {
+  add,
+  totalsOf,
+  type ColumnMapping,
+  type Currency,
+  type ImportRow,
+  type NewTxInput,
+  type Totals,
+} from "@/lib/pasarelas";
 import { UserError } from "@/server/pasarelas/errors";
+import { importTransactions, previewImport, saveImportMapping } from "@/server/pasarelas/ops/import";
 import { deleteLoader, saveLoader, setLoaderActive } from "@/server/pasarelas/ops/loaders";
 import { assignLoaderTx, createTx, editTx, trashTx } from "@/server/pasarelas/ops/transactions";
 import { loadPayConfig } from "@/server/pasarelas/queries/config";
+import { getImportMappings } from "@/server/pasarelas/queries/import";
 import { listLoaders, loadLoaderReport } from "@/server/pasarelas/queries/loaders";
 import { loadSummary } from "@/server/pasarelas/queries/summary";
 import { getTx, leanTx, listTx, parseTxFilters } from "@/server/pasarelas/queries/transactions";
@@ -401,6 +411,120 @@ describe("C4: el reporte por cargador del período", () => {
     }));
     expect(resumen.summary).not.toBeNull();
     expect(sumados).toEqual(cifras(resumen.summary!.totals));
+  });
+});
+
+describe("C6: importar un archivo con la columna «cargador»", () => {
+  let user: TestUser;
+  let basics: Basics;
+  let uno: string;
+  let dos: string;
+
+  /** Una fila ya convertida, como la manda el navegador: 100,00 USD el 13/11/2026 a las 10:30 de Nueva York. */
+  const fila = (line: number, reference: string, loader?: string): ImportRow => ({
+    line,
+    reference,
+    occurredAt: "2026-11-13T15:30:00.000Z",
+    occurredOn: "2026-11-13",
+    grossOriginal: "100.00",
+    currency: "USD",
+    reportedFee: null,
+    note: null,
+    ...(loader === undefined ? {} : { loader }),
+  });
+  const lote = (rows: unknown[]) => ({
+    companyId: basics.companyId,
+    gatewayId: basics.gatewayId,
+    channelId: null,
+    extraIds: [],
+    useReportedFee: false,
+    rows,
+  });
+  const cargadorPorReferencia = async (references: string[]) => {
+    const { data } = await user.client
+      .from("pay_transactions")
+      .select("reference, loader_id")
+      .in("reference", references)
+      .throwOnError();
+    return Object.fromEntries(data.map((row) => [row.reference, row.loader_id]));
+  };
+
+  beforeAll(async () => {
+    user = await createUser();
+    basics = await seedBasics(user.client);
+    uno = await saveLoader(user.client, { id: null, name: "Cargador Uno", note: null });
+    dos = await saveLoader(user.client, { id: null, name: "Cargador Dos", note: null });
+    // Desactivado sigue valiendo al importar: un archivo trae ventas pasadas, y sus cobros lo conservan.
+    await setLoaderActive(user.client, dos, false);
+  });
+
+  it("con un nombre que existe (sin distinguir mayúsculas ni espacios de más), el cobro queda con ese cargador", async () => {
+    const rows = [fila(2, "imp-uno", "cargador  UNO"), fila(3, "imp-dos", "Cargador Dos"), fila(4, "imp-sin")];
+    const preview = await previewImport(user.client, lote(rows));
+    expect(preview.unknownLoaders).toEqual([]);
+
+    const result = await importTransactions(user.client, { ...lote(rows), alreadyDeposited: false });
+    expect(result.created).toBe(3);
+    expect(await cargadorPorReferencia(["imp-uno", "imp-dos", "imp-sin"])).toEqual({
+      "imp-uno": uno,
+      "imp-dos": dos,
+      "imp-sin": null,
+    });
+  });
+
+  it("con uno que no existe, la vista previa lo dice por fila; importarla igual no guarda nada del lote", async () => {
+    const rows = [fila(2, "imp-ok", "Cargador Uno"), fila(3, "imp-nadie", "Cargador Tres"), fila(4, "imp-otra", "cargador tres")];
+    const preview = await previewImport(user.client, lote(rows));
+    expect(preview.unknownLoaders).toEqual([
+      { line: 3, name: "Cargador Tres" },
+      { line: 4, name: "cargador tres" },
+    ]);
+    // Las demás filas se calculan igual.
+    expect(preview.estimates.map((estimate) => estimate.line)).toEqual([2, 3, 4]);
+
+    const negado = importTransactions(user.client, { ...lote(rows), alreadyDeposited: false });
+    await expect(negado).rejects.toThrow(UserError);
+    await expect(negado).rejects.toThrow(
+      "La línea 3 no se puede importar: no hay ningún cargador «Cargador Tres». Créalo en Cargadores (o quita la fila) y vuelve a importar. No se guardó nada de este lote.",
+    );
+    expect(await cargadorPorReferencia(["imp-ok", "imp-nadie", "imp-otra"])).toEqual({});
+
+    // Creado el cargador, el mismo archivo entra entero.
+    const tres = await saveLoader(user.client, { id: null, name: "Cargador Tres", note: null });
+    expect((await previewImport(user.client, lote(rows))).unknownLoaders).toEqual([]);
+    await importTransactions(user.client, { ...lote(rows), alreadyDeposited: false });
+    expect(await cargadorPorReferencia(["imp-ok", "imp-nadie", "imp-otra"])).toEqual({
+      "imp-ok": uno,
+      "imp-nadie": tres,
+      "imp-otra": tres,
+    });
+  });
+
+  it("el mapeo recordado de la pasarela recuerda también la columna del cargador", async () => {
+    const mapping: ColumnMapping = {
+      reference: "ref",
+      date: "fecha",
+      gross: "monto",
+      loader: "cargador",
+      fixedZone: "UTC",
+      decimal: ".",
+      dateFormat: "YYYY-MM-DD",
+      defaultCurrency: "USD",
+    };
+    await saveImportMapping(user.client, { gatewayId: basics.gatewayId, format: "otro", mapping });
+    expect((await getImportMappings(user.client))[basics.gatewayId]?.mapping.loader).toBe("cargador");
+    // Un mapeo de antes, sin la columna, se sigue leyendo: sin cargador.
+    const { loader: _, ...before } = mapping;
+    await saveImportMapping(user.client, { gatewayId: basics.gatewayId, format: "otro", mapping: before });
+    expect((await getImportMappings(user.client))[basics.gatewayId]?.mapping.loader).toBeNull();
+  });
+
+  it("un cargador vacío o de más de 80 caracteres no pasa la validación del servidor", async () => {
+    for (const loader of ["", "  Cargador Uno", "c".repeat(81)]) {
+      await expect(previewImport(user.client, lote([fila(7, "imp-mal", loader)]))).rejects.toThrow(
+        "La línea 7 no se puede importar: el cargador está vacío, tiene espacios de más alrededor o pasa de 80 caracteres.",
+      );
+    }
   });
 });
 

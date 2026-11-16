@@ -27,6 +27,8 @@ export type ImportRow = {
   /** La comisión que informa el archivo, siempre en positivo; `null` si no trae. */
   reportedFee: Money | null;
   note: string | null;
+  /** El nombre del cargador, tal como lo escribe el archivo (recortado), si el mapeo lo lee y la celda no va vacía. */
+  loader?: string;
 };
 
 export type ImportSkip = { line: number; reason: string };
@@ -140,6 +142,7 @@ const FIELDS: readonly [Field, string, boolean][] = [
   ["status", "estado", false],
   ["type", "tipo", false],
   ["note", "nota", false],
+  ["loader", "cargador", false],
 ];
 
 /**
@@ -197,6 +200,8 @@ export function validateMapping(headers: readonly string[], m: ColumnMapping): s
 /** Lo que admite `pay_transactions`: referencia de 1 a 120 caracteres y nota de hasta 280. */
 const MAX_REFERENCE = 120;
 const MAX_NOTE = 280;
+/** Lo más que mide el nombre de un cargador (`pay_loaders`). */
+const MAX_LOADER = 80;
 
 const NOT_POSITIVE = "monto en cero o negativo: no es un cobro";
 const repeated = (firstLine: number): string => `referencia repetida: ya salió en la línea ${firstLine}`;
@@ -261,6 +266,9 @@ function readRow(
   const refunded = refundedCell === "" ? null : parseImportAmount(refundedCell, m.decimal);
   if (refundedCell !== "" && refunded === null) problems.push(`monto reembolsado inválido: «${refundedCell}»`);
 
+  const loader = cell(m.loader).trim();
+  if (Array.from(loader).length > MAX_LOADER) problems.push(`el cargador pasa de ${MAX_LOADER} caracteres`);
+
   if (problems.length > 0 || wall === null || zone === null || gross === null) return { problems };
 
   const refundNote =
@@ -282,6 +290,7 @@ function readRow(
       currency,
       reportedFee: fee === null || feeElsewhere ? null : toMoney(dec(fee).abs()),
       note: note === "" ? null : clip(note, MAX_NOTE),
+      ...(loader === "" ? {} : { loader }),
     },
   };
 }

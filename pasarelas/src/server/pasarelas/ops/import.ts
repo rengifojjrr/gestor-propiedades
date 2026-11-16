@@ -24,6 +24,7 @@ import type { Db } from "../dto";
 import { UserError } from "../errors";
 import { loadPayConfig } from "../queries/config";
 import { findExistingRefs, findManualTxs, groupsOf, type SavedImportMapping } from "../queries/import";
+import { cleanLoaderName } from "./loaders";
 import { SAVE_BATCH_SIZE, saveTx } from "../tx-save";
 
 /**
@@ -36,6 +37,7 @@ import { SAVE_BATCH_SIZE, saveTx } from "../tx-save";
 
 const MAX_REFERENCE = 120;
 const MAX_NOTE = 280;
+const MAX_LOADER = 80;
 /** Un monto canónico de `numeric(14,2)` que no es negativo: "0.00" … "999999999999.99". */
 const CANONICAL_AMOUNT = /^(0|[1-9]\d{0,11})\.\d{2}$/;
 
@@ -49,6 +51,7 @@ const PROBLEM_OF: Record<keyof ImportRow, string> = {
   currency: "la moneda no es válida",
   reportedFee: "la comisión del archivo no es válida",
   note: "la nota pasa de 280 caracteres o parece un número de tarjeta",
+  loader: "el cargador está vacío, tiene espacios de más alrededor o pasa de 80 caracteres",
 };
 
 const chars = (text: string): number => Array.from(text).length;
@@ -68,6 +71,10 @@ const zImportRow = z.object({
     .string()
     .refine((text) => text.trim() !== "" && chars(text) <= MAX_NOTE && !looksLikeCardNumber(text))
     .nullable(),
+  loader: z
+    .string()
+    .refine((text) => text.trim() === text && chars(text) >= 1 && chars(text) <= MAX_LOADER)
+    .optional(),
 }) satisfies z.ZodType<ImportRow>;
 
 /** «La línea 7» si la fila dice su línea; si no, su lugar en el lote. */
@@ -152,15 +159,40 @@ function defaultScheme(cfg: PayConfig, companyId: string): { schemeId: string | 
     : { schemeId: null, info: { kind: "desactivado", name: scheme.name } };
 }
 
+/** Una fila cuyo cargador no está entre los del usuario. */
+export type UnknownLoader = { line: number; name: string };
+
 /**
- * Cada fila calculada con la configuración de ahora (evento «importado»). Con `alreadyDeposited`, la que ya debió
- * caer se vuelve a planear como depositada en su fecha estimada: el mismo cálculo, con el estado de entrada.
+ * El cargador de cada fila que lo dice, buscado por nombre entre los del usuario sin distinguir mayúsculas ni
+ * espacios de más (la misma regla que el único de la base), también entre los desactivados: un archivo trae ventas
+ * pasadas y sus cobros conservan a su cargador. Un nombre que no está no crea un cargador (como la importación no
+ * crea empresas ni pasarelas, que se eligen entre las que existen): la fila queda en `unknown`.
+ */
+function loadersOf(cfg: PayConfig, rows: readonly ImportRow[]): { ids: Map<number, string>; unknown: UnknownLoader[] } {
+  const key = (name: string): string => cleanLoaderName(name).toLowerCase();
+  const byName = new Map(cfg.loaders.map((loader) => [key(loader.name), loader.id]));
+  const ids = new Map<number, string>();
+  const unknown: UnknownLoader[] = [];
+  for (const { line, loader } of rows) {
+    if (loader === undefined) continue;
+    const id = byName.get(key(loader));
+    if (id === undefined) unknown.push({ line, name: loader });
+    else ids.set(line, id);
+  }
+  return { ids, unknown };
+}
+
+/**
+ * Cada fila calculada con la configuración de ahora (evento «importado»), con su cargador si lo dice (`loaderIds`,
+ * por línea). Con `alreadyDeposited`, la que ya debió caer se vuelve a planear como depositada en su fecha estimada:
+ * el mismo cálculo, con el estado de entrada.
  */
 function planRows(
   cfg: PayConfig,
   batch: Omit<ImportBatch, "rows">,
   rows: readonly ImportRow[],
   deposit: { today: ISODate; alreadyDeposited: boolean },
+  loaderIds: ReadonlyMap<number, string>,
 ): TxWrite[] {
   // Si la empresa no existe (o es de otro usuario), `planCreate` lo dice con su error.
   const { schemeId } = defaultScheme(cfg, batch.companyId);
@@ -178,6 +210,7 @@ function planRows(
       grossOriginal: row.grossOriginal,
       reference: row.reference,
       note: row.note,
+      loaderId: loaderIds.get(row.line) ?? null,
       feesPaidBy: batch.feesPaidBy ?? "nosotros",
       ...(batch.useReportedFee && row.reportedFee !== null ? { feeOverride: row.reportedFee } : {}),
     };
@@ -195,8 +228,8 @@ function planRows(
  * crearon, cuántos ya existían (misma referencia en esa pasarela) y no se tocaron, y cuántos de esos están en la
  * papelera (que conserva la referencia: hay que restaurarlos o borrarlos del todo).
  *
- * Todo o nada por lote: si una fila no es válida no se escribe ninguna y el error dice cuál; si la base rechaza
- * algo, el lote entero se deshace.
+ * Todo o nada por lote: si una fila no es válida (también si dice un cargador que no existe) no se escribe ninguna
+ * y el error dice cuál; si la base rechaza algo, el lote entero se deshace.
  */
 export async function importTransactions(
   supabase: Db,
@@ -204,8 +237,16 @@ export async function importTransactions(
 ): Promise<{ created: number; duplicates: number; trashed: number }> {
   const rows = checkBatch(input.rows);
   const cfg = await loadPayConfig(supabase);
+  const loaders = loadersOf(cfg, rows);
+  const [unknown] = loaders.unknown;
+  if (unknown !== undefined) {
+    throw new UserError(
+      `La línea ${unknown.line} no se puede importar: no hay ningún cargador «${unknown.name}». Créalo en ` +
+        "Cargadores (o quita la fila) y vuelve a importar. No se guardó nada de este lote.",
+    );
+  }
   const today = todayNY(new Date());
-  const writes = planRows(cfg, input, rows, { today, alreadyDeposited: input.alreadyDeposited });
+  const writes = planRows(cfg, input, rows, { today, alreadyDeposited: input.alreadyDeposited }, loaders.ids);
 
   const results = await saveTx(supabase, writes, { skipDuplicates: true });
   const created = results.filter((result) => result.inserted).length;
@@ -243,17 +284,21 @@ export type ImportPreview = {
   /** Los cobros registrados a mano que pueden ser alguna fila con otra referencia o sin ella. */
   manual: ManualTx[];
   scheme: ImportScheme;
+  /** Las filas que dicen un cargador que no existe: no se importan hasta crearlo (o quitarlas del archivo). */
+  unknownLoaders: UnknownLoader[];
 };
 
 /**
  * La vista previa de un lote: las filas se validan y se calculan como en `importTransactions`, pero no se escribe
- * nada. Solo lee, con la sesión de la persona.
+ * nada. Una fila con un cargador que no existe no la detiene: se dice cuál es (y se calcula sin cargador). Solo lee,
+ * con la sesión de la persona.
  */
 export async function previewImport(supabase: Db, input: ImportBatch): Promise<ImportPreview> {
   const rows = checkBatch(input.rows);
   const cfg = await loadPayConfig(supabase);
   const today = todayNY(new Date());
-  const writes = planRows(cfg, input, rows, { today, alreadyDeposited: false });
+  const loaders = loadersOf(cfg, rows);
+  const writes = planRows(cfg, input, rows, { today, alreadyDeposited: false }, loaders.ids);
   const references = rows.map((row) => row.reference);
   const [existing, manual] = await Promise.all([
     findExistingRefs(supabase, input.gatewayId, references),
@@ -269,6 +314,7 @@ export async function previewImport(supabase: Db, input: ImportBatch): Promise<I
     existing,
     manual,
     scheme: defaultScheme(cfg, input.companyId).info,
+    unknownLoaders: loaders.unknown,
   };
 }
 
@@ -281,8 +327,8 @@ export async function saveImportMapping(
   supabase: Db,
   { gatewayId, format, mapping }: { gatewayId: string } & SavedImportMapping,
 ): Promise<void> {
-  const { reference, date, time, timezone, gross, currency, fee, status, type, note } = mapping;
-  const named = [reference, date, time, timezone, gross, currency, fee, status, type, note].filter(
+  const { reference, date, time, timezone, gross, currency, fee, status, type, note, loader } = mapping;
+  const named = [reference, date, time, timezone, gross, currency, fee, status, type, note, loader].filter(
     (column): column is string => typeof column === "string",
   );
   const problems = validateMapping(named, mapping);

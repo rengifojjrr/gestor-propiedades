@@ -95,6 +95,29 @@ describe("proposeMapping", () => {
   });
 });
 
+describe("proposeMapping: la columna «cargador»", () => {
+  const withLoader = (headers: string[]) => [...headers, " Cargador"];
+
+  it("si el archivo trae una columna «cargador» (sin distinguir mayúsculas ni espacios), se propone leerla", () => {
+    expect(proposeMapping(withLoader(headersOf("stripe-saldo.csv")), undefined)).toEqual({
+      format: "stripe_saldo",
+      mapping: { ...saldo, loader: " Cargador" },
+      from: "formato",
+    });
+    expect(proposeMapping(withLoader(headersOf("otro.csv")), undefined).mapping.loader).toBe(" Cargador");
+  });
+
+  it("sin esa columna, ninguna; el mapeo guardado manda, aunque el archivo la traiga", () => {
+    expect(proposeMapping(headersOf("otro.csv"), undefined).mapping.loader).toBeNull();
+    const mapping: ColumnMapping = { ...saldo, loader: null };
+    expect(proposeMapping(withLoader(headersOf("stripe-saldo.csv")), { format: "stripe_saldo", mapping })).toEqual({
+      format: "stripe_saldo",
+      mapping,
+      from: "guardado",
+    });
+  });
+});
+
 describe("formatConflict", () => {
   it("avisa cuando la pasarela ya se importó con otro formato", () => {
     expect(formatConflict({ format: "stripe_saldo", mapping: saldo }, "stripe_pagos")).toBe("stripe_saldo");
@@ -156,6 +179,7 @@ const part = (extra: Partial<ImportPreview>): ImportPreview => ({
   existing: [],
   manual: [],
   scheme: { kind: "activo", name: "Reparto 50/30/20" },
+  unknownLoaders: [],
   ...extra,
 });
 
@@ -186,7 +210,21 @@ describe("mergePreviews", () => {
       ],
       manual: [manual],
       scheme: { kind: "activo", name: "Reparto 50/30/20" },
+      unknownLoaders: new Map(),
     });
+  });
+
+  it("junta las filas con un cargador que no existe, por línea", () => {
+    const merged = mergePreviews([
+      part({ unknownLoaders: [{ line: 2, name: "Cargador Tres" }] }),
+      part({ unknownLoaders: [{ line: 503, name: "cargador tres" }] }),
+    ]);
+    expect(merged.unknownLoaders).toEqual(
+      new Map([
+        [2, "Cargador Tres"],
+        [503, "cargador tres"],
+      ]),
+    );
   });
 });
 
@@ -222,6 +260,17 @@ describe("planReview", () => {
     expect(plan.send).toEqual(rows);
     expect(plan.heldBack).toBe(0);
     expect(plan.deposit).toEqual({ creating: 3, overdue: 1, dueByToday: 2 });
+    expect(plan.unknownLoader).toEqual([]);
+  });
+
+  it("las filas con un cargador que no existe se dicen aparte y no se mandan ni se cuentan", () => {
+    const withLoaders = [{ ...rows[1]!, loader: "Cargador Tres" }, { ...rows[2]!, loader: "Cargador Uno" }];
+    const unknown = { ...preview, unknownLoaders: new Map([[3, "Cargador Tres"]]) };
+    const plan = planReview(withLoaders, unknown, { includePossible: false });
+    expect(plan.unknownLoader).toEqual([{ line: 3, name: "Cargador Tres" }]);
+    expect(plan.send).toEqual([withLoaders[1]]);
+    expect(plan.check.fresh).toEqual([withLoaders[1]]);
+    expect(plan.deposit.creating).toBe(1);
   });
 });
 

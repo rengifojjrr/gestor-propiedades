@@ -16,6 +16,7 @@ import {
   type ManualTx,
   type RepeatCheck,
 } from "@/lib/pasarelas/import";
+import { normalizeHeader } from "@/lib/pasarelas/import/detect";
 import type { ExtraCfg, ISODate } from "@/lib/pasarelas/types";
 import type { ImportPreview, ImportScheme } from "@/server/pasarelas/ops/import";
 import type { SavedImportMapping } from "@/server/pasarelas/queries/import";
@@ -55,6 +56,7 @@ const BLANK: ColumnMapping = {
   status: null,
   type: null,
   note: null,
+  loader: null,
   fixedZone: "UTC",
   decimal: ".",
   dateFormat: "YYYY-MM-DD",
@@ -68,9 +70,13 @@ export type Proposal = {
   from: "guardado" | "formato" | "a_mano";
 };
 
+/** El nombre con que se reconoce la columna del cargador (sin distinguir mayúsculas ni espacios alrededor). */
+const LOADER_HEADER = "cargador";
+
 /**
  * El mapeo que se propone para un archivo: el que se recordó para la pasarela si es del mismo formato y sirve para
- * estas columnas; si no, el del formato reconocido; si no se reconoce, uno en blanco.
+ * estas columnas; si no, el del formato reconocido; si no se reconoce, uno en blanco. Estos dos leen la columna
+ * «cargador» si el archivo la trae.
  */
 export function proposeMapping(headers: readonly string[], saved: SavedImportMapping | undefined): Proposal {
   const format = detectFormat(headers);
@@ -78,7 +84,10 @@ export function proposeMapping(headers: readonly string[], saved: SavedImportMap
     return { format, mapping: saved.mapping, from: "guardado" };
   }
   const preset = presetFor(format, headers);
-  return preset === null ? { format, mapping: { ...BLANK }, from: "a_mano" } : { format, mapping: preset, from: "formato" };
+  const loader = headers.find((header) => normalizeHeader(header) === LOADER_HEADER) ?? null;
+  return preset === null
+    ? { format, mapping: { ...BLANK, loader }, from: "a_mano" }
+    : { format, mapping: { ...preset, loader }, from: "formato" };
 }
 
 /**
@@ -121,6 +130,8 @@ export type MergedPreview = {
   existing: ExistingRef[];
   manual: ManualTx[];
   scheme: ImportScheme;
+  /** El nombre de cargador de cada fila que dice uno que no existe, por línea. */
+  unknownLoaders: Map<number, string>;
 };
 
 /** Junta las vistas previas de cada lote (al menos una); un cobro a mano que salió en dos lotes cuenta una vez. */
@@ -133,6 +144,7 @@ export function mergePreviews(parts: readonly ImportPreview[]): MergedPreview {
     existing: parts.flatMap((p) => p.existing),
     manual: [...manual.values()],
     scheme: parts[0]!.scheme,
+    unknownLoaders: new Map(parts.flatMap((p) => p.unknownLoaders).map(({ line, name }) => [line, name])),
   };
 }
 
@@ -147,20 +159,31 @@ export type ReviewPlan = {
    * cuántas la tienen hasta hoy (con «ya se depositaron» entran depositadas).
    */
   deposit: { creating: number; overdue: number; dueByToday: number };
+  /**
+   * Las filas que dicen un cargador que no existe: no se mandan ni se cuentan (la importación no crea cargadores),
+   * hasta crearlo en Cargadores y volver a importar el archivo.
+   */
+  unknownLoader: { line: number; name: string }[];
 };
 
 /** Qué se manda y qué se le dice a la persona, con la vista previa del servidor y lo que eligió. */
 export function planReview(
-  rows: readonly ImportRow[],
+  allRows: readonly ImportRow[],
   preview: MergedPreview,
   { includePossible }: { includePossible: boolean },
 ): ReviewPlan {
+  const unknownLoader = allRows.flatMap(({ line }) => {
+    const name = preview.unknownLoaders.get(line);
+    return name === undefined ? [] : [{ line, name }];
+  });
+  const rows = allRows.filter((row) => !preview.unknownLoaders.has(row.line));
   const check = classifyRepeats(rows, preview.existing, preview.manual);
   const held = new Set(includePossible ? [] : check.possible.map(({ row }) => row.line));
   const creating = [...check.fresh, ...(includePossible ? check.possible.map(({ row }) => row) : [])];
   const estimates = creating.map((row) => preview.estimates.get(row.line)!);
   return {
     check,
+    unknownLoader,
     send: rows.filter((row) => !held.has(row.line)),
     heldBack: held.size,
     deposit: {

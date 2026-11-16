@@ -275,6 +275,10 @@ export function ReviewCard({
             </div>
           ) : null}
 
+          {ready && ready.plan.unknownLoader.length > 0 ? (
+            <UnknownLoaders rows={ready.plan.unknownLoader} disabled={disabled} />
+          ) : null}
+
           {ready && ready.plan.deposit.creating > 0 ? (
             <div className="flex flex-col gap-3 border-t border-rule pt-4">
               <h3 className="font-semibold">Cuándo cae el dinero y cómo se reparte</h3>
@@ -292,6 +296,36 @@ export function ReviewCard({
         </CardBody>
       </section>
     </Card>
+  );
+}
+
+/**
+ * Las filas que dicen un cargador que no existe, juntas por nombre: no se importan. Como la importación no crea
+ * empresas ni pasarelas (se eligen entre las que hay), tampoco crea cargadores: un nombre mal escrito daría un
+ * cargador de más. Se crean en Cargadores y se vuelve a importar el archivo: lo ya importado no se repite.
+ */
+function UnknownLoaders({ rows, disabled }: { rows: { line: number; name: string }[]; disabled: boolean }) {
+  const byName = new Map<string, number[]>();
+  for (const { line, name } of rows) byName.set(name, [...(byName.get(name) ?? []), line]);
+  const count = rows.length;
+  return (
+    <Alert tone="warning" title={`${plural(count, "fila", "filas")} con un cargador que no existe`}>
+      <div className="flex flex-col items-start gap-2">
+        <p>
+          {count === 1 ? "No se importa" : "No se importan"}: la importación no crea cargadores. Créalo en Cargadores
+          (o corrige el nombre en el archivo) y vuelve a importar el archivo: lo que ya se importó no se repite.
+        </p>
+        <ul className="flex flex-col gap-1">
+          {[...byName].slice(0, ERRORS_SHOWN).map(([name, lines]) => (
+            <li key={name} className="break-words">
+              «{name}» · <span className="text-ink-soft">{linesText(lines)}</span>
+            </li>
+          ))}
+        </ul>
+        {byName.size > ERRORS_SHOWN ? <p>Y {byName.size - ERRORS_SHOWN} nombres más.</p> : null}
+        {disabled ? null : <ButtonLink href="/pasarelas/cargadores">Ir a Cargadores</ButtonLink>}
+      </div>
+    </Alert>
   );
 }
 

@@ -3,7 +3,18 @@
 import { Alert, Card, CardBody, CardHeader, CardTitle, Field, Input, Select } from "@/components/ui";
 import type { ColumnMapping } from "@/lib/pasarelas/import";
 
-type ColumnField = "reference" | "date" | "time" | "timezone" | "gross" | "currency" | "fee" | "status" | "type" | "note";
+type ColumnField =
+  | "reference"
+  | "date"
+  | "time"
+  | "timezone"
+  | "gross"
+  | "currency"
+  | "fee"
+  | "status"
+  | "type"
+  | "note"
+  | "loader";
 
 /** Cada dato que se lee del archivo, en el orden en que se pide, con su etiqueta y su ayuda. */
 const COLUMNS: { field: ColumnField; label: string; required?: boolean; hint?: string }[] = [
@@ -17,6 +28,7 @@ const COLUMNS: { field: ColumnField; label: string; required?: boolean; hint?: s
   { field: "status", label: "Estado", hint: "Para dejar fuera lo fallido o pendiente." },
   { field: "type", label: "Tipo", hint: "Para dejar fuera reembolsos, retiros y comisiones sueltas." },
   { field: "note", label: "Nota" },
+  { field: "loader", label: "Cargador", hint: "Quien trajo la venta, por su nombre: se busca entre tus cargadores." },
 ];
 
 const DATE_FORMATS: { value: ColumnMapping["dateFormat"]; label: string }[] = [

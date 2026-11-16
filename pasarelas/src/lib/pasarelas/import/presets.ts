@@ -65,6 +65,11 @@ export type ColumnMapping = {
   type?: string | null;
   /** Por defecto ninguna: una columna de descripción puede traer datos de terceros. */
   note?: string | null;
+  /**
+   * El nombre del cargador de cada cobro (la persona que trajo la venta). Solo se busca entre los cargadores que ya
+   * existen: nunca se guarda como texto. Por defecto ninguna.
+   */
+  loader?: string | null;
   /** Zona IANA (o `UTC`) cuando el archivo no trae columna de zona. */
   fixedZone: string;
   decimal: "." | ",";
@@ -86,6 +91,7 @@ const PRESETS: Readonly<Record<Exclude<ImportFormat, "otro">, Readonly<ColumnMap
     status: "Status",
     type: null,
     note: null,
+    loader: null,
     fixedZone: "UTC",
     decimal: ".",
     dateFormat: "YYYY-MM-DD",
@@ -102,6 +108,7 @@ const PRESETS: Readonly<Record<Exclude<ImportFormat, "otro">, Readonly<ColumnMap
     status: null,
     type: "reporting_category",
     note: null,
+    loader: null,
     fixedZone: "UTC",
     decimal: ".",
     dateFormat: "YYYY-MM-DD",
@@ -118,6 +125,7 @@ const PRESETS: Readonly<Record<Exclude<ImportFormat, "otro">, Readonly<ColumnMap
     status: "Status",
     type: "Type",
     note: null,
+    loader: null,
     // No se usa: el archivo trae la zona en cada fila. Está porque el mapeo la exige.
     fixedZone: "America/New_York",
     decimal: ".",

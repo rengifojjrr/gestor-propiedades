@@ -493,6 +493,29 @@ describe("mapRows: la nota", () => {
   });
 });
 
+describe("mapRows: el cargador", () => {
+  test("por defecto no se lee ninguna columna: la fila no dice cargador", () => {
+    expect("loader" in okDe({ cargador: "Cargador Uno" })).toBe(false);
+  });
+
+  test("se lee tal cual, recortado; vacío es no decirlo (sin cargador)", () => {
+    expect(okDe({ cargador: "  Cargador Uno " }, { loader: "cargador" }).loader).toBe("Cargador Uno");
+    expect("loader" in okDe({ cargador: "   " }, { loader: "cargador" })).toBe(false);
+  });
+
+  test("más de 80 caracteres no puede ser el nombre de un cargador: es un error de la fila", () => {
+    expect(errorDe({ cargador: "c".repeat(81) }, { loader: "cargador" })).toBe("el cargador pasa de 80 caracteres");
+    expect(okDe({ cargador: "c".repeat(80) }, { loader: "cargador" }).loader).toBe("c".repeat(80));
+  });
+
+  test("si se elige, la columna tiene que estar en el archivo", () => {
+    expect(validateMapping(["ref", "fecha", "monto"], { ...BASE, loader: "cargador" })).toEqual([
+      "No está en el archivo la columna «cargador» (cargador).",
+    ]);
+    expect(validateMapping(["ref", "fecha", "monto", " Cargador"], { ...BASE, loader: "cargador" })).toEqual([]);
+  });
+});
+
 describe("mapRows: qué es un cobro en Stripe, movimientos de saldo", () => {
   const SALDO = presetFor("stripe_saldo")!;
   const filaSaldo = (reporting_category: string, gross = "10.00") => ({
