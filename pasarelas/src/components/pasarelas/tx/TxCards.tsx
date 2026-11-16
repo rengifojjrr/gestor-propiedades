@@ -4,7 +4,16 @@ import { DateText, Money } from "@/components/ui";
 import type { ISODate } from "@/lib/pasarelas/types";
 import { StatusBadge } from "./StatusBadge";
 import { SelectAllCheckbox } from "./TxBulkBar";
-import { BuyerPaidMark, DepositDate, PayoutMark, RetainedMark, TxCheckbox, TxLink, type TxRowView } from "./TxTable";
+import {
+  BuyerPaidMark,
+  DepositDate,
+  LoaderMark,
+  PayoutMark,
+  RetainedMark,
+  TxCheckbox,
+  TxLink,
+  type TxRowView,
+} from "./TxTable";
 import { TxStatusMenu } from "./TxStatusMenu";
 
 /**
@@ -27,12 +36,7 @@ export function TxCards({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
               <p className="text-sm text-ink-soft">
                 <DateText value={tx.occurredOn} /> · {tx.companyName} · {tx.gatewayName}
               </p>
-              {tx.loaderName === null ? null : (
-                <p className="text-sm break-words">
-                  <span className="text-ink-soft">Cargador </span>
-                  {tx.loaderName}
-                </p>
-              )}
+              <LoaderMark tx={tx} />
               <PayoutMark tx={tx} />
               <div className="flex items-start justify-between gap-2">
                 {/* Un <div>: el menú lleva sus diálogos y su lista, que no caben en un <span>. */}

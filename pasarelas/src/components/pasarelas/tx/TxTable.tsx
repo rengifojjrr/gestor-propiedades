@@ -114,6 +114,20 @@ export function RetainedMark({ tx }: { tx: TxRowView }) {
   );
 }
 
+/**
+ * El cargador del cobro: «Cargador Cargador Uno», en su propia línea (en la tabla, bajo la empresa y la pasarela: una
+ * columna más no cabe a 1280 px sin desplazar la tabla). Nada si no tiene: el filtro «Sin cargador» los encuentra.
+ */
+export function LoaderMark({ tx }: { tx: TxRowView }) {
+  if (tx.loaderName === null) return null;
+  return (
+    <span className="text-sm break-words">
+      <span className="text-ink-soft">Cargador </span>
+      {tx.loaderName}
+    </span>
+  );
+}
+
 /** La marca del reparto de un cobro: «Reparto pagado», o «Reparto: 2 de 4 pagados». Nada si no tiene reparto. */
 export function PayoutMark({ tx }: { tx: TxRowView }) {
   if (tx.payout === null) return null;
@@ -138,7 +152,6 @@ export function TxTable({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
           </Th>
           <Th>Fecha</Th>
           <Th>Cobro</Th>
-          <Th>Cargador</Th>
           <Th>Estado</Th>
           <Th numeric>Bruto</Th>
           <Th numeric>Comisiones</Th>
@@ -161,16 +174,9 @@ export function TxTable({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
                 <span className="text-sm text-ink-soft">
                   {tx.companyName} · {tx.gatewayName}
                 </span>
+                <LoaderMark tx={tx} />
                 <PayoutMark tx={tx} />
               </span>
-            </Td>
-            <Td className="break-words">
-              {tx.loaderName ?? (
-                <span className="text-ink-soft">
-                  <span aria-hidden>—</span>
-                  <span className="sr-only">Sin cargador</span>
-                </span>
-              )}
             </Td>
             <Td>
               {/* Un <div>: el menú lleva sus diálogos y su lista, que no caben en un <span>. */}
