@@ -18,6 +18,8 @@ let added: {
   shopGatewayId: string;
   paypalId: string;
   paypalFeeId: string;
+  loaderUno: string;
+  loaderDos: string;
 };
 
 beforeAll(async () => {
@@ -109,8 +111,26 @@ beforeAll(async () => {
       .single(),
     "beneficiario inactivo",
   );
+  // Al revés del orden por nombre, y uno desactivado: la configuración los trae todos, por nombre.
+  const loaders = unwrap(
+    await c
+      .from("pay_loaders")
+      .insert([
+        { name: "Cargador Uno", active: false },
+        { name: "Cargador Dos", active: true },
+      ])
+      .select("id, name"),
+    "cargadores",
+  );
+  const loaderId = (name: string): string => {
+    const loader = loaders.find((row) => row.name === name);
+    if (loader === undefined) throw new Error(`Falta el cargador ${name}`);
+    return loader.id;
+  };
 
   added = {
+    loaderUno: loaderId("Cargador Uno"),
+    loaderDos: loaderId("Cargador Dos"),
     feeVersion2: feeVersion2.id,
     extraSeguro: extraSeguro.id,
     schemeVersion2: scheme2.version_id,
@@ -269,6 +289,11 @@ describe("loadPayConfig", () => {
         },
       ],
       holidays: [],
+      // Por nombre, también los desactivados (un cobro puede tener uno).
+      loaders: [
+        { id: added.loaderDos, name: "Cargador Dos", active: true },
+        { id: added.loaderUno, name: "Cargador Uno", active: false },
+      ],
     });
   });
 
@@ -328,6 +353,7 @@ describe("loadPayConfig", () => {
       beneficiaries: [],
       schemes: [],
       holidays: [],
+      loaders: [],
     });
   });
 });
