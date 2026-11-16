@@ -26,11 +26,15 @@ function Row({ label, testId, children }: { label: string; testId?: string; chil
   );
 }
 
-/** Los nombres de lo que eligió el cobro, con la configuración de ahora; si ya no existe, lo congelado. */
+/**
+ * Los nombres de lo que eligió el cobro, con la configuración de ahora; si ya no existe, lo congelado. El cargador
+ * no se congela: su nombre de ahora.
+ */
 function namesOf(tx: TxSnapshot, cfg: PayConfig) {
   const { rules } = tx.breakdown;
   const account = cfg.bankAccounts.find((candidate) => candidate.id === tx.bankAccountId);
   return {
+    loader: tx.loaderId === null ? null : (cfg.loaders.find((candidate) => candidate.id === tx.loaderId)?.name ?? "—"),
     company: cfg.companies.find((candidate) => candidate.id === tx.companyId)?.name ?? "—",
     channel:
       tx.channelId === null
@@ -60,7 +64,7 @@ function originText(tx: TxSnapshot, cfg: PayConfig): string | null {
   return ORIGIN_LABEL[originOf(gateway, tx.breakdown.rules.extras.map((option) => option.id)).origin];
 }
 
-/** Lo que el cobro es fuera de las cifras: quién, por dónde, cuándo y a qué cuenta. */
+/** Lo que el cobro es fuera de las cifras: quién, por dónde, de qué cargador, cuándo y a qué cuenta. */
 function DataCard({ tx, cfg }: { tx: TxSnapshot; cfg: PayConfig }) {
   const names = namesOf(tx, cfg);
   const scheme = tx.breakdown.rules.scheme;
@@ -78,6 +82,9 @@ function DataCard({ tx, cfg }: { tx: TxSnapshot; cfg: PayConfig }) {
           <Row label="Empresa">{names.company}</Row>
           {names.channel === null ? null : <Row label="Canal">{names.channel}</Row>}
           <Row label="Pasarela">{names.gateway}</Row>
+          <Row label="Cargador" testId="cargador">
+            {names.loader ?? "Sin cargador"}
+          </Row>
           {origin === null ? null : (
             <Row label="Origen" testId="origen">
               {origin}

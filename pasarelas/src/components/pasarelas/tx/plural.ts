@@ -17,6 +17,17 @@ export function batchDone(done: number, chosen: number, participle: { one: strin
   return `${head} ${skipped === 1 ? "1 no admitía el cambio." : `${skipped} no admitían el cambio.`}`;
 }
 
+/**
+ * Lo que se dice tras «Asignar cargador…»: a cuántos se les puso (con `loaderName: null`, se les quitó) y, si alguno
+ * de los elegidos no cambió (ya estaba así, o no admitía el cambio: la papelera), cuántos.
+ */
+export function loaderAssignedText(done: number, chosen: number, loaderName: string | null): string {
+  const head = loaderName === null ? `Cargador quitado de ${cobros(done)}.` : `${cobros(done)} con «${loaderName}».`;
+  const skipped = chosen - done;
+  if (skipped <= 0) return head;
+  return `${head} ${skipped === 1 ? "1 ya estaba así o no admitía el cambio." : `${skipped} ya estaban así o no admitían el cambio.`}`;
+}
+
 /** «a», «a y b», «a, b y c». */
 const listed = (parts: string[]): string =>
   parts.length < 2 ? parts.join("") : `${parts.slice(0, -1).join(", ")} y ${parts.at(-1) ?? ""}`;

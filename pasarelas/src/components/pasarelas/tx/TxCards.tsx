@@ -9,7 +9,7 @@ import { TxStatusMenu } from "./TxStatusMenu";
 
 /**
  * La lista de cobros como tarjetas (en el celular), con una casilla en cada una para elegir y, junto al estado,
- * «Cambiar estado».
+ * «Cambiar estado». Si el cobro tiene cargador, una línea lo dice.
  */
 export function TxCards({ rows, today }: { rows: TxRowView[]; today: ISODate }) {
   return (
@@ -27,6 +27,12 @@ export function TxCards({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
               <p className="text-sm text-ink-soft">
                 <DateText value={tx.occurredOn} /> · {tx.companyName} · {tx.gatewayName}
               </p>
+              {tx.loaderName === null ? null : (
+                <p className="text-sm break-words">
+                  <span className="text-ink-soft">Cargador </span>
+                  {tx.loaderName}
+                </p>
+              )}
               <PayoutMark tx={tx} />
               <div className="flex items-start justify-between gap-2">
                 {/* Un <div>: el menú lleva sus diálogos y su lista, que no caben en un <span>. */}

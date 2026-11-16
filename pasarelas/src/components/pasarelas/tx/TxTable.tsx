@@ -22,6 +22,8 @@ export type TxRowView = TxListItem & {
   companyName: string;
   channelName: string | null;
   gatewayName: string;
+  /** El nombre de su cargador; `null` sin cargador. */
+  loaderName: string | null;
   payout: PayoutStatus | null;
 };
 
@@ -136,6 +138,7 @@ export function TxTable({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
           </Th>
           <Th>Fecha</Th>
           <Th>Cobro</Th>
+          <Th>Cargador</Th>
           <Th>Estado</Th>
           <Th numeric>Bruto</Th>
           <Th numeric>Comisiones</Th>
@@ -160,6 +163,14 @@ export function TxTable({ rows, today }: { rows: TxRowView[]; today: ISODate }) 
                 </span>
                 <PayoutMark tx={tx} />
               </span>
+            </Td>
+            <Td className="break-words">
+              {tx.loaderName ?? (
+                <span className="text-ink-soft">
+                  <span aria-hidden>—</span>
+                  <span className="sr-only">Sin cargador</span>
+                </span>
+              )}
             </Td>
             <Td>
               {/* Un <div>: el menú lleva sus diálogos y su lista, que no caben en un <span>. */}

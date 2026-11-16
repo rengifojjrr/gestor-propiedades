@@ -12,6 +12,8 @@ export type TxFiltersProps = {
   gateways: Option[];
   accounts: Option[];
   currencies: Option[];
+  /** Los cargadores (también los desactivados: sus cobros siguen ahí). «Sin cargador» va aparte. */
+  loaders: Option[];
   /** Cuántos de los filtros de «Más filtros» están puestos: si hay alguno, la sección viene abierta. */
   activeMore: number;
 };
@@ -42,11 +44,15 @@ const SORT_OPTIONS: Option[] = [
   { value: "estimada_asc", label: "Fecha estimada: la más próxima primero" },
 ];
 
+/** «Sin cargador»: el valor de `cargador` en la URL para los cobros que no tienen (`NO_LOADER` del servidor). */
+const NO_LOADER_OPTION: Option = { value: "sin", label: "Sin cargador" };
+
 /**
- * Búsqueda, período, orden y «Más filtros» (empresa, canal, pasarela, cuenta, moneda, estado, comprobante y
- * reparto), todo en la URL con las claves que entiende `parseTxFilters`. Cambiar un filtro vuelve a la primera página.
+ * Búsqueda, período, orden y «Más filtros» (empresa, canal, pasarela, cuenta, moneda, estado, comprobante, reparto y
+ * cargador), todo en la URL con las claves que entiende `parseTxFilters`. Cambiar un filtro vuelve a la primera
+ * página.
  */
-export function TxFilters({ companies, channels, gateways, accounts, currencies, activeMore }: TxFiltersProps) {
+export function TxFilters({ companies, channels, gateways, accounts, currencies, loaders, activeMore }: TxFiltersProps) {
   return (
     // Los filtros leen la URL con `useSearchParams()`: van dentro de <Suspense>.
     <Suspense fallback={null}>
@@ -70,6 +76,7 @@ export function TxFilters({ companies, channels, gateways, accounts, currencies,
             <UrlSelect param="estado" label="Estado" allLabel="Todos" options={STATUS_OPTIONS} />
             <UrlSelect param="comprobante" label="Comprobante" allLabel="Con o sin comprobante" options={RECEIPT_OPTIONS} />
             <UrlSelect param="reparto" label="Reparto" allLabel="Todos" options={PAYOUT_OPTIONS} />
+            <UrlSelect param="cargador" label="Cargador" allLabel="Todos" options={[NO_LOADER_OPTION, ...loaders]} />
           </div>
         </details>
       </div>

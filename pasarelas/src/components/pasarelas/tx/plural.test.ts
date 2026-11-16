@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { REFRESH_FAILED_TEXT, batchDone, cobros, depositDone, savedWithRefresh } from "./plural";
+import { REFRESH_FAILED_TEXT, batchDone, cobros, depositDone, loaderAssignedText, savedWithRefresh } from "./plural";
+
+describe("loaderAssignedText", () => {
+  it("a cuántos se les puso el cargador, o a cuántos se les quitó", () => {
+    expect(loaderAssignedText(3, 3, "Cargador Dos")).toBe("3 cobros con «Cargador Dos».");
+    expect(loaderAssignedText(1, 1, "Cargador Uno")).toBe("1 cobro con «Cargador Uno».");
+    expect(loaderAssignedText(2, 2, null)).toBe("Cargador quitado de 2 cobros.");
+  });
+
+  it("y cuántos de los elegidos no cambiaron: ya estaban así, o no admitían el cambio (la papelera)", () => {
+    expect(loaderAssignedText(2, 3, "Cargador Dos")).toBe(
+      "2 cobros con «Cargador Dos». 1 ya estaba así o no admitía el cambio.",
+    );
+    expect(loaderAssignedText(0, 4, null)).toBe(
+      "Cargador quitado de 0 cobros. 4 ya estaban así o no admitían el cambio.",
+    );
+  });
+});
 
 const DEPOSITED = { one: "marcado como depositado", many: "marcados como depositados" };
 

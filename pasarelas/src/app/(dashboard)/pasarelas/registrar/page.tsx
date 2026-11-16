@@ -57,6 +57,7 @@ export default async function RegistrarPage() {
           currency: tx.currency,
           feesPaidBy: tx.feesPaidBy,
           feeExemptIds: feeExemptIdsOf(tx.breakdown.rules),
+          loaderId: tx.loaderId,
         };
 
   return <RegisterForm cfg={cfg} now={instantToLocalInput(new Date().toISOString())} last={last} />;

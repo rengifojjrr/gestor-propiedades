@@ -2,10 +2,11 @@
 
 import { createContext, use, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { Button, Checkbox, ConfirmDialog, notify } from "@/components/ui";
-import type { Currency, ISODate } from "@/lib/pasarelas/types";
+import type { Currency, ISODate, LoaderCfg } from "@/lib/pasarelas/types";
 import { markInTransit, trashTransactions } from "@/server/pasarelas/actions/transactions";
 import { ActionError } from "../ActionError";
 import { callAction, failureOf, type ActionFailure } from "../callAction";
+import { AssignLoaderDialog } from "./AssignLoaderDialog";
 import { DepositDialog } from "./DepositDialog";
 import { PayoutsDialog } from "./PayoutsDialog";
 import { selectedPdfHref } from "./pdf";
@@ -176,22 +177,25 @@ export function SelectAllCheckbox({ visibleLabel = false }: { visibleLabel?: boo
 
 // ─── La barra ───────────────────────────────────────────────────────────────────────────────────────────────
 
-type Dialogs = "deposit" | "recalc" | "trash" | "payouts" | null;
+type Dialogs = "deposit" | "recalc" | "trash" | "payouts" | "loader" | null;
 
 export type TxBulkBarProps = {
   /** Los cobros de la página con su moneda (para pintar el antes y el después al recalcular). */
   transactions: { id: string; currency: Currency }[];
   /** Hoy en Nueva York: la fecha que propone «Marcar depositado». */
   today: ISODate;
+  /** Los cargadores activos, para «Asignar cargador…» (sin ninguno, la acción no está). */
+  loaders: LoaderCfg[];
 };
 
 /**
  * Las acciones sobre los cobros elegidos: marcar en tránsito, marcar depositado (con fecha), recalcular (con el
- * antes y el después) y enviar a la papelera. «Marcar depositado» solo marca lo que está por caer: lo ya depositado
- * conserva su fecha. Solo aparece cuando hay alguno elegido; tras una acción que sale bien, la selección se vacía y
- * el foco pasa a donde diga `TxSelectionProvider` (el contador de la lista, o el aviso de la lista vacía).
+ * antes y el después), asignar cargador y enviar a la papelera. «Marcar depositado» solo marca lo que está por caer:
+ * lo ya depositado conserva su fecha. Solo aparece cuando hay alguno elegido; tras una acción que sale bien, la
+ * selección se vacía y el foco pasa a donde diga `TxSelectionProvider` (el contador de la lista, o el aviso de la
+ * lista vacía).
  */
-export function TxBulkBar({ transactions, today }: TxBulkBarProps) {
+export function TxBulkBar({ transactions, today, loaders }: TxBulkBarProps) {
   const { selected, clear, finish } = useTxSelection();
   const [dialog, setDialog] = useState<Dialogs>(null);
   const [error, setError] = useState<ActionFailure | null>(null);
@@ -270,6 +274,11 @@ export function TxBulkBar({ transactions, today }: TxBulkBarProps) {
           <Button onClick={() => open("payouts")} disabled={pending}>
             Pagar repartos…
           </Button>
+          {loaders.length > 0 ? (
+            <Button onClick={() => open("loader")} disabled={pending}>
+              Asignar cargador…
+            </Button>
+          ) : null}
           <Button variant="danger" onClick={() => open("trash")} disabled={pending}>
             A la papelera
           </Button>
@@ -294,6 +303,7 @@ export function TxBulkBar({ transactions, today }: TxBulkBarProps) {
       />
       <RecalcDialog transactions={chosenTransactions} open={dialog === "recalc"} onClose={close} onDone={done} />
       <PayoutsDialog ids={ids} open={dialog === "payouts"} onClose={close} onDone={done} today={today} />
+      <AssignLoaderDialog ids={ids} loaders={loaders} open={dialog === "loader"} onClose={close} onDone={done} />
       <ConfirmDialog
         open={dialog === "trash"}
         onClose={close}

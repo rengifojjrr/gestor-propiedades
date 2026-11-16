@@ -9,6 +9,7 @@ import {
   withOrigin,
 } from "@/components/pasarelas/gateways/international";
 import { InternationalChoice } from "@/components/pasarelas/gateways/InternationalChoice";
+import { LoaderField } from "@/components/pasarelas/loaders/LoaderField";
 import { ExtrasToggles } from "@/components/pasarelas/registrar/ExtrasToggles";
 import { FeeExemptChoice } from "@/components/pasarelas/tx/FeeExemptChoice";
 import { exemptIdsOf, exemptQuestion, frozenExemptQuestion } from "@/components/pasarelas/tx/feeExempt";
@@ -44,7 +45,8 @@ const sameIds = (a: readonly string[], b: readonly string[]): boolean =>
  * otra). La cuenta destino, si no se toca, la vuelve a elegir el motor cuando cambian la empresa o la pasarela; la
  * fecha estimada se cambia aparte, desde el detalle. «¿El pago fue nacional o internacional?» parte de lo guardado
  * (si el desglose trae el recargo internacional) y, como las opciones, viaja solo si cambia. «¿Quién paga la
- * comisión?» también: cambiarla recalcula el reparto, como cambiar una opción.
+ * comisión?» también: cambiarla recalcula el reparto, como cambiar una opción. El cargador no cambia ninguna cifra:
+ * se ofrecen los activos y el que el cobro ya tiene (aunque esté desactivado).
  *
  * «¿Alguien no paga comisión?» (si la pagamos nosotros y el esquema reparte el neto) parte de las marcas congeladas
  * del cobro; con otro esquema, de las de ese esquema. Viaja si cambia, y también si cambian el esquema o el día (que
@@ -69,6 +71,7 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
   const gateways = cfg.gateways.filter((gateway) => gateway.active || gateway.id === tx.gatewayId);
   const schemes = cfg.schemes.filter((scheme) => scheme.active || scheme.id === tx.schemeId);
   const accounts = cfg.bankAccounts.filter((account) => account.active || account.id === tx.bankAccountId);
+  const loaders = cfg.loaders.filter((loader) => loader.active || loader.id === tx.loaderId);
 
   // Lo guardado, partido: las opciones por un lado y, si fue internacional, su recargo (aunque ya esté apagado).
   const frozen = originOf(
@@ -86,6 +89,7 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
   const [currency, setCurrency] = useState(tx.currency);
   const [occurredLocal, setOccurredLocal] = useState(initialLocal);
   const [reference, setReference] = useState(tx.reference ?? "");
+  const [loaderId, setLoaderId] = useState(tx.loaderId ?? "");
   const [schemeId, setSchemeId] = useState(tx.schemeId ?? "");
   const [bankAccountId, setBankAccountId] = useState(tx.bankAccountId ?? "");
   const [note, setNote] = useState(tx.note ?? "");
@@ -160,6 +164,7 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
     if (currency !== tx.currency) out.currency = currency;
     if (occurredLocal !== initialLocal) out.occurredAt = localInputToInstant(occurredLocal);
     if (reference.trim() !== (tx.reference ?? "")) out.reference = reference;
+    if ((loaderId || null) !== tx.loaderId) out.loaderId = loaderId || null;
     if ((schemeId || null) !== tx.schemeId) out.schemeId = schemeId || null;
     if ((bankAccountId || null) !== tx.bankAccountId) out.bankAccountId = bankAccountId || null;
     if (note.trim() !== (tx.note ?? "")) out.note = note;
@@ -321,6 +326,8 @@ export function EditForm({ cfg, tx: current, occurredLocal: initialLocal }: Edit
           onChange={(event) => setReference(event.currentTarget.value)}
         />
       </Field>
+
+      <LoaderField loaders={loaders} value={loaderId} onChange={setLoaderId} error={fieldErrors.loaderId} />
 
       <Field label="Esquema de reparto" error={fieldErrors.schemeId}>
         <Select value={schemeId} onChange={(event) => setSchemeId(event.currentTarget.value)}>

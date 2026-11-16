@@ -39,6 +39,7 @@ const MORE_FILTERS = [
   "status",
   "receipt",
   "payout",
+  "loaderId",
 ] as const satisfies readonly (keyof Filters)[];
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -88,20 +89,28 @@ function filterOptions(cfg: PayConfig, filters: Filters) {
       label: account.last4 === null ? account.alias : `${account.alias} (…${account.last4})`,
     })),
     currencies: [...currencies].sort().map((currency) => ({ value: currency, label: currency })),
+    loaders: cfg.loaders.map((loader) => ({
+      value: loader.id,
+      label: loader.active ? loader.name : `${loader.name} (desactivado)`,
+    })),
   };
 }
 
-/** Los nombres de empresa, canal y pasarela de cada cobro de la página. */
+/** Los nombres de empresa, canal, pasarela y cargador de cada cobro de la página. */
 function withNames(cfg: PayConfig) {
   const names = (items: readonly { id: string; name: string }[]) => new Map(items.map((item) => [item.id, item.name]));
   const companies = names(cfg.companies);
   const channels = names(cfg.channels);
   const gateways = names(cfg.gateways);
-  return <T extends { companyId: string; channelId: string | null; gatewayId: string }>(tx: T) => ({
+  const loaders = names(cfg.loaders);
+  return <T extends { companyId: string; channelId: string | null; gatewayId: string; loaderId: string | null }>(
+    tx: T,
+  ) => ({
     ...tx,
     companyName: companies.get(tx.companyId) ?? "—",
     channelName: tx.channelId === null ? null : (channels.get(tx.channelId) ?? null),
     gatewayName: gateways.get(tx.gatewayId) ?? "—",
+    loaderName: tx.loaderId === null ? null : (loaders.get(tx.loaderId) ?? "—"),
   });
 }
 
@@ -215,7 +224,11 @@ export default async function CobrosPage({ searchParams }: PageProps<"/pasarelas
               <p id={COUNTER_ID} tabIndex={-1} className="text-ink-soft">
                 Cobros {first}–{first + rows.length - 1} de {list.total}
               </p>
-              <TxBulkBar transactions={rows.map(({ id, currency }) => ({ id, currency }))} today={today} />
+              <TxBulkBar
+                transactions={rows.map(({ id, currency }) => ({ id, currency }))}
+                today={today}
+                loaders={cfg.loaders.filter((loader) => loader.active)}
+              />
               <div className="md:hidden">
                 <TxCards rows={rows} today={today} />
               </div>

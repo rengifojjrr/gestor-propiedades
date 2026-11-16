@@ -12,6 +12,7 @@ import {
   type Origin,
 } from "@/components/pasarelas/gateways/international";
 import { InternationalChoice } from "@/components/pasarelas/gateways/InternationalChoice";
+import { LoaderField } from "@/components/pasarelas/loaders/LoaderField";
 import { ReceiptPicker } from "@/components/pasarelas/receipts/ReceiptPicker";
 import {
   RECEIPT_ACCEPT,
@@ -50,6 +51,8 @@ export type RegisterSelection = {
   feesPaidBy: FeesPaidBy;
   /** Quiénes no pagaron comisión en ese cobro (las marcas congeladas): también se repiten, con el mismo esquema. */
   feeExemptIds: string[];
+  /** De qué cargador fue: se repite si sigue activo. */
+  loaderId: string | null;
 };
 
 export type RegisterFormProps = {
@@ -153,6 +156,8 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
   const gateways = cfg.gateways.filter((gateway) => gateway.active);
   const schemes = cfg.schemes.filter((scheme) => scheme.active);
   const accounts = cfg.bankAccounts.filter((account) => account.active);
+  // Un cargador desactivado no se ofrece: los cobros que ya lo tienen lo conservan.
+  const loaders = cfg.loaders.filter((loader) => loader.active);
 
   /** Lo que sale elegido para una empresa: su moneda, su esquema por defecto y ningún canal. */
   const companyDefaults = (companyId: string) => {
@@ -181,6 +186,8 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
   const [occurredLocal, setOccurredLocal] = useState(now);
   const today = now.slice(0, 10);
   const [reference, setReference] = useState("");
+  // De quién es la venta. Como la empresa y la pasarela, se queda para el siguiente cobro.
+  const [loaderId, setLoaderId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   // Cambiarla vuelve a montar el selector de comprobante: así olvida el archivo elegido.
@@ -282,6 +289,7 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
     setCurrency(last.currency);
     setSchemeId(activeScheme && last.schemeId !== null ? last.schemeId : "");
     setExemptChoice(activeScheme && last.schemeId !== null ? { schemeId: last.schemeId, ids: last.feeExemptIds } : null);
+    setLoaderId(loaders.find((loader) => loader.id === last.loaderId)?.id ?? "");
   }
 
   function pickReceipt(picked: File | null) {
@@ -368,6 +376,7 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
         estimatedDepositOn: manualEstimate === "" ? null : manualEstimate,
         feesPaidBy,
         feeExemptIds: exemptIds,
+        loaderId: loaderId === "" ? null : loaderId,
       });
       if (!result.ok) {
         const errors = Object.fromEntries(
@@ -624,6 +633,8 @@ export function RegisterForm({ cfg, now, last }: RegisterFormProps) {
               onChange={(event) => setReference(event.currentTarget.value)}
             />
           </Field>
+
+          <LoaderField loaders={loaders} value={loaderId} onChange={setLoaderId} error={fieldErrors.loaderId} />
 
           <ReceiptPicker key={pickerKey} onPick={pickReceipt} error={fileError} />
 
