@@ -20,12 +20,13 @@ como está guardado, con punto (`"90.30"`).
 7. [Lo que se congela y lo que lo cambia](#lo-que-se-congela-y-lo-que-lo-cambia)
 8. [Estados de un cobro](#estados-de-un-cobro)
 9. [Repartos y liquidaciones](#repartos-y-liquidaciones) (ejemplos P1 a P5)
-10. [La base de datos](#la-base-de-datos)
-11. [Seguridad](#seguridad)
-12. [Decisiones tomadas y por confirmar](#decisiones-tomadas-y-por-confirmar)
+10. [Cargadores](#cargadores)
+11. [La base de datos](#la-base-de-datos)
+12. [Seguridad](#seguridad)
+13. [Decisiones tomadas y por confirmar](#decisiones-tomadas-y-por-confirmar)
     - [Lo que el dueño tiene que decidir](#lo-que-el-dueño-tiene-que-decidir)
-13. [Lo que queda](#lo-que-queda)
-14. [Fase C: conectar con las pasarelas](#fase-c-conectar-con-las-pasarelas) (diseño, sin construir)
+14. [Lo que queda](#lo-que-queda)
+15. [Fase C: conectar con las pasarelas](#fase-c-conectar-con-las-pasarelas) (diseño, sin construir)
     - [1. Qué cambia y qué no](#1-qué-cambia-y-qué-no)
     - [2. Leer con claves restringidas de solo lectura](#2-leer-con-claves-restringidas-de-solo-lectura)
     - [3. Webhooks](#3-webhooks)
@@ -37,7 +38,7 @@ como está guardado, con punto (`"90.30"`).
     - [9. Lo que el dueño tiene que decidir](#9-lo-que-el-dueño-tiene-que-decidir)
     - [Fuentes](#fuentes)
 
-Las partes 1, 2, 5, 6, 12 y 13 se leen sin saber programar. Las partes 10 y 11 son para quien mantenga el código.
+Las partes 1, 2, 5, 6, 13 y 14 se leen sin saber programar. Las partes 11 y 12 son para quien mantenga el código.
 
 ## Qué es y qué no es
 
@@ -136,7 +137,8 @@ ficha»** → «Esquema de reparto por defecto».
 10 MB). Al lado (en el celular, debajo) se ve la cuenta: comisiones, neto, reparto y fecha estimada. En «Más
 opciones» van el esquema, la cuenta destino, la fecha estimada a mano, el estado inicial y la nota. **«Guardar»**.
 **«Repetir el último»** vuelve a poner la empresa, el canal, la pasarela, las opciones, quién paga la comisión, la
-moneda, el esquema y quién no paga comisión del cobro anterior.
+moneda, el esquema, quién no paga comisión y el cargador (si sigue activo) del cobro anterior. El campo
+**«Cargador»** va a la vista, no en «Más opciones» (ver [Cargadores](#cargadores)).
 
 **¿Quién paga la comisión?** Al registrar (y al editar) se elige **«Nosotros»** o **«El comprador»**:
 
@@ -218,7 +220,8 @@ comisión: el neto, las comisiones y el reparto no cambian (ver
   tome la vigente, se le da **«Recalcular»**: en su detalle («Más acciones» → «Recalcular») o, con varios marcados,
   en la lista de Cobros. En «Ver el antes y el después» salen «Retenido» y lo de cada persona («Retenido · Titular
   A»), de «—» a su monto.
-- **Exportar.** El CSV de Cobros lleva al final «Retenido» y «Retenido para» («Titular A 25,00 · Titular B 25,00»).
+- **Exportar.** El CSV de Cobros lleva al final, antes de «Cargador», «Retenido» y «Retenido para» («Titular A
+  25,00 · Titular B 25,00»).
   «Exportar todo» lleva las personas de cada pasarela y lo que recibió cada una en cada cobro.
 
 **Cambiar el estado de un cobro desde la lista.** En Cobros, cada cobro tiene el botón **«Cambiar estado ▾»**. Abre
@@ -297,6 +300,16 @@ Las cuentas, en [Lo pagado a cada parte de un cobro](#lo-pagado-a-cada-parte-de-
   [(ah)](#decisiones-tomadas-y-por-confirmar)).
 - **Exportar todo** lleva de qué cobros es cada pago y cuánto de cada uno.
 
+**Reportarle a cada cargador sus ventas.** Un cargador es quien le trae una venta al dueño. Solo sirve para
+reportar: no cobra del reparto ni cambia ninguna cifra. Todo, en [Cargadores](#cargadores).
+
+1. Más → **Cargadores** → **«Agregar cargador»**: nombre y nota → **«Guardar cargador»**.
+2. Al registrar, el campo **«Cargador»**. Para los cobros que ya están: Cobros → marcar las casillas → **«Asignar
+   cargador…»**.
+3. En Cargadores, el período: cada cargador con sus cobros, bruto, comisiones, neto y lo que llega al banco, y
+   «Sin cargador» con lo que falta asignar. **«Ver los cobros»** lleva a la lista filtrada, y desde ahí **«Exportar
+   CSV»** o **«PDF»**.
+
 **Importar un CSV.** Importar → empresa, pasarela, canal y opciones (por ejemplo, «Pago rápido»; valen para todo
 el archivo) → el archivo. Reconoce por sí mismo los formatos de Stripe (informe de saldo y exportación de pagos) y la
 descarga de actividad de PayPal; con otro, se eligen las columnas a mano y la pasarela lo recuerda. Lo importado se
@@ -307,6 +320,8 @@ moneda y monto, a un día como mucho. Esos solo se importan si se marca «Son ot
 «Estos cobros ya se depositaron», los cobros cuya fecha estimada ya llegó entran depositados en esa fecha estimada;
 los que todavía no la alcanzan entran por caer. Al final, **«Importar N cobros»**. Lo que ya existe no se repite
 aunque se importe dos veces. Los reembolsos del archivo no se importan: se registran en el detalle de cada cobro.
+Si el archivo trae una columna «cargador», cada cobro entra con el cargador de ese nombre; uno que no existe no se
+crea: esa fila se marca y no se importa ([Importar con la columna «cargador»](#importar-con-la-columna-cargador)).
 
 **Exportar todo.** Ajustes → «Exportar todo» → **«Descargar copia (JSON)»**: todas las filas de lo registrado, sin
 ningún archivo (ni los comprobantes ni los logos de las empresas). Para una lista filtrada, Cobros → **«Exportar
@@ -331,11 +346,12 @@ La fecha del nombre es la de hoy en Nueva York. No salen los cobros de la papele
   dibujar, contra el Supabase local.
 - **Qué lleva.** Página Carta vertical y «Página X de Y» al pie.
   - Arriba: «Cobros», qué abarca y cuándo se generó. Qué abarca es «Seleccionados (12)», o el período y los filtros
-    en palabras: «Del dom 1 nov 2026 al sáb 14 nov 2026 · Empresa: Tienda Demo · Estado: Depositado». Debajo,
-    «Generado el sáb 14 nov 2026, 10:30 (hora de Nueva York)».
-  - Cada cobro, en un bloque: la empresa (y el canal), la fecha y hora, la pasarela, la referencia y la moneda, y el
-    estado con la fecha del depósito, real o estimada («Depositado el vie 13 nov 2026», «Registrado · llega el jue
-    12 nov»). Debajo, dos columnas:
+    en palabras: «Del dom 1 nov 2026 al sáb 14 nov 2026 · Empresa: Tienda Demo · Estado: Depositado». El filtro de
+    cargador sale como «Cargador: Cargador Uno» o «Sin cargador». Debajo, «Generado el sáb 14 nov 2026, 10:30 (hora
+    de Nueva York)».
+  - Cada cobro, en un bloque: la empresa (y el canal), la fecha y hora, la pasarela, la referencia, la moneda y, si
+    lo tiene, el cargador («Cargador: Cargador Uno», con su nombre de ahora), y el estado con la fecha del depósito,
+    real o estimada («Depositado el vie 13 nov 2026», «Registrado · llega el jue 12 nov»). Debajo, dos columnas:
     - **Desglose**: lo cobrado y lo reembolsado (si hubo reembolso), el bruto, cada comisión con su cuenta («2,9 % +
       $0,20 de $1.000,00»), las comisiones, quién las pagó, el neto y, si la pasarela retuvo algo, lo retenido, a
       quién le cae, cuándo se libera y «Llega al banco»;
@@ -366,8 +382,8 @@ antes de reenviarlo se cambió un dato, avisa de que ya se había guardado con l
 con cualquier dato:
 
 - En Registrar cobro avisa si cambió el monto, la moneda, la fecha, la empresa, el canal, la pasarela, las opciones,
-  quién paga la comisión, quién no paga comisión, el esquema, la referencia, el estado inicial, la fecha del
-  depósito, la fecha estimada a mano o la nota, o si se eligió otra cuenta destino. Quitar la cuenta elegida (dejar
+  quién paga la comisión, quién no paga comisión, el esquema, la referencia, el cargador, el estado inicial, la fecha
+  del depósito, la fecha estimada a mano o la nota, o si se eligió otra cuenta destino. Quitar la cuenta elegida (dejar
   la que pone la app) no se detecta: se toma como el mismo envío y ese cambio se pierde.
 - En una liquidación avisa si cambió el beneficiario, la fecha, la moneda o el monto, o si se puso o se quitó el
   comprobante. Un cambio en el medio de pago o en la nota no se detecta y se pierde.
@@ -388,7 +404,7 @@ con su propio `package.json`. No comparte código con el otro proyecto que está
 | Pieza | Qué hace |
 |---|---|
 | **Motor** | Funciones puras que hacen todas las cuentas. No tocan la red, la base ni el reloj: la fecha de «hoy» les llega como parámetro. Por eso se prueban solas y dan lo mismo en el servidor y en el navegador |
-| **Base** | Postgres en Supabase: 20 tablas `pay_*`, sus reglas, cinco funciones que guardan varias tablas a la vez, una columna calculada (`pay_payout_pending`) y cuatro vistas de totales |
+| **Base** | Postgres en Supabase: 21 tablas `pay_*`, sus reglas, cinco funciones que guardan varias tablas a la vez, una columna calculada (`pay_payout_pending`) y cuatro vistas de totales |
 | **Capa de servidor** | Lee con la sesión del usuario y escribe llamando al motor y a las funciones de la base. Es la que manda: no se fía de lo que calculó el navegador |
 | **Pantallas** | Formularios y listas, pensadas primero para el celular. Usan el motor para la vista previa |
 | **Pruebas** | Del motor (junto al código), de la base y de la capa de servidor (contra el Supabase local) y de punta a punta (con un navegador) |
@@ -426,13 +442,13 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 | `src/app/` | La entrada (`/login`), Ajustes (con «Exportar todo»), la galería del kit y las pantallas del libro, bajo `/pasarelas`, con las descargas de Cobros (`cobros/exportar` y `cobros/pdf`) |
 | `src/components/ui/`, `src/components/shell/` | Kit propio de interfaz y marco de navegación |
 | `src/components/pasarelas/` | Las piezas de cada pantalla del libro |
-| `supabase/migrations/` | El esquema de la base: siete migraciones aditivas, de `20261110120000_las_pasarelas_de_pago.sql` a `20261116120000_pasarelas_7_pagos_por_cobro.sql` |
+| `supabase/migrations/` | El esquema de la base: ocho migraciones aditivas, de `20261110120000_las_pasarelas_de_pago.sql` a `20261117120000_pasarelas_8_cargadores.sql` |
 | `supabase/config.toml` | El Supabase local: registro público apagado, segundo factor TOTP encendido |
 | `scripts/` | El arranque del Supabase local (`stack.sh`), la semilla de ejemplo (`npm run seed`) y las capturas |
 | `tests/integration/` | Pruebas contra el Supabase local: RLS, cuadres, funciones, Storage, sesiones, borrado de usuario y cada parte del libro |
 | `e2e/` | Pruebas de punta a punta (celular 390×844 y escritorio 1280×800, con axe): cada pantalla y el recorrido del encargo |
 | `docs/superpowers/` | El diseño (`specs/`) y el plan (`plans/`) |
-| `docs/capturas/` | Una captura de cada pantalla en el celular, con datos de la semilla (el Resumen, también en oscuro), más la entrada y el código del segundo factor, vacíos. Se rehacen con `scripts/capturas.ts` cada vez que cambia una pantalla |
+| `docs/capturas/` | Capturas de las pantallas en el celular, con datos de la semilla (el Resumen, también en oscuro), más la entrada y el código del segundo factor, vacíos. Se sacan con `scripts/capturas.ts`, que hay que volver a correr cuando cambia una pantalla. Las de hoy son del 10/11/2026: no traen la pantalla Cargadores (el guion todavía no la saca) ni lo que cambió después en las demás |
 
 ### Los archivos del motor
 
@@ -467,11 +483,13 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 | `queries/config.ts`, `queries/session-config.ts` | Lee toda la configuración del usuario (`loadPayConfig`, `getPayConfig`) y siembra los feriados (`ensureHolidays`) |
 | `queries/transactions.ts` | Los filtros, la lista por páginas, las filas para totales y el detalle de un cobro |
 | `queries/settlements.ts` | Las liquidaciones de un beneficiario con sus cobros, el estado de pago de cada cobro (`payoutStatuses`), lo que se debe en los cobros elegidos (`listOwed`) y los pagos ligados a un cobro (`listTxPayouts`) |
+| `queries/loaders.ts` | Los cargadores con cuántos cobros tiene cada uno (`listLoaders`) y el reporte del período por cargador y «Sin cargador» (`loadLoaderReport`): las cifras de `summarize` sobre los cobros del filtro de cada uno, y el enlace a esa lista |
 | `queries/…` | Una lectura por pantalla: resumen, empresas, pasarelas, cuentas, feriados, repartos, importar y exportar |
-| `ops/transactions.ts` | Registrar, editar, reembolsar, disputar, depositar, recalcular, fechas estimadas, papelera y borrado definitivo |
+| `ops/transactions.ts` | Registrar, editar, reembolsar, disputar, depositar, recalcular, asignar cargador en lote (`assignLoaderTx`), fechas estimadas, papelera y borrado definitivo |
 | `ops/settlements.ts` | Registrar y borrar liquidaciones (con su comprobante) y registrar pagos ligados a sus cobros (`recordPayouts`). Borrar una liquidación es también el «Deshacer» de un pago |
 | `pdf/` | El PDF de cobros: qué cobros pide la URL y cómo se dice (`scope.ts`), el modelo puro (`model.ts`), el dibujo con pdfkit (`draw.ts`) y la lectura con la RLS y la respuesta (`cobros.ts`) |
 | `ops/receipts.ts` | Registrar y quitar un comprobante, y firmar su URL |
+| `ops/loaders.ts` | Crear, renombrar, activar o desactivar y borrar cargadores, con el nombre ya limpio (`cleanLoaderName`). Traduce dos de los rechazos de la base: el nombre repetido y borrar un cargador con cobros |
 | `ops/…` | Las escrituras de cada parte: empresas, pasarelas (con su retención), cuentas, feriados, repartos, liquidaciones e importar |
 | `actions/…` | Las acciones del servidor que llaman las pantallas, cada una con su esquema de validación. Delgadas: sesión, validación y la `op` que toca |
 
@@ -1110,7 +1128,8 @@ aunque la configuración ya sea otra.
 | el esquema | el esquema, con la versión de la fecha del cobro | nada |
 | quién no paga comisión | solo las marcas «No paga comisión» del esquema congelado (las de la edición, no las de la configuración), y con ellas el reparto | nada |
 
-Cambiar la hora dentro del mismo día, la referencia, la nota o solo la cuenta destino no recalcula nada.
+Cambiar la hora dentro del mismo día, la referencia, la nota, el [cargador](#cargadores) o solo la cuenta destino no
+recalcula nada.
 
 **Quién no paga comisión al editar.** Cambiar la fecha a otra versión del esquema conserva las marcas de ese cobro.
 Solo otro esquema trae las suyas. El historial lo dice: «Editado: quién no paga comisión».
@@ -1264,8 +1283,8 @@ Quien escriba una lectura nueva tiene que filtrar igual. Si al motor le llega un
 
 Un cobro en la papelera solo admite restaurarse. Cada rechazo tiene su mensaje en español (por ejemplo: «El cobro ya
 está depositado: revierte el depósito primero.»). Las operaciones sobre varios cobros a la vez (depositar, pasar a
-en tránsito, papelera, recalcular) se saltan los que no admiten el cambio y dicen cuántos escribieron; al depositar,
-también cuántos se saltaron y por qué.
+en tránsito, papelera, recalcular, asignar cargador) se saltan los que no admiten el cambio y dicen cuántos
+escribieron; al depositar, también cuántos se saltaron y por qué.
 
 En la lista de cobros, el menú **«Cambiar estado»** de cada cobro ofrece solo lo que esta tabla permite: pasar a en
 tránsito, depositar, revertir el depósito, marcar como fallido y reabrir. Lo decide `statusChanges`
@@ -1423,14 +1442,129 @@ Grupo B de $580,54 del sáb 14 nov 2026 cubre 2 cobros, y se desmarcan los dos: 
   pagados», y los dos vuelven a «Reparto pendiente».
 - El saldo de Grupo B sube 580,54.
 
+## Cargadores
+
+Un **cargador** es la persona que le trae una venta al dueño. El dueño tiene que reportarle a cada uno sus ventas,
+así que cada cobro dice, si se sabe, de qué cargador es, y la lista de cobros se filtra y se exporta por cargador.
+
+- **Solo sirve para reportar.** Un cargador no cobra del reparto. Si se lleva un porcentaje, eso es un beneficiario
+  del esquema, con su línea, su saldo y sus liquidaciones ([Repartos y liquidaciones](#repartos-y-liquidaciones)).
+  La pantalla lo dice: «Un cargador no cobra del reparto: si se lleva un porcentaje, agrégalo como beneficiario de
+  un esquema en Repartos.»
+- **No cambia ninguna cifra.** No es una regla: no entra en el desglose ni se congela. Es una columna más del cobro
+  (`pay_transactions.loader_id`), como la nota. Ponerlo, cambiarlo o quitarlo no recalcula nada: los montos, las
+  comisiones, el reparto, lo retenido, los totales y las cuatro vistas dan exactamente lo mismo (una prueba de
+  integración lo comprueba).
+- **Su nombre tampoco se congela.** El detalle, la lista, el CSV y el PDF dicen el nombre de ahora: renombrar un
+  cargador cambia cómo se ve en todos sus cobros.
+- **Uno por cobro, y opcional.** Cada cobro tiene a lo sumo un cargador. Los de antes de la migración 8 quedan «Sin
+  cargador».
+
+### El catálogo
+
+Más → **Cargadores**. Sin ninguno, la pantalla dice «Todavía no hay cargadores» y ofrece **«Agregar cargador»**.
+
+- **«Agregar cargador»**: nombre y nota (opcional) → **«Guardar cargador»**. El nombre tiene de 1 a 80 caracteres y
+  la nota hasta 500. Se guarda limpio: sin los espacios de los extremos y con los de en medio juntados en uno
+  (`cleanLoaderName`).
+- **El nombre es único**, sin distinguir mayúsculas ni espacios de más. Con «Cargador Uno» ya creado,
+  « cargador uno » da «Ya hay un cargador con ese nombre.» Lo exige la base (`pay_loaders_name_uq`): dos así no se
+  distinguirían en la lista ni al importar por nombre.
+- **«Editar»** cambia el nombre y la nota.
+- **«Desactivar»**: deja de ofrecerse al registrar y en «Asignar cargador…». Sus cobros lo siguen mostrando, el
+  filtro de la lista lo sigue ofreciendo («Cargador Uno (desactivado)») y la importación lo sigue encontrando. La
+  tarjeta lleva «Desactivado». **«Activar»** lo devuelve.
+- **«Borrar»**, solo sin cobros, contando los fallidos y los de la papelera. Con alguno, el diálogo lo dice y ofrece
+  desactivarlo: «Tiene 3 cobros: no se puede borrar. Desactívalo: deja de ofrecerse al registrar y sus cobros lo
+  siguen mostrando.» Si ya está desactivado, solo lo dice («Tiene 3 cobros: no se puede borrar. Ya está desactivado:
+  no se ofrece al registrar y sus cobros lo siguen mostrando.») y no ofrece nada más que «Cancelar». Lo frena también
+  la base: la clave del cobro hacia su cargador no lleva cascada.
+
+### El cargador de cada cobro
+
+- **Registrar.** El campo **«Cargador»** (opcional) va a la vista, debajo de la referencia, no en «Más opciones». Ofrece
+  «Sin cargador» y los activos. Sin ningún cargador activo, la ayuda dice «Todavía no tienes cargadores.» con el
+  enlace **«Créalos en Cargadores»**, aunque haya desactivados. Después de «Guardar» se queda elegido para el
+  siguiente cobro, como la empresa y la pasarela. **«Repetir el último»** pone el del cobro anterior, si sigue activo.
+- **Editar.** El mismo campo, con los activos y el que el cobro ya tiene, aunque esté desactivado. Sin ningún activo
+  y con el cobro sin cargador, la misma ayuda que en Registrar. Cambiarlo deja **«Editado: cargador»** en el
+  historial y no recalcula nada. La foto de antes y después del evento no lleva el cargador, así que sale igual: lo
+  que cambió lo dice el resumen del evento.
+- **Detalle.** En «Datos», la fila **«Cargador»**: su nombre, o «Sin cargador».
+- **Lista de Cobros.** Una línea con «Cargador» y su nombre: en el celular, en la tarjeta, bajo la fecha, la empresa
+  y la pasarela; en el escritorio, dentro de la celda «Cobro», bajo «empresa · pasarela». No es una columna aparte
+  porque, con una columna más, a 1280 px la tabla se desbordaba de lado (antes no) y «Cambiar estado» se partía en
+  dos líneas. Un cobro sin cargador no lleva línea: esos los encuentra el filtro «Sin cargador».
+- **El filtro.** «Más filtros» → **«Cargador»**: «Todos», **«Sin cargador»** y cada cargador (los desactivados, con
+  «(desactivado)»). En la URL es `?cargador=<id>` o `?cargador=sin`; cualquier otro valor se ignora
+  (`parseTxFilters`). Vale para la página, los totales, el CSV y el PDF del filtro, y el encabezado del PDF lo nombra.
+- **«Asignar cargador…»**, en la barra de los elegidos (solo si hay algún cargador activo): el cargador, o «Sin
+  cargador» para quitar el que tengan → **«Asignar»**. Es la misma edición del detalle, en un solo paso
+  (`assignLoaderTx`): un evento «Editado: cargador» por cobro. Se salta los que ya lo tenían y los de la papelera, y
+  dice cuántos cambió («3 cobros con …» o «Cargador quitado de 2 cobros.») y, si alguno no cambió, cuántos: «1 ya
+  estaba así o no admitía el cambio.»
+
+### El reporte por período
+
+En Cargadores, con el selector de período (el mismo del Resumen; sin elegir, este mes), cada cargador tiene una
+tarjeta con sus ventas del período, los activos primero y por nombre. Al final va **«Sin cargador»**: lo que falta
+asignar.
+
+- **Las cifras**, por moneda: **Cobros**, **Bruto**, **Comisiones** (las del negocio), **Neto**, **Por caer** y
+  **Depositado**. Estas dos son lo que llega al banco (neto − retenido), como en el Resumen. Sin cobros, «Sin cobros
+  en este período.»
+- **De dónde salen.** De `summarize`, el mismo cálculo del Resumen, sobre los cobros que trae la lista con el filtro
+  de ese cargador y ese período (`loadLoaderReport`, con `leanTx`). Como en el Resumen, no cuentan los fallidos ni
+  la papelera. Sumadas entre todos los cargadores y «Sin cargador», dan las del Resumen del mismo período y moneda.
+- **El enlace.** Cada tarjeta lleva a esos cobros en la lista, con el período y el cargador en la URL: **«Ver los
+  cobros»**, o **«Ver los cobros sin cargador»**. Desde ahí se saca el CSV o el PDF para mandárselo al cargador. El
+  reporte no tiene descarga propia.
+
+### En lo que se exporta
+
+- **CSV de Cobros**: la última columna, **«Cargador»**, con el nombre (vacía sin cargador). Va al final para no mover
+  las columnas de quien ya usa el archivo.
+- **PDF**: cada cobro dice «Cargador: Cargador Uno» junto a su pasarela, su referencia y su moneda (nada si no tiene).
+  Con el filtro de cargador, el encabezado dice «Cargador: Cargador Uno» o «Sin cargador» (`filterTexts`).
+- **Exportar todo**: la tabla `pay_loaders` y el `loader_id` de cada cobro.
+
+### Importar con la columna «cargador»
+
+- **La columna.** Si el archivo trae una columna «cargador» (sin distinguir mayúsculas), se lee sola, con cualquier
+  formato, salvo que el mapeo recordado de la pasarela nombre otra. También con un mapeo recordado antes de que
+  existiera el cargador: sin eso, como sus columnas van plegadas, un archivo con esa columna entraría entero «Sin
+  cargador» sin decirlo (`proposeMapping`). Cuando se lee una, la pantalla dice de qué columna sale el cargador de
+  cada cobro. Al importar, la pasarela recuerda también esa columna.
+- **Elegir otra o quitarla.** Se hace en las columnas, en «Cargador». Con un formato reconocido, en «Ajustar
+  columnas». Con un archivo no reconocido, las columnas salen abiertas solo si la pasarela no recuerda un mapeo que
+  sirva para él. Si lo recuerda, van plegadas y no hay «Ajustar columnas»: no se puede elegir otra columna para el
+  cargador ni quitar la «cargador» que se leyó sola. Para eso hay que cambiar el archivo: llamar «cargador» a la
+  columna que se quiere, o darle otro nombre a la «cargador» para que no se lea. Quitarla en las columnas vale para
+  esa importación: la próxima vez que el archivo traiga la columna «cargador», se vuelve a leer sola.
+- **Cómo se busca.** Por nombre, entre los cargadores que ya existen, sin distinguir mayúsculas ni espacios de más (la
+  misma regla del nombre único), **también entre los desactivados**: un archivo trae ventas pasadas, y sus cobros
+  conservan a su cargador. Una celda vacía deja el cobro sin cargador. Más de 80 caracteres es un error de la fila.
+- **Un nombre que no existe no crea un cargador: se marca la fila.** «Así lo entendí» las junta por nombre, con sus
+  líneas, bajo «2 filas con un cargador que no existe»; no las importa ni las cuenta, y ofrece **«Ir a
+  Cargadores»**. Creado el cargador (o corregido el nombre en el archivo), se vuelve a importar el archivo: lo que
+  ya se importó no se repite.
+- **Por qué no se crea.** La importación tampoco crea empresas ni pasarelas: se eligen entre las que hay. Y un
+  nombre mal escrito daría un cargador de más.
+- Si una fila así llega igual al servidor, no se guarda nada de su lote (`importTransactions`). El aviso dice la
+  línea y el nombre («La línea 7 no se puede importar: no hay ningún cargador …»), pide crearlo en Cargadores (o
+  quitar la fila) y volver a importar, y termina con «No se guardó nada de este lote.»
+
+Lo que hace cumplir la base, en [Lo que la base hace cumplir](#lo-que-la-base-hace-cumplir). Lo prueban
+`tests/integration/cargadores.test.ts` y `e2e/cargadores.spec.ts` (C1 a C6, en el celular y en el escritorio).
+
 ## La base de datos
 
-Todo está en migraciones aditivas (siete, de `20261110120000` a `20261116120000`): solo crean o cambian objetos con
+Todo está en migraciones aditivas (ocho, de `20261110120000` a `20261117120000`): solo crean o cambian objetos con
 prefijo `pay_` y, la primera, además el esquema `private`, el bucket `comprobantes` y sus políticas. Si el proyecto
 ya tiene un esquema `private` o un bucket `comprobantes`, la primera los reutiliza y les cambia permisos y políticas
 (el paso 1 de [«Pasar a producción»](../README.md#pasar-a-producción) dice qué mirar antes).
 
-Columnas comunes de las 20 tablas:
+Columnas comunes de las 21 tablas:
 
 - Todas tienen `id` (uuid) y `user_id` (el dueño de la fila, que se borra en cascada con el usuario).
 - Todas menos `pay_transaction_events` tienen `created_at`. El historial guarda su fecha en la columna `at`.
@@ -1438,9 +1572,10 @@ Columnas comunes de las 20 tablas:
   `pay_companies`, `pay_channels`, `pay_gateways`, `pay_gateway_extras`, `pay_company_gateways`, `pay_settlements`
   y `pay_transactions`.
 - `pay_allocations`, `pay_transaction_receipts`, `pay_holidays`, `pay_gateway_retention_recipients`,
-  `pay_retention_shares` y `pay_settlement_items` admiten actualizaciones y **no** tienen `updated_at`.
+  `pay_retention_shares`, `pay_settlement_items` y `pay_loaders` admiten actualizaciones y **no** tienen
+  `updated_at`.
 
-### Las 20 tablas
+### Las 21 tablas
 
 | Tabla | Qué guarda |
 |---|---|
@@ -1456,7 +1591,7 @@ Columnas comunes de las 20 tablas:
 | `pay_schemes` | Los esquemas de reparto (nombre) |
 | `pay_scheme_versions` | Las versiones de cada esquema: base, «Resto» y «vigente desde» |
 | `pay_scheme_lines` | Las líneas de cada versión: beneficiario, porcentaje y si no paga comisión (`fee_exempt`) |
-| `pay_transactions` | **Los cobros**, con sus montos (también lo retenido, `retention_amount`), su estado y el desglose congelado |
+| `pay_transactions` | **Los cobros**, con sus montos (también lo retenido, `retention_amount`), su estado, el desglose congelado y su cargador (`loader_id`, opcional) |
 | `pay_allocations` | Lo que le toca a cada beneficiario de cada cobro, con su porcentaje y su base (`neto` o `bruto`) |
 | `pay_retention_shares` | Lo que recibe cada persona de lo retenido en cada cobro |
 | `pay_transaction_receipts` | Los comprobantes de un cobro (el archivo está en Storage; aquí, su ruta, tipo y tamaño) |
@@ -1464,6 +1599,7 @@ Columnas comunes de las 20 tablas:
 | `pay_settlements` | Las liquidaciones a beneficiarios |
 | `pay_settlement_items` | De qué cobros es cada liquidación y cuánto de cada uno: liquidación, cobro, beneficiario y monto |
 | `pay_holidays` | Los feriados de cada usuario |
+| `pay_loaders` | Los [cargadores](#cargadores): nombre, nota y si está activo. Solo para reportar: ninguna cuenta los usa |
 
 ### Lo que la base hace cumplir
 
@@ -1553,6 +1689,26 @@ por fila, para poder guardar el cobro, su reparto y las partes de lo retenido ju
   A, 580,53 asignado, 580,53 liquidado, saldo **0,00**; Titular A, 50,00 asignado, 25,00 liquidado, 25,00 retenido,
   saldo **0,00**. Una prueba lo comprueba.
 
+**Los cargadores** (migración 8, `20261117120000_pasarelas_8_cargadores.sql`; qué son, en [Cargadores](#cargadores)):
+
+- `pay_loaders`: nombre de 1 a 80 caracteres sin contar los espacios de los extremos (`pay_loaders_name_check`), nota
+  de hasta 500 (`pay_loaders_note_check`) y `active` (`true` por defecto). Lleva lo mismo que `pay_beneficiaries`:
+  `user_id`, `unique (id, user_id)`, RLS por usuario (ver, agregar, cambiar y borrar lo propio), la política
+  restrictiva del segundo factor y permisos explícitos.
+- **Nombre único por usuario, normalizado** (`pay_loaders_name_uq`): sin distinguir mayúsculas, sin los espacios de
+  los extremos y con los de en medio juntados en uno. «Cargador Uno», « cargador uno » y «CARGADOR  UNO» son el
+  mismo.
+- `pay_transactions.loader_id`: nula y sin valor por defecto. Postgres no reescribe la tabla y los cobros de antes
+  quedan sin cargador.
+- **La clave hacia el cargador** (`pay_transactions_loader_fk`) es compuesta con `user_id`, como las demás: un cobro
+  no puede llevar el cargador de otro usuario. Y va **sin cascada**: un cargador con cobros no se borra. Se
+  desactiva, o se le quitan los cobros antes de borrarlo. Su índice, `pay_transactions_loader_idx`, va por
+  `(loader_id, occurred_on desc)`: sirve para filtrar la lista por cargador y para comprobar la clave al borrar uno.
+- **Nada más.** Ni disparadores ni cuadres nuevos, y ninguna vista cambia: el cargador no entra en ninguna cifra. La
+  base no sabe si un cargador está activo: que uno desactivado no se ofrezca al registrar lo decide la pantalla.
+- `pay_save_transactions` lo escribe, en el alta y en la actualización (ver [Funciones atómicas](#funciones-atómicas)).
+- Es repetible: cada objeto se crea si falta, así que se puede aplicar otra vez encima de sí misma.
+
 **Nada apunta a datos de otro usuario.** Cada tabla tiene `unique (id, user_id)` y las claves foráneas son
 compuestas, con `user_id`. Cuatro van más lejos:
 
@@ -1562,7 +1718,8 @@ compuestas, con `user_id`. Cuatro van más lejos:
 - La parte de una liquidación tiene que ser del beneficiario de **esa** liquidación.
 
 **Nombres únicos por usuario** en empresas, pasarelas, beneficiarios y esquemas, sin distinguir mayúsculas ni
-espacios de los extremos. Otro usuario sí puede usar el mismo nombre.
+espacios de los extremos. En los cargadores (migración 8), además, con los espacios de en medio juntados en uno.
+Otro usuario sí puede usar el mismo nombre.
 
 **Referencia única por pasarela.** La referencia de un cobro no se repite en la misma pasarela del mismo usuario. Se
 guarda sin espacios en los extremos. La misma referencia en otra pasarela sí vale. Es lo que impide duplicar al
@@ -1591,10 +1748,10 @@ importar.
   deja de decir lo que se usó. La aplicación no debe tocar líneas sueltas: cambia un esquema con `pay_save_scheme`.
 - **Eventos del historial:** ni se editan ni se borran. Se van con su cobro.
 
-**Lo que tiene cobros no se borra.** Una pasarela, un canal, una empresa, un beneficiario, un esquema, una tarifa o
-una versión de esquema con cobros no se pueden borrar: la clave foránea lo impide. Hay pruebas para los siete. Al
-revés pasa lo mismo desde la migración 7: un cobro con partes pagadas no se borra del todo
-(`pay_settlement_items_transaction_fk`).
+**Lo que tiene cobros no se borra.** Una pasarela, un canal, una empresa, un beneficiario, un esquema, una tarifa,
+una versión de esquema o, desde la migración 8, un cargador con cobros no se pueden borrar: la clave foránea lo
+impide. Hay pruebas para los ocho. Al revés pasa lo mismo desde la migración 7: un cobro con partes pagadas no se
+borra del todo (`pay_settlement_items_transaction_fk`).
 
 **Tres borrados que sí pasan, con efecto:**
 
@@ -1630,8 +1787,8 @@ disputa que se anula.
 
 **La migración se revisa a sí misma.** Al final falla si alguna tabla `pay_*` quedó sin RLS, sin la política del
 segundo factor o sin su `unique (id, user_id)`, o si el bucket `comprobantes` quedó sin sus dos políticas
-restrictivas. Las migraciones 2, 3, 4, 6 y 7 repiten al final la comprobación de RLS y de la política del segundo
-factor.
+restrictivas. Las migraciones 2, 3, 4, 6, 7 y 8 repiten al final la comprobación de RLS y de la política del segundo
+factor; la 8, además, la de `unique (id, user_id)`.
 
 Un detalle para quien mantenga: `pay_company_gateways.default_extra_ids` es un arreglo de ids sin clave foránea. El
 motor ignora los ids que ya no existen o están inactivos.
@@ -1680,6 +1837,9 @@ Más sobre `pay_save_transactions`:
   si es nulo o falta, las partes no se tocan; si viene, se reemplazan (una lista vacía las borra). Un alta que no
   dice `retention_amount` queda en 0,00. La función es la misma de la migración 4 con eso agregado
   (`create or replace`, con los mismos permisos): acepta exactamente lo de antes.
+- Desde la migración 8 escribe también `loader_id`, como las demás columnas: un alta que no lo dice queda sin
+  cargador, y una actualización que no lo trae no lo toca (con `null`, lo quita). Es la misma de la migración 6 con
+  eso agregado, con los permisos otra vez explícitos: acepta exactamente lo de antes.
 - Con `p_skip_duplicates`, un cobro nuevo cuya referencia ya existe en esa pasarela se salta, y se devuelve el id
   del que ya estaba. Es para importar.
 - Devuelve, por cada cobro y en el mismo orden: su id, si se insertó y si se saltó.
@@ -1718,7 +1878,8 @@ Y en su cuenta destino, sin depositar: `pending_net` 90,30 y `pending_payout` 85
 
 La migración 7 no toca ninguna vista. Un pago ligado a sus cobros es una liquidación más, así que `settled` lo cuenta
 igual que a una registrada a mano: con E10 pagado del todo, el saldo de cada parte es 0,00 por los dos caminos (ver
-[Lo que la base hace cumplir](#lo-que-la-base-hace-cumplir)).
+[Lo que la base hace cumplir](#lo-que-la-base-hace-cumplir)). La 8 tampoco toca ninguna: el cargador no entra en
+ninguna cifra, y poner o quitar cargadores no las mueve.
 
 Los totales **por período** (el Resumen, los totales de un filtro) no salen de estas vistas: los suma el motor sobre
 las filas del período, traídas por páginas (`leanTx`). La API tiene las agregaciones apagadas y un tope de 1000
@@ -1774,6 +1935,22 @@ detalle del cobro o en la ficha de cada beneficiario) y vuelve a intentarlo.»; 
 frase. Un pago que ya no cabe en lo que falta lo frena el servidor antes de llegar a la base, con «Lo que falta
 pagar cambió mientras lo veías…».
 
+Dos de los rechazos de la migración 8 los traduce `ops/loaders.ts`, no `errors.ts`. El tercero es la misma clave en
+el otro sentido, y ese sí lo traduce `errors.ts`:
+
+| Nombre | SQLSTATE | Cuándo | Mensaje para la persona |
+|---|---|---|---|
+| `pay_loaders_name_uq` | 23505 | Crear o renombrar un cargador con el nombre de otro (sin distinguir mayúsculas ni espacios de más) | «Ya hay un cargador con ese nombre.» Lo pone `ops/loaders.ts` |
+| `pay_transactions_loader_fk` | 23503 | Borrar un cargador con cobros (también fallidos o en la papelera) | «Este cargador tiene cobros: no se puede borrar. Desactívalo: deja de ofrecerse al registrar y sus cobros lo siguen mostrando.» Lo pone `ops/loaders.ts` |
+| `pay_transactions_loader_fk` | 23503 | Guardar un cobro con un cargador que ya no existe (se borró después de abrir la pantalla) o que es de otro usuario: al registrar, al editar, con «Asignar cargador…» y, si se borra mientras se guarda un lote, al importar | El general de 23503 de `errors.ts`: «Algo de lo elegido ya no existe. Vuelve a cargar la página.» |
+
+Si los dos primeros llegaran a `errors.ts` por otro camino, darían los generales de su código: «Ya existe un
+registro con esos datos.» y «No se puede borrar: todavía se usa en cobros o en otros registros.» Un nombre vacío o de más de 80
+caracteres, o una nota de más de 500, los frena antes la validación del servidor; en la base
+(`pay_loaders_name_check`, `pay_loaders_note_check`) darían el general de 23514. Al importar, una fila con un
+cargador que no existe no llega a la base: la frena `importTransactions`, con un mensaje propio que dice la línea y
+el nombre (ver [Importar con la columna «cargador»](#importar-con-la-columna-cargador)).
+
 Los rechazos de Storage se traducen por su código HTTP: sin segundo factor, archivo que ya no existe, nombre
 repetido, más de 10 MB y tipo no admitido tienen cada uno su mensaje.
 
@@ -1786,7 +1963,7 @@ esquema (`validateScheme`) y los de una retención (`validateRetention`, con los
 
 ### Cada fila es de un usuario (RLS)
 
-Las 20 tablas tienen seguridad por fila. Un usuario solo ve y escribe las filas cuyo `user_id` es el suyo. Quien no
+Las 21 tablas tienen seguridad por fila. Un usuario solo ve y escribe las filas cuyo `user_id` es el suyo. Quien no
 ha entrado (rol `anon`) no tiene ningún permiso. Los permisos están escritos uno por uno en la migración: no se
 depende de los que el proyecto dé por defecto.
 
@@ -1918,8 +2095,9 @@ ahí solo están las reglas de los alias (7 o más dígitos seguidos) y de los �
 
 ### Al borrar un usuario
 
-Borrar un usuario borra en cascada **todas sus filas** de las 20 tablas. Lo de los demás usuarios queda igual. Hay
-una prueba que lo comprueba.
+Borrar un usuario borra en cascada **todas sus filas** de las 21 tablas. Lo de los demás usuarios queda igual. Hay
+una prueba que lo comprueba, con un cobro que tiene cargador: la clave del cobro hacia su cargador, sin cascada, no
+frena la cascada del usuario.
 
 **No borra sus archivos de Storage.** Los comprobantes y los logos quedan en el bucket y hay que quitarlos por la
 API de Storage.
@@ -2893,7 +3071,7 @@ Dar permisos por columna tampoco sirve: el dueño y el socio entran con el mismo
 (`authenticated`). Y una vista con `security_invoker`, como las de totales de hoy, respeta la RLS de quien
 consulta: el socio no vería nada.
 
-**Modelo propuesto.** No se toca ninguna política de las 20 tablas actuales. «Cada fila es de un usuario» sigue
+**Modelo propuesto.** No se toca ninguna política de las 21 tablas actuales. «Cada fila es de un usuario» sigue
 siendo verdad sin excepciones.
 
 1. **Tabla de accesos** `pay_partner_access`: fila **del dueño** (`user_id` del dueño, como todas), con el

@@ -87,6 +87,23 @@ Qué es y por qué: [`docs/PASARELAS.md`](docs/PASARELAS.md). Diseño: `docs/sup
       no sabe escribir. El tope es `PDF_MAX` (300), en `scope.ts`.
     - `PDF_PATH` y `selectedPdfHref` viven en `tx/pdf.ts`, no en `PdfButton`: una constante que exporta un módulo
       `"use client"` le llega al servidor como referencia de cliente, no como texto.
+14. **Los cargadores** (`pay_loaders` y `pay_transactions.loader_id`, migración 8). Solo sirven para reportar: un
+    cargador no cobra del reparto (si se lleva un porcentaje, es un beneficiario del esquema).
+    - No es una regla: no entra en el desglose ni se congela, no va en la foto del historial (`photo` de `write.ts`)
+      y no cambia ninguna cifra, total ni vista. Cambiarlo es una edición que no recalcula nada («Editado:
+      cargador»). El reporte por cargador es `summarize` sobre la lista filtrada (`loadLoaderReport`), no otra cuenta.
+    - El nombre único sin distinguir mayúsculas ni espacios de más es una sola regla escrita dos veces:
+      `pay_loaders_name_uq` (base: `lower(regexp_replace(btrim(name), '\s+', ' ', 'g'))`) y `cleanLoaderName` de
+      `ops/loaders.ts` más `toLowerCase`, con la que `loadersOf` (`ops/import.ts`) busca por nombre al importar. Si
+      cambias una, cambia la otra: si no, la importación deja de encontrar lo que la base tiene por el mismo nombre.
+      `tests/integration/cargadores.test.ts` las comprueba: C1, la base; C6, la importación.
+    - La base no sabe si un cargador está activo: la clave compuesta `pay_transactions_loader_fk` solo exige que
+      exista y sea del mismo usuario. Que uno desactivado no se ofrezca lo deciden las pantallas (Registrar,
+      Editar y «Asignar cargador…» filtran por `active`); la importación lo busca también entre los desactivados.
+    - La importación nunca crea cargadores: un nombre que no existe marca la fila en la vista previa y frena su lote
+      en `importTransactions`.
+    - Un cargador con cobros no se borra: la clave no lleva cascada. `deleteLoader` traduce ese rechazo; guardar un
+      cobro con un cargador que ya no existe da el general de 23503 de `errors.ts`.
 
 ## Comandos (desde `pasarelas/`)
 
@@ -295,7 +312,7 @@ La fuente de verdad es `node_modules/next/dist/docs/` y los tipos instalados, no
 - Integración: dos usuarios reales del stack local; cada prueba crea los suyos y no depende de datos de otra.
   `pagos-reparto.test.ts` recorre la migración 7 y P1 a P5.
 - Una tabla `pay_*` nueva entra en las pruebas que recorren todas: `rls.test.ts`, `borrar-usuario.test.ts` y
-  `exportar.test.ts` (integración) y `e2e/ajustes.spec.ts` («Exportar todo»). Hoy son 20.
+  `exportar.test.ts` (integración) y `e2e/ajustes.spec.ts` («Exportar todo»). Hoy son 21.
 - Punta a punta: contra `next build && next start`. La salida de las pruebas debe quedar limpia, sin avisos.
 
 ## Kit de interfaz
