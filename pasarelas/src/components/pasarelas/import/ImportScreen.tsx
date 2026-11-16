@@ -141,6 +141,8 @@ export function ImportScreen({
   const gateway = choices.gateways.find((candidate) => candidate.id === settings.gatewayId)!;
   const company = choices.companies.find((candidate) => candidate.id === settings.companyId)!;
   const importing = progress !== null;
+  /** La columna de la que sale el cargador de cada cobro; `""` si no se lee ninguna. */
+  const loaderColumn = mapping?.loader?.trim() ?? "";
 
   /** Propone el mapeo de un archivo para una pasarela, y deja el editor abierto si hay que mapear a mano. */
   function propose(csv: CsvFile, gatewayId: string) {
@@ -363,6 +365,10 @@ export function ImportScreen({
                     : "Con sus columnas de siempre."}
                 </p>
               )}
+              {/* Con las columnas plegadas, se dice de dónde sale el cargador: se puede quitar en «Ajustar columnas». */}
+              {loaderColumn !== "" ? (
+                <p className="text-ink-soft">El cargador de cada cobro sale de la columna «{loaderColumn}».</p>
+              ) : null}
               {proposal.format !== "otro" ? (
                 <Button
                   variant="ghost"

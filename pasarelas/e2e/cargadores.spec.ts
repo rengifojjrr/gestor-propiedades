@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { expect, test, type Download, type Locator, type Page } from "@playwright/test";
 import { extractText, getDocumentProxy } from "unpdf";
-import { addDays, todayNY } from "../src/lib/pasarelas";
+import { addDays, presetFor, todayNY } from "../src/lib/pasarelas";
 import { e1Item, saveTransactions, signInAal1, unwrap, type Db } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
 import { waitForStillToasts } from "./avisos";
@@ -11,7 +11,8 @@ import { expectNoSeriousAxe, login, newUser, type TestUser } from "./helpers";
 /**
  * Los cargadores: la persona que trajo cada venta, para reportarle lo suyo. En el celular (390×844) y en el
  * escritorio (1280×800): crearlos (C1), registrar un cobro con uno y verlo en el detalle, la lista, el CSV y el PDF
- * (C2), asignarlo en lote y filtrar por él (C3), el reporte del período (C4) y desactivar en vez de borrar (C5).
+ * (C2), asignarlo en lote y filtrar por él (C3), el reporte del período (C4), desactivar en vez de borrar (C5) e
+ * importar un archivo con la columna «cargador» en una pasarela que recordó su mapeo antes del cargador (C6).
  * Datos inventados: «Cargador Uno», «Cargador Dos». Cada prueba usa su propio usuario.
  */
 
@@ -328,5 +329,73 @@ test.describe("cargadores", () => {
     await expect(cobro(page, isMobile, "c5_d1")).toContainText("Cargador Dos");
     await cobro(page, isMobile, "c5_d1").getByRole("link", { name: "c5_d1" }).click();
     await expect(page.getByTestId("cargador")).toHaveText("Cargador Dos");
+  });
+
+  test("C6: con el mapeo que Stripe recordó antes del cargador, la columna «cargador» del archivo se lee igual", async ({
+    page,
+  }) => {
+    const { user, db } = await enter(page);
+    const uno = await newLoader(db, "Cargador Uno");
+    // La pasarela ya importó antes de que existiera el cargador: su mapeo recordado no lo nombra.
+    const { loader: _, ...saldo } = presetFor("stripe_saldo")!;
+    await db
+      .from("pay_gateways")
+      .update({ import_mapping: { format: "stripe_saldo", mapping: saldo } })
+      .eq("id", user.basics.gatewayId)
+      .throwOnError();
+    // Un informe de saldo de Stripe con la columna «Cargador» agregada: uno que existe, uno vacío, uno que no existe.
+    const on = addDays(today, -1);
+    const csv = {
+      name: "saldo-con-cargador.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(
+        [
+          "balance_transaction_id,created_utc,currency,gross,fee,reporting_category,Cargador",
+          `txn_c6_uno,${on} 15:00:00,usd,100.00,3.20,charge,cargador uno`,
+          `txn_c6_sin,${on} 15:00:00,usd,100.00,3.20,charge,`,
+          `txn_c6_tres,${on} 15:00:00,usd,100.00,3.20,charge,Cargador Tres`,
+        ].join("\n"),
+      ),
+    };
+
+    await page.goto("/pasarelas/importar");
+    await expect(page.getByRole("heading", { level: 1, name: "Importar CSV" })).toBeVisible();
+    await expect(page.getByLabel("Archivo CSV")).toBeEnabled();
+    await page.getByLabel("Archivo CSV").setInputFiles(csv);
+    await expect(page.getByText("Con las columnas que usaste la última vez con Stripe.")).toBeVisible();
+    // Las columnas van plegadas: la pantalla dice de dónde sale el cargador.
+    await expect(page.getByRole("heading", { name: "Columnas del archivo" })).toBeHidden();
+    await expect(page.getByText("El cargador de cada cobro sale de la columna «Cargador».")).toBeVisible();
+    const review = page.getByRole("region", { name: "Así lo entendí" });
+    await expect(review.getByText("1 fila con un cargador que no existe")).toBeVisible();
+    await expect(review).toContainText("«Cargador Tres»");
+    await expectCleanScreen(page);
+
+    // En «Ajustar columnas», el cargador ya va elegido.
+    await page.getByRole("button", { name: "Ajustar columnas" }).click();
+    await expect(page.getByRole("combobox", { name: /^Cargador/ })).toHaveValue("Cargador");
+    await page.getByRole("button", { name: "Ocultar columnas" }).click();
+
+    await review.getByRole("button", { name: "Importar 2 cobros" }).click();
+    await expect(page.getByText("Se crearon 2 cobros.")).toBeVisible();
+    await expectCleanScreen(page);
+    const { data } = await db
+      .from("pay_transactions")
+      .select("reference, loader_id")
+      .eq("gateway_id", user.basics.gatewayId)
+      .order("reference")
+      .throwOnError();
+    expect(data).toEqual([
+      { reference: "txn_c6_sin", loader_id: null },
+      { reference: "txn_c6_uno", loader_id: uno },
+    ]);
+    // Y se recuerda con la columna, para la próxima vez.
+    const { data: gateway } = await db
+      .from("pay_gateways")
+      .select("import_mapping")
+      .eq("id", user.basics.gatewayId)
+      .single()
+      .throwOnError();
+    expect(gateway.import_mapping).toMatchObject({ format: "stripe_saldo", mapping: { loader: "Cargador" } });
   });
 });
