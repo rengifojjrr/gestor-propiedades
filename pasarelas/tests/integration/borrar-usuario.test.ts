@@ -38,6 +38,7 @@ const TABLAS = [
   "pay_settlements",
   "pay_settlement_items",
   "pay_holidays",
+  "pay_loaders",
 ] as const;
 
 const BUCKET = "comprobantes";
@@ -47,7 +48,7 @@ const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 /** Las tablas se recorren por nombre: el mismo cliente, sin los tipos de la base. */
 const admin = adminClient() as unknown as SupabaseClient;
 
-/** Cuántas filas de ese usuario hay en cada una de las 20 tablas (leído con la clave secreta). */
+/** Cuántas filas de ese usuario hay en cada una de las 21 tablas (leído con la clave secreta). */
 async function filasPorTabla(userId: string): Promise<Record<string, number>> {
   const cuenta: Record<string, number> = {};
   for (const tabla of TABLAS) {
@@ -59,14 +60,19 @@ async function filasPorTabla(userId: string): Promise<Record<string, number>> {
 }
 
 /**
- * Completa lo que `seedBasics` y el cobro E1 no crean, para que el usuario tenga filas en las 20 tablas.
+ * Completa lo que `seedBasics` y el cobro E1 no crean, para que el usuario tenga filas en las 21 tablas.
  * (El esquema por defecto de la empresa y su cuenta de la pasarela ya los deja `seedBasics`.)
  */
 async function usarTodasLasTablas(user: TestUser, b: Basics): Promise<{ txId: string; path: string }> {
-  // E1 con 5,00 retenido para el Grupo A: así hay filas en las partes de lo retenido.
+  // E1 de «Cargador Uno», con 5,00 retenido para el Grupo A: así hay filas en las partes de lo retenido, y la clave
+  // del cobro hacia su cargador (sin cascada) no frena la cascada del usuario.
+  const cargador = unwrap(
+    await user.client.from("pay_loaders").insert({ name: "Cargador Uno" }).select("id").single(),
+    "cargador",
+  );
   const [cobro] = await saveTransactions(user.client, [
     {
-      ...e1Item(b, { retention_amount: "5.00" }),
+      ...e1Item(b, { retention_amount: "5.00", loader_id: cargador.id }),
       retention_shares: [{ beneficiary_id: b.beneficiaryIds.a, amount: "5.00" }],
     },
   ]);
@@ -141,10 +147,10 @@ describe("borrar un usuario por la API de administración", () => {
     filasDelOtro = await filasPorTabla(otro.id);
   });
 
-  it("antes de borrarlo tiene filas en las 20 tablas", async () => {
+  it("antes de borrarlo tiene filas en las 21 tablas", async () => {
     const cuenta = await filasPorTabla(user.id);
 
-    expect(Object.keys(cuenta)).toHaveLength(20);
+    expect(Object.keys(cuenta)).toHaveLength(21);
     for (const tabla of TABLAS) {
       expect(cuenta[tabla], tabla).toBeGreaterThan(0);
     }

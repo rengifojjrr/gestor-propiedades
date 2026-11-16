@@ -19,7 +19,7 @@ import {
 
 /**
  * Cada fila es de un usuario y solo él la ve y la escribe; y si tiene un segundo factor, solo con sesión aal2.
- * Las mismas comprobaciones se repiten en las 20 tablas y las 4 vistas: los casos salen de las listas de abajo.
+ * Las mismas comprobaciones se repiten en las 21 tablas y las 4 vistas: los casos salen de las listas de abajo.
  */
 
 /** Estas pruebas recorren las tablas por nombre: usan el mismo cliente, sin los tipos de la base. */
@@ -184,6 +184,7 @@ const TABLAS: Tabla[] = [
     nueva: () => ({ day: fechaUnica(), name: `Feriado ${sufijo()}` }),
     cambio: { name: "Feriado cambiado" },
   },
+  { nombre: "pay_loaders", nueva: () => ({ name: `Cargador ${sufijo()}` }), cambio: { note: "cambiada" } },
 ];
 
 /** Solo se agregan: ni su dueño las edita. Y el historial del cobro tampoco se borra a mano. */

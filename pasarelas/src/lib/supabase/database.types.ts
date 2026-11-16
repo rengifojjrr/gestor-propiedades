@@ -225,6 +225,20 @@ isOneToOne: false
                   Relationships: [
                     
                   ]
+                },"pay_loaders": {
+                  Row: {
+                    "active": boolean,"created_at": string,"id": string,"name": string,"note": string | null,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "active"?: boolean,"created_at"?: string,"id"?: string,"name": string,"note"?: string | null,"user_id"?: string
+                  }
+                  Update: {
+                    "active"?: boolean,"created_at"?: string,"id"?: string,"name"?: string,"note"?: string | null,"user_id"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
                 },"pay_retention_shares": {
                   Row: {
                     "amount": number,"beneficiary_id": string,"created_at": string,"id": string,"transaction_id": string,"user_id": string
@@ -405,14 +419,14 @@ isOneToOne: false
                   ]
                 },"pay_transactions": {
                   Row: {
-                    "alloc_base": string | null,"alloc_base_amount": number,"bank_account_id": string | null,"breakdown": NonNullable<Json>,"buyer_fees": number,"channel_id": string | null,"company_id": string,"created_at": string,"currency": string,"deleted_at": string | null,"deposited_on": string | null,"dispute_closed_on": string | null,"dispute_opened_on": string | null,"dispute_state": string | null,"estimated_deposit_from": string | null,"estimated_deposit_on": string | null,"estimated_is_manual": boolean,"fee_version_id": string,"fees_paid_by": string,"fees_total": number,"gateway_id": string,"gross_amount": number,"gross_original": number,"id": string,"net_amount": number,"note": string | null,"occurred_at": string,"occurred_on": string,"receipts_count": number,"reference": string | null,"refunded_amount": number,"retention_amount": number,"scheme_id": string | null,"scheme_version_id": string | null,"status": string,"updated_at": string,"user_id": string,"pay_payout_pending": boolean | null
+                    "alloc_base": string | null,"alloc_base_amount": number,"bank_account_id": string | null,"breakdown": NonNullable<Json>,"buyer_fees": number,"channel_id": string | null,"company_id": string,"created_at": string,"currency": string,"deleted_at": string | null,"deposited_on": string | null,"dispute_closed_on": string | null,"dispute_opened_on": string | null,"dispute_state": string | null,"estimated_deposit_from": string | null,"estimated_deposit_on": string | null,"estimated_is_manual": boolean,"fee_version_id": string,"fees_paid_by": string,"fees_total": number,"gateway_id": string,"gross_amount": number,"gross_original": number,"id": string,"loader_id": string | null,"net_amount": number,"note": string | null,"occurred_at": string,"occurred_on": string,"receipts_count": number,"reference": string | null,"refunded_amount": number,"retention_amount": number,"scheme_id": string | null,"scheme_version_id": string | null,"status": string,"updated_at": string,"user_id": string,"pay_payout_pending": boolean | null
                   }
                   ComputedFields: "pay_payout_pending"
                   Insert: {
-                    "alloc_base"?: string | null,"alloc_base_amount"?: number,"bank_account_id"?: string | null,"breakdown": NonNullable<Json>,"buyer_fees"?: number,"channel_id"?: string | null,"company_id": string,"created_at"?: string,"currency": string,"deleted_at"?: string | null,"deposited_on"?: string | null,"dispute_closed_on"?: string | null,"dispute_opened_on"?: string | null,"dispute_state"?: string | null,"estimated_deposit_from"?: string | null,"estimated_deposit_on"?: string | null,"estimated_is_manual"?: boolean,"fee_version_id": string,"fees_paid_by"?: string,"fees_total": number,"gateway_id": string,"gross_amount": number,"gross_original": number,"id"?: string,"net_amount": number,"note"?: string | null,"occurred_at": string,"occurred_on": string,"receipts_count"?: number,"reference"?: string | null,"refunded_amount"?: number,"retention_amount"?: number,"scheme_id"?: string | null,"scheme_version_id"?: string | null,"status"?: string,"updated_at"?: string,"user_id"?: string
+                    "alloc_base"?: string | null,"alloc_base_amount"?: number,"bank_account_id"?: string | null,"breakdown": NonNullable<Json>,"buyer_fees"?: number,"channel_id"?: string | null,"company_id": string,"created_at"?: string,"currency": string,"deleted_at"?: string | null,"deposited_on"?: string | null,"dispute_closed_on"?: string | null,"dispute_opened_on"?: string | null,"dispute_state"?: string | null,"estimated_deposit_from"?: string | null,"estimated_deposit_on"?: string | null,"estimated_is_manual"?: boolean,"fee_version_id": string,"fees_paid_by"?: string,"fees_total": number,"gateway_id": string,"gross_amount": number,"gross_original": number,"id"?: string,"loader_id"?: string | null,"net_amount": number,"note"?: string | null,"occurred_at": string,"occurred_on": string,"receipts_count"?: number,"reference"?: string | null,"refunded_amount"?: number,"retention_amount"?: number,"scheme_id"?: string | null,"scheme_version_id"?: string | null,"status"?: string,"updated_at"?: string,"user_id"?: string
                   }
                   Update: {
-                    "alloc_base"?: string | null,"alloc_base_amount"?: number,"bank_account_id"?: string | null,"breakdown"?: NonNullable<Json>,"buyer_fees"?: number,"channel_id"?: string | null,"company_id"?: string,"created_at"?: string,"currency"?: string,"deleted_at"?: string | null,"deposited_on"?: string | null,"dispute_closed_on"?: string | null,"dispute_opened_on"?: string | null,"dispute_state"?: string | null,"estimated_deposit_from"?: string | null,"estimated_deposit_on"?: string | null,"estimated_is_manual"?: boolean,"fee_version_id"?: string,"fees_paid_by"?: string,"fees_total"?: number,"gateway_id"?: string,"gross_amount"?: number,"gross_original"?: number,"id"?: string,"net_amount"?: number,"note"?: string | null,"occurred_at"?: string,"occurred_on"?: string,"receipts_count"?: number,"reference"?: string | null,"refunded_amount"?: number,"retention_amount"?: number,"scheme_id"?: string | null,"scheme_version_id"?: string | null,"status"?: string,"updated_at"?: string,"user_id"?: string
+                    "alloc_base"?: string | null,"alloc_base_amount"?: number,"bank_account_id"?: string | null,"breakdown"?: NonNullable<Json>,"buyer_fees"?: number,"channel_id"?: string | null,"company_id"?: string,"created_at"?: string,"currency"?: string,"deleted_at"?: string | null,"deposited_on"?: string | null,"dispute_closed_on"?: string | null,"dispute_opened_on"?: string | null,"dispute_state"?: string | null,"estimated_deposit_from"?: string | null,"estimated_deposit_on"?: string | null,"estimated_is_manual"?: boolean,"fee_version_id"?: string,"fees_paid_by"?: string,"fees_total"?: number,"gateway_id"?: string,"gross_amount"?: number,"gross_original"?: number,"id"?: string,"loader_id"?: string | null,"net_amount"?: number,"note"?: string | null,"occurred_at"?: string,"occurred_on"?: string,"receipts_count"?: number,"reference"?: string | null,"refunded_amount"?: number,"retention_amount"?: number,"scheme_id"?: string | null,"scheme_version_id"?: string | null,"status"?: string,"updated_at"?: string,"user_id"?: string
                   }
                   Relationships: [
                     {
@@ -444,6 +458,12 @@ isOneToOne: false
       columns: ["gateway_id","user_id"]
 isOneToOne: false
       referencedRelation: "pay_gateways"
+      referencedColumns: ["id","user_id"]
+    },{
+      foreignKeyName: "pay_transactions_loader_fk"
+      columns: ["loader_id","user_id"]
+isOneToOne: false
+      referencedRelation: "pay_loaders"
       referencedColumns: ["id","user_id"]
     },{
       foreignKeyName: "pay_transactions_scheme_id_user_id_fkey"
