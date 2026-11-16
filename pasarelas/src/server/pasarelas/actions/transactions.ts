@@ -7,6 +7,7 @@ import { runAction } from "../action";
 import {
   applyRecalcOneTx,
   applyRecalcTx,
+  assignLoaderTx,
   createTx,
   depositOneTx,
   depositTxWithSkips,
@@ -91,6 +92,8 @@ const zNewTx = z.object({
   feesPaidBy: zFeesPaidBy.optional(),
   /** Quiénes no pagan comisión en ESTE cobro (beneficiarios de líneas del esquema); sin decirlo, los del esquema. */
   feeExemptIds: zFeeExemptIds.optional(),
+  /** De qué cargador es la venta; sin decirlo, de ninguno. */
+  loaderId: zId.nullish(),
 });
 
 /** Lo que no viene (`undefined`) no se toca; lo que viene con `null` se vacía. */
@@ -108,6 +111,7 @@ const zEditTx = zSeen.extend({
   bankAccountId: zId.nullable().optional(),
   feesPaidBy: zFeesPaidBy.optional(),
   feeExemptIds: zFeeExemptIds.optional(),
+  loaderId: zId.nullable().optional(),
 });
 
 /**
@@ -153,6 +157,17 @@ export async function reopenTransaction(input: unknown): Promise<ActionResult> {
   return runAction(zSeen, input, ({ supabase }, { id, expectedUpdatedAt }) =>
     reopenTx(supabase, id, expectedUpdatedAt),
   );
+}
+
+/**
+ * Pone un cargador (o, con `loaderId: null`, quita el que tengan) a los cobros elegidos, en un solo lote: cada uno
+ * deja «Editado: cargador» en su historial. Dice cuántos cambiaron.
+ */
+export async function assignLoader(input: unknown): Promise<ActionResult<{ count: number }>> {
+  const schema = zByIds.extend({ loaderId: zId.nullable() });
+  return runAction(schema, input, async ({ supabase }, { ids, loaderId }) => ({
+    count: await assignLoaderTx(supabase, ids, loaderId),
+  }));
 }
 
 export async function markInTransit(input: unknown): Promise<ActionResult<{ count: number }>> {

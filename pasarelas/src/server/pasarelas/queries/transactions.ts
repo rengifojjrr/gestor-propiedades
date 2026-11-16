@@ -54,6 +54,8 @@ export type TxFilters = {
    * (`pay_payout_pending` en la base, la misma cuenta que `payoutStatus` del motor).
    */
   payout?: "pendiente";
+  /** El cargador de los cobros; `null` = los que no tienen cargador. */
+  loaderId?: string | null;
   /** `true` = SOLO la papelera. Por defecto la papelera no aparece. */
   trashed?: boolean;
 };
@@ -91,6 +93,8 @@ const STATUSES: Record<NonNullable<TxFilters["status"]>, true> = {
 };
 const RECEIPTS: Record<NonNullable<TxFilters["receipt"]>, true> = { con: true, sin: true };
 const PAYOUTS: Record<NonNullable<TxFilters["payout"]>, true> = { pendiente: true };
+/** El valor de `cargador` en la URL para los cobros sin cargador. */
+export const NO_LOADER = "sin";
 const SORTS: Record<TxSort, true> = {
   fecha_desc: true,
   fecha_asc: true,
@@ -118,7 +122,8 @@ export function cleanSearch(q: string): string {
 /**
  * Los filtros, el orden y la página que pide la URL de una lista de cobros (los parámetros del kit: `periodo`,
  * `desde`, `hasta`, `empresa`, `canal`, `pasarela`, `cuenta`, `moneda`, `estado`, `comprobante`, `estimada`, `q`,
- * `reparto`, `orden`, `pagina`). Todo valor es entrada no confiable: lo que no se entiende se ignora, nunca lanza.
+ * `reparto`, `cargador` —un id, o `sin`—, `orden`, `pagina`). Todo valor es entrada no confiable: lo que no se
+ * entiende se ignora, nunca lanza.
  *
  * Sin `periodo` rige «este mes»; `desde` y `hasta` solo cuentan con `periodo=personalizado`. La papelera no se
  * pide por la URL: la pone la pantalla que la muestra.
@@ -141,6 +146,7 @@ export function parseTxFilters(
     return isISODate(value) ? value : undefined;
   };
   const id = (key: string): string | undefined => zId.safeParse(text(key)).data;
+  const loader = text("cargador") === NO_LOADER ? null : id("cargador");
 
   const period = periodRange(oneOf(PERIODS, "periodo") ?? "este_mes", today, {
     from: date("desde"),
@@ -161,6 +167,7 @@ export function parseTxFilters(
     // Si no queda nada que buscar (solo signos), no es un filtro.
     q: cleanSearch(q) === "" && parseMoney(q) === null ? undefined : q,
     payout: oneOf(PAYOUTS, "reparto"),
+    loaderId: loader,
   };
   const page = text("pagina") ?? "";
   return {
@@ -281,6 +288,8 @@ export function applyTxFilters<Q extends TxFilterBuilder<Q>>(
   if (filters.estimatedOn !== undefined) q = q.eq("estimated_deposit_on", filters.estimatedOn);
   // Una columna calculada de la base: se filtra sin traer los cobros, dentro de la página y de los totales.
   if (filters.payout === "pendiente") q = q.is("pay_payout_pending", true);
+  if (filters.loaderId === null) q = q.is("loader_id", null);
+  else if (filters.loaderId !== undefined) q = q.eq("loader_id", filters.loaderId);
   const search = filters.q === undefined ? null : searchConditions(filters.q, cfg);
   return search === null ? q : q.or(search);
 }

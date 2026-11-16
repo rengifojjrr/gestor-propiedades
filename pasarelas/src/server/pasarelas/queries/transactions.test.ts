@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Db } from "../dto";
-import { cleanSearch, leanTx, listTx, parseTxFilters } from "./transactions";
+import { applyTxFilters, cleanSearch, leanTx, listTx, parseTxFilters } from "./transactions";
 
 /** Viernes 13 de noviembre de 2026. */
 const TODAY = "2026-11-13";
@@ -118,6 +118,13 @@ describe("parseTxFilters", () => {
     for (const reparto of ["pagado", "Pendiente", ""]) expect(filtersOf({ reparto })).toEqual(THIS_MONTH);
   });
 
+  test("cargador: un id (a minúsculas, como lo devuelve la base) o «sin» = sin cargador; otro se ignora", () => {
+    expect(filtersOf({ cargador: ID })).toEqual({ ...THIS_MONTH, loaderId: ID });
+    expect(filtersOf({ cargador: ID.toUpperCase() })).toEqual({ ...THIS_MONTH, loaderId: ID });
+    expect(filtersOf({ cargador: "sin" })).toEqual({ ...THIS_MONTH, loaderId: null });
+    for (const cargador of ["Sin", "ninguno", "", "123"]) expect(filtersOf({ cargador })).toEqual(THIS_MONTH);
+  });
+
   test("estimada: una fecha; mal formada se ignora", () => {
     expect(filtersOf({ estimada: "2026-11-17" })).toEqual({ ...THIS_MONTH, estimatedOn: "2026-11-17" });
     expect(filtersOf({ estimada: "17/11/2026" })).toEqual(THIS_MONTH);
@@ -209,6 +216,66 @@ describe("parseTxFilters", () => {
 
   test("nunca filtra por la papelera: eso lo decide la pantalla, no la URL", () => {
     expect("trashed" in filtersOf({ trashed: "true", papelera: "1" })).toBe(false);
+  });
+});
+
+describe("applyTxFilters", () => {
+  /** Un constructor de consultas que solo anota qué filtros se le piden. */
+  class Recorder {
+    readonly calls: unknown[][] = [];
+    private log(...call: unknown[]): this {
+      this.calls.push(call);
+      return this;
+    }
+    eq(column: string, value: string | number) {
+      return this.log("eq", column, value);
+    }
+    neq(column: string, value: string) {
+      return this.log("neq", column, value);
+    }
+    gt(column: string, value: string | number) {
+      return this.log("gt", column, value);
+    }
+    gte(column: string, value: string) {
+      return this.log("gte", column, value);
+    }
+    lt(column: string, value: string) {
+      return this.log("lt", column, value);
+    }
+    lte(column: string, value: string) {
+      return this.log("lte", column, value);
+    }
+    is(column: string, value: null | boolean) {
+      return this.log("is", column, value);
+    }
+    not(column: string, operator: string, value: null) {
+      return this.log("not", column, operator, value);
+    }
+    in(column: string, values: readonly string[]) {
+      return this.log("in", column, values);
+    }
+    or(filters: string) {
+      return this.log("or", filters);
+    }
+  }
+  const loaderCalls = (filters: Parameters<typeof applyTxFilters>[1]) =>
+    applyTxFilters(new Recorder(), filters, TODAY).calls.filter((call) => call[1] === "loader_id");
+
+  test("el cargador: los de ese cargador, o con `null` los que no tienen; sin decirlo, no filtra", () => {
+    expect(loaderCalls({ loaderId: ID })).toEqual([["eq", "loader_id", ID]]);
+    expect(loaderCalls({ loaderId: null })).toEqual([["is", "loader_id", null]]);
+    expect(loaderCalls({})).toEqual([]);
+  });
+
+  test("el cargador se suma a los demás filtros, sin quitar ninguno", () => {
+    const calls = applyTxFilters(new Recorder(), { ...THIS_MONTH, gatewayId: ID, loaderId: null }, TODAY).calls;
+    expect(calls).toEqual([
+      ["is", "deleted_at", null],
+      ["gte", "occurred_on", THIS_MONTH.from],
+      ["lte", "occurred_on", THIS_MONTH.to],
+      ["eq", "gateway_id", ID],
+      ["is", "loader_id", null],
+    ]);
   });
 });
 

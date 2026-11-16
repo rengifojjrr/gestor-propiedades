@@ -173,6 +173,16 @@ export async function editTx(supabase: Db, id: string, input: EditTxInput, expec
   await commit(supabase, planEdit(cfg, tx, input));
 }
 
+/**
+ * Pone ese cargador (o, con `null`, quita el que tengan) a los cobros de la lista, en un solo lote: la misma edición
+ * que en el detalle, así que cada uno deja «Editado: cargador» en su historial y ninguna cifra cambia. Se saltan los
+ * que ya lo tenían y los de la papelera. Devuelve cuántos cambiaron.
+ */
+export async function assignLoaderTx(supabase: Db, ids: string[], loaderId: string | null): Promise<number> {
+  const cfg = await loadPayConfig(supabase);
+  return applyToAll(supabase, ids, (tx) => planEdit(cfg, tx, { loaderId }));
+}
+
 // ─── Reembolsos, disputas y fallido ─────────────────────────────────────────────────────────────────────────
 
 /** Un reembolso más, que se suma a lo ya reembolsado. */
