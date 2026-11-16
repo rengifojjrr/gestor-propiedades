@@ -107,12 +107,39 @@ describe("proposeMapping: la columna «cargador»", () => {
     expect(proposeMapping(withLoader(headersOf("otro.csv")), undefined).mapping.loader).toBe(" Cargador");
   });
 
-  it("sin esa columna, ninguna; el mapeo guardado manda, aunque el archivo la traiga", () => {
+  it("sin esa columna, ninguna", () => {
     expect(proposeMapping(headersOf("otro.csv"), undefined).mapping.loader).toBeNull();
     const mapping: ColumnMapping = { ...saldo, loader: null };
-    expect(proposeMapping(withLoader(headersOf("stripe-saldo.csv")), { format: "stripe_saldo", mapping })).toEqual({
+    expect(proposeMapping(headersOf("stripe-saldo.csv"), { format: "stripe_saldo", mapping })).toEqual({
       format: "stripe_saldo",
       mapping,
+      from: "guardado",
+    });
+  });
+
+  it("un mapeo guardado que no nombra la columna del cargador (todos los de antes) la toma del archivo si viene", () => {
+    // Si no, en una pasarela por la que ya se importó, el archivo entraría entero «Sin cargador» sin decir nada.
+    const headers = withLoader(headersOf("stripe-saldo.csv"));
+    const old: ColumnMapping = { ...saldo, fixedZone: "America/New_York", loader: null };
+    expect(proposeMapping(headers, { format: "stripe_saldo", mapping: old })).toEqual({
+      format: "stripe_saldo",
+      mapping: { ...old, loader: " Cargador" },
+      from: "guardado",
+    });
+    // Sin la clave (como se guardó antes de que existiera), igual.
+    const { loader: _, ...sinClave } = old;
+    expect(proposeMapping(headers, { format: "stripe_saldo", mapping: sinClave }).mapping).toEqual({
+      ...old,
+      loader: " Cargador",
+    });
+  });
+
+  it("un mapeo guardado que nombra la columna del cargador sigue mandando", () => {
+    const headers = [...headersOf("stripe-saldo.csv"), "Vendedor", "cargador"];
+    const mine: ColumnMapping = { ...saldo, loader: "Vendedor" };
+    expect(proposeMapping(headers, { format: "stripe_saldo", mapping: mine })).toEqual({
+      format: "stripe_saldo",
+      mapping: mine,
       from: "guardado",
     });
   });

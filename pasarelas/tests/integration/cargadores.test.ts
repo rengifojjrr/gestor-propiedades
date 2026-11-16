@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   add,
+  mapRows,
+  presetFor,
   totalsOf,
   type ColumnMapping,
   type Currency,
@@ -9,6 +11,7 @@ import {
   type NewTxInput,
   type Totals,
 } from "@/lib/pasarelas";
+import { proposeMapping } from "@/components/pasarelas/import/plan";
 import { UserError } from "@/server/pasarelas/errors";
 import { importTransactions, previewImport, saveImportMapping } from "@/server/pasarelas/ops/import";
 import { deleteLoader, saveLoader, setLoaderActive } from "@/server/pasarelas/ops/loaders";
@@ -517,6 +520,50 @@ describe("C6: importar un archivo con la columna «cargador»", () => {
     const { loader: _, ...before } = mapping;
     await saveImportMapping(user.client, { gatewayId: basics.gatewayId, format: "otro", mapping: before });
     expect((await getImportMappings(user.client))[basics.gatewayId]?.mapping.loader).toBeNull();
+  });
+
+  it("con un mapeo recordado antes del cargador, la columna «cargador» del archivo se lee igual", async () => {
+    // Guardado como antes de la migración 8: sin la clave del cargador.
+    const { loader: _, ...saldo } = presetFor("stripe_saldo")!;
+    await user.client
+      .from("pay_gateways")
+      .update({ import_mapping: { format: "stripe_saldo", mapping: saldo } })
+      .eq("id", basics.gatewayId)
+      .throwOnError();
+    const saved = (await getImportMappings(user.client))[basics.gatewayId];
+    expect(saved?.mapping.loader).toBeNull();
+
+    // Un informe de saldo de Stripe al que se le agregó la columna «Cargador».
+    const headers = [
+      "balance_transaction_id",
+      "created_utc",
+      "currency",
+      "gross",
+      "fee",
+      "reporting_category",
+      "Cargador",
+    ];
+    const cell = (reference: string, loader: string) => ({
+      balance_transaction_id: reference,
+      created_utc: "2026-11-13 15:30:00",
+      currency: "usd",
+      gross: "100.00",
+      fee: "3.20",
+      reporting_category: "charge",
+      Cargador: loader,
+    });
+    const proposal = proposeMapping(headers, saved);
+    expect(proposal).toEqual({ format: "stripe_saldo", mapping: { ...saldo, loader: "Cargador" }, from: "guardado" });
+
+    const rows = [cell("txn_t55_uno", "Cargador Uno"), cell("txn_t55_sin", "")];
+    const { ok, errors } = mapRows(rows, proposal.mapping, proposal.format);
+    expect(errors).toEqual([]);
+    expect(ok.map((row) => row.loader)).toEqual(["Cargador Uno", undefined]);
+    await importTransactions(user.client, { ...lote(ok), alreadyDeposited: false });
+    expect(await cargadorPorReferencia(["txn_t55_uno", "txn_t55_sin"])).toEqual({
+      txn_t55_uno: uno,
+      txn_t55_sin: null,
+    });
   });
 
   it("un cargador vacío o de más de 80 caracteres no pasa la validación del servidor", async () => {

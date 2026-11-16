@@ -75,16 +75,22 @@ const LOADER_HEADER = "cargador";
 
 /**
  * El mapeo que se propone para un archivo: el que se recordó para la pasarela si es del mismo formato y sirve para
- * estas columnas; si no, el del formato reconocido; si no se reconoce, uno en blanco. Estos dos leen la columna
- * «cargador» si el archivo la trae.
+ * estas columnas; si no, el del formato reconocido; si no se reconoce, uno en blanco. Los tres leen la columna
+ * «cargador» si el archivo la trae y el mapeo no nombra otra para el cargador.
+ *
+ * En el recordado importa: los guardados antes de que existiera el cargador no lo nombran, y la tarjeta de columnas
+ * va plegada con un mapeo recordado. Sin esto, en una pasarela por la que ya se importó, un archivo con la columna
+ * «cargador» entraría entero «Sin cargador» sin decirlo. Al importar se recuerda con la columna, y la pantalla dice
+ * de cuál sale el cargador (se puede quitar en «Ajustar columnas»).
  */
 export function proposeMapping(headers: readonly string[], saved: SavedImportMapping | undefined): Proposal {
   const format = detectFormat(headers);
+  const loader = headers.find((header) => normalizeHeader(header) === LOADER_HEADER) ?? null;
   if (saved !== undefined && saved.format === format && validateMapping(headers, saved.mapping).length === 0) {
-    return { format, mapping: saved.mapping, from: "guardado" };
+    const named = (saved.mapping.loader ?? "").trim() !== "";
+    return { format, mapping: named ? saved.mapping : { ...saved.mapping, loader }, from: "guardado" };
   }
   const preset = presetFor(format, headers);
-  const loader = headers.find((header) => normalizeHeader(header) === LOADER_HEADER) ?? null;
   return preset === null
     ? { format, mapping: { ...BLANK, loader }, from: "a_mano" }
     : { format, mapping: { ...preset, loader }, from: "formato" };
