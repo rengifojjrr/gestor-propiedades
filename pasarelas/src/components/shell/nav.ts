@@ -10,6 +10,7 @@ import {
   Settings,
   Split,
   Trash2,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 
@@ -30,6 +31,7 @@ export const NAV: { main: readonly NavItem[]; register: NavItem; more: readonly 
     { href: "/pasarelas/empresas", label: "Empresas", icon: Building2 },
     { href: "/pasarelas/pasarelas", label: "Pasarelas", icon: CreditCard },
     { href: "/pasarelas/cuentas", label: "Cuentas destino", icon: Landmark },
+    { href: "/pasarelas/cargadores", label: "Cargadores", icon: Users },
     { href: "/pasarelas/importar", label: "Importar", icon: FileUp },
     { href: "/pasarelas/feriados", label: "Feriados", icon: CalendarDays },
     { href: "/pasarelas/papelera", label: "Papelera", icon: Trash2 },

@@ -19,6 +19,7 @@ describe("NAV", () => {
       ["/pasarelas/empresas", "Empresas"],
       ["/pasarelas/pasarelas", "Pasarelas"],
       ["/pasarelas/cuentas", "Cuentas destino"],
+      ["/pasarelas/cargadores", "Cargadores"],
       ["/pasarelas/importar", "Importar"],
       ["/pasarelas/feriados", "Feriados"],
       ["/pasarelas/papelera", "Papelera"],

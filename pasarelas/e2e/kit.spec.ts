@@ -7,7 +7,7 @@ import { login, newUser, type TestUser } from "./helpers";
  * PASARELAS_KIT=1). Corre en los dos tamaños del proyecto: celular 390×844 y escritorio 1280×800.
  */
 const MAIN_LINKS = ["Resumen", "Cobros", "Repartos"];
-const MORE_LINKS = ["Empresas", "Pasarelas", "Cuentas destino", "Importar", "Feriados", "Papelera", "Ajustes"];
+const MORE_LINKS = ["Empresas", "Pasarelas", "Cuentas destino", "Cargadores", "Importar", "Feriados", "Papelera", "Ajustes"];
 
 const isPhone = (page: Page) => (page.viewportSize()?.width ?? 0) < 768;
 

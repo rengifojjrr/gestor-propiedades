@@ -73,6 +73,7 @@ const SCREENS: Screen[] = [
     heading: (ids) => ids.beneficiary.name,
   },
   { name: "Cuentas destino", path: () => "/pasarelas/cuentas", heading: () => "Cuentas destino" },
+  { name: "Cargadores", path: () => "/pasarelas/cargadores", heading: () => "Cargadores" },
   { name: "Feriados", path: () => "/pasarelas/feriados", heading: () => "Feriados" },
   { name: "Importar CSV", path: () => "/pasarelas/importar", heading: () => "Importar CSV" },
   { name: "Ajustes", path: () => "/ajustes", heading: () => "Ajustes" },
