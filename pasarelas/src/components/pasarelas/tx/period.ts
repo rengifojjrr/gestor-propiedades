@@ -1,13 +1,13 @@
 import { PERIOD_PRESETS } from "@/components/ui/url";
-import type { PeriodPreset } from "@/lib/pasarelas/dates";
+import { looksAhead, type PeriodPreset } from "@/lib/pasarelas/dates";
 
 /**
  * El período de la lista de Cobros, que puede ser de la venta (lo de siempre) o del depósito (`fechas=deposito`).
  * A los períodos de siempre se suman ayer y hoy y, solo por depósito —el dinero que va a caer—, mañana y los próximos
- * 7 días. Son solo de Cobros: el Resumen y Cargadores siguen con los de siempre. Lo mismo lee el servidor
- * (`parseTxFilters`): con la venta, mañana y los próximos 7 días son «Este mes». «Elegir fechas», en cambio, admite
- * fechas futuras con las dos, como antes: hay ventas registradas a futuro, y «Ver sus cobros» de una empresa llega
- * hasta la última (`companyTxHref`).
+ * 7 días. Son solo de Cobros: el Resumen y Cargadores siguen con los de siempre. Cuáles miran hacia adelante lo
+ * dice el motor (`looksAhead`), y con esa misma regla lee el servidor (`parseTxFilters`): con la venta, mañana y los
+ * próximos 7 días son «Este mes». «Elegir fechas», en cambio, admite fechas futuras con las dos, como antes: hay
+ * ventas registradas a futuro, y «Ver sus cobros» de una empresa llega hasta la última (`companyTxHref`).
  */
 
 /** La línea discreta que explica qué fecha cuenta con «El depósito». */
@@ -22,18 +22,19 @@ export const DATE_BASES = [
 
 type PeriodOption = { value: PeriodPreset; label: string };
 
-const QUICK: readonly (PeriodOption & { future: boolean })[] = [
-  { value: "ayer", label: "Ayer", future: false },
-  { value: "hoy", label: "Hoy", future: false },
-  { value: "manana", label: "Mañana", future: true },
-  { value: "proximos_7d", label: "Próximos 7 días", future: true },
+const QUICK: readonly PeriodOption[] = [
+  { value: "ayer", label: "Ayer" },
+  { value: "hoy", label: "Hoy" },
+  { value: "manana", label: "Mañana" },
+  { value: "proximos_7d", label: "Próximos 7 días" },
 ];
 
-const FUTURE = new Set<string>(QUICK.filter((option) => option.future).map((option) => option.value));
-
-/** Los períodos que se ofrecen: los de un día y los próximos 7 días primero; después, los de siempre. */
+/**
+ * Los períodos que se ofrecen: los de un día y los próximos 7 días primero; después, los de siempre. Los que miran
+ * hacia adelante, solo con el depósito.
+ */
 export function periodOptions(byDeposit: boolean): PeriodOption[] {
-  return [...QUICK.filter((option) => byDeposit || !option.future), ...PERIOD_PRESETS];
+  return [...QUICK.filter((option) => byDeposit || !looksAhead(option.value)), ...PERIOD_PRESETS];
 }
 
 /** El período que se ve: el de la URL si se ofrece con esas fechas; si no, «Este mes» (como lo lee el servidor). */
@@ -49,5 +50,5 @@ export function periodChangesOf(period: PeriodPreset): Record<string, string | n
 /** Los cambios en la URL al elegir de qué son las fechas: volver a la venta con un período futuro deja «Este mes». */
 export function basisChanges(byDeposit: boolean, period: string | null): Record<string, string | null> {
   if (byDeposit) return { fechas: "deposito" };
-  return period !== null && FUTURE.has(period) ? { fechas: null, periodo: "este_mes" } : { fechas: null };
+  return period !== null && looksAhead(period) ? { fechas: null, periodo: "este_mes" } : { fechas: null };
 }

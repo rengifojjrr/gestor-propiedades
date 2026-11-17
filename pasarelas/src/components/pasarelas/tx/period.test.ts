@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { looksAhead } from "@/lib/pasarelas/dates";
 import { basisChanges, periodChangesOf, periodOptions, shownPeriod } from "./period";
 
 describe("el período de Cobros: de la venta o del depósito", () => {
@@ -25,6 +26,17 @@ describe("el período de Cobros: de la venta o del depósito", () => {
       ["este_mes", "Este mes"],
     ]);
     expect(periodOptions(true)).toHaveLength(11);
+  });
+
+  test("los que solo salen con el depósito son los que miran adelante: la regla del motor (`looksAhead`)", () => {
+    const withSale = new Set(periodOptions(false).map((option) => option.value));
+    const onlyByDeposit = periodOptions(true)
+      .map((option) => option.value)
+      .filter((value) => !withSale.has(value));
+    expect(onlyByDeposit).toEqual(["manana", "proximos_7d"]);
+    expect(periodOptions(true).filter((option) => looksAhead(option.value)).map((option) => option.value)).toEqual(
+      onlyByDeposit,
+    );
   });
 
   test("el período que se ve: el de la URL si vale con esas fechas; si no, «Este mes», como lo lee el servidor", () => {

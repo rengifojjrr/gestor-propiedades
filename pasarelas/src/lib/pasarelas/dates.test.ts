@@ -12,6 +12,7 @@ import {
   isBusinessDay,
   isISODate,
   localInputToInstant,
+  looksAhead,
   monthKey,
   monthLabel,
   nyDate,
@@ -502,6 +503,36 @@ describe("periodRange", () => {
     expect(() => periodRange("personalizado", HOY, { from: "2026-02-30" })).toThrow(RangeError);
     expect(() => periodRange("personalizado", HOY, { to: "ayer" })).toThrow(RangeError);
     expect(() => periodRange("siempre" as PeriodPreset, HOY)).toThrow(RangeError);
+  });
+});
+
+describe("looksAhead: los períodos que miran hacia adelante (solo valen con la fecha del depósito)", () => {
+  const ALL: PeriodPreset[] = [
+    "este_mes",
+    "mes_anterior",
+    "30d",
+    "90d",
+    "365d",
+    "este_anio",
+    "ayer",
+    "hoy",
+    "manana",
+    "proximos_7d",
+    "personalizado",
+  ];
+
+  test("mañana y los próximos 7 días; ninguno más", () => {
+    expect(ALL.filter(looksAhead)).toEqual(["manana", "proximos_7d"]);
+  });
+
+  test("son justo los que pasan de hoy", () => {
+    const HOY = "2026-11-17";
+    const ahead = ALL.filter((preset) => preset !== "personalizado" && periodRange(preset, HOY).to > HOY);
+    expect(ahead).toEqual(ALL.filter(looksAhead));
+  });
+
+  test("lo que no es un período no mira adelante", () => {
+    for (const other of ["", "siempre", "MANANA", "mañana", "manana "]) expect(looksAhead(other)).toBe(false);
   });
 });
 

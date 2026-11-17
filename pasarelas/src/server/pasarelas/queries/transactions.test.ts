@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { companyTxHref } from "@/components/pasarelas/companies/txHref";
+import { looksAhead, periodRange, type PeriodPreset } from "@/lib/pasarelas";
 import type { Db } from "../dto";
 import type { CompanyTotal } from "./companies";
 import { applyTxFilters, cleanSearch, leanTx, listTx, parseTxFilters } from "./transactions";
@@ -97,6 +98,26 @@ describe("parseTxFilters", () => {
       expect(filtersOf({ periodo: "manana" })).toEqual(THIS_MONTH);
       expect(filtersOf({ periodo: "proximos_7d" })).toEqual(THIS_MONTH);
       expect(filtersOf({ fechas: "venta", periodo: "manana" })).toEqual(THIS_MONTH);
+    });
+
+    test("una sola regla (`looksAhead` del motor): con la venta, lo que mira adelante es este mes; lo demás, su rango", () => {
+      const presets: PeriodPreset[] = [
+        "este_mes",
+        "mes_anterior",
+        "30d",
+        "90d",
+        "365d",
+        "este_anio",
+        "ayer",
+        "hoy",
+        "manana",
+        "proximos_7d",
+      ];
+      for (const periodo of presets) {
+        const range = periodRange(periodo, TODAY);
+        expect(filtersOf({ ...BY_DEPOSIT, periodo })).toEqual({ ...range, dateBasis: "deposito" });
+        expect(filtersOf({ periodo })).toEqual(looksAhead(periodo) ? THIS_MONTH : range);
+      }
     });
 
     test("fechas elegidas a futuro: pasan con las dos (con la venta, hay cobros registrados a futuro)", () => {

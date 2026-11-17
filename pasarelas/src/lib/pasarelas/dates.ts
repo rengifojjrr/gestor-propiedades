@@ -140,6 +140,18 @@ export type PeriodPreset =
   | "proximos_7d"
   | "personalizado";
 
+/**
+ * Los períodos que miran hacia adelante: «Mañana» y «Próximos 7 días». Solo valen con la fecha del depósito (el
+ * dinero que va a caer); con la de la venta, rige «Este mes». La regla vive solo aquí: la usan la lectura de la URL
+ * (`parseTxFilters`) y el selector de Cobros (`tx/period.ts`).
+ */
+const AHEAD: ReadonlySet<string> = new Set<PeriodPreset>(["manana", "proximos_7d"]);
+
+/** ¿Es uno de los períodos que miran hacia adelante? Lo demás (también lo que no es un período) no. */
+export function looksAhead(period: string): boolean {
+  return AHEAD.has(period);
+}
+
 const ROLLING_DAYS = { "30d": 30, "90d": 90, "365d": 365 } as const;
 /** Los períodos de un solo día, contados desde hoy. */
 const ONE_DAY = { ayer: -1, hoy: 0, manana: 1 } as const;

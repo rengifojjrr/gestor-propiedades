@@ -113,8 +113,9 @@ Qué es y por qué: [`docs/PASARELAS.md`](docs/PASARELAS.md). Diseño: `docs/sup
     - La fecha del depósito se define solo en `depositConditions` (`queries/transactions.ts`): `deposited_on` o, sin
       depositar, `estimated_deposit_on` (el último día de la ventana); sin ninguna, no entra. Todo lo del filtro la
       toma de `applyTxFilters`: no la repitas en otra lectura.
-    - Que `manana` y `proximos_7d` sin `fechas=deposito` valgan «este mes» está escrito dos veces: `FUTURE_PERIODS`
-      (`parseTxFilters`) y `future` (`tx/period.ts`). Si cambias una, cambia la otra.
+    - Qué períodos miran hacia adelante (`manana` y `proximos_7d`, que sin `fechas=deposito` valen «este mes») lo
+      dice solo `looksAhead` (`dates.ts`, del motor): lo usan `parseTxFilters` y el selector de Cobros
+      (`tx/period.ts`). No lo repitas.
     - «Pagar…» escribe solo con `recordPayouts` → `checkOwed` → `pay_record_payouts`, y paga la falta neta (lo pagado
       de más se descuenta). Con más de 500 cobros, `payoutChunks` (`tx/payoutChunks.ts`, donde viven también
       `MAX_PAYOUT_ITEMS` y `MAX_PAYOUTS`) los parte en varios pagos de la misma llamada, con lo descontado aparte.

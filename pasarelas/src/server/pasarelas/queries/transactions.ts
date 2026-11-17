@@ -1,6 +1,6 @@
 import "server-only";
 import { PostgrestError } from "@supabase/supabase-js";
-import { ZERO, dec, isISODate, parseMoney, periodRange, toMoney } from "@/lib/pasarelas";
+import { ZERO, dec, isISODate, looksAhead, parseMoney, periodRange, toMoney } from "@/lib/pasarelas";
 import type {
   Currency,
   DisplayStatus,
@@ -93,8 +93,6 @@ const PERIODS: Record<PeriodPreset, true> = {
   proximos_7d: true,
   personalizado: true,
 };
-/** Los períodos que miran hacia adelante: solo tienen sentido con la fecha del depósito. */
-const FUTURE_PERIODS: ReadonlySet<PeriodPreset> = new Set(["manana", "proximos_7d"]);
 const DATE_BASES: Record<NonNullable<TxFilters["dateBasis"]>, true> = { deposito: true };
 const STATUSES: Record<NonNullable<TxFilters["status"]>, true> = {
   fallido: true,
@@ -168,7 +166,8 @@ export function parseTxFilters(
 
   const dateBasis = oneOf(DATE_BASES, "fechas");
   const preset = oneOf(PERIODS, "periodo") ?? "este_mes";
-  const period = periodRange(dateBasis === undefined && FUTURE_PERIODS.has(preset) ? "este_mes" : preset, today, {
+  // Lo que mira hacia adelante solo vale con la fecha del depósito (`looksAhead`, la regla del motor).
+  const period = periodRange(dateBasis === undefined && looksAhead(preset) ? "este_mes" : preset, today, {
     from: date("desde"),
     to: date("hasta"),
   });
