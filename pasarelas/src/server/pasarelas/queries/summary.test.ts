@@ -91,6 +91,21 @@ describe("summaryScope", () => {
     expect(scope.filters).toEqual({ from: "2026-11-01", to: "2026-11-10" });
     expect(scope.requestedCurrency).toBeUndefined();
   });
+
+  it("D3: un período que su selector no ofrece (ayer, hoy, mañana…) es «Este mes», como dice el selector", () => {
+    for (const periodo of ["ayer", "hoy", "manana", "proximos_7d"]) {
+      for (const fechas of [{}, { fechas: "deposito" }]) {
+        const scope = summaryScope({ periodo, ...fechas, empresa: COMPANY }, "2026-11-10");
+        expect(scope.filters).toEqual({ from: "2026-11-01", to: "2026-11-10", companyId: COMPANY });
+        // Sus enlaces a la lista tampoco lo llevan: la lista dice lo mismo que el Resumen.
+        expect(scope.query.toString()).toBe(`empresa=${COMPANY}`);
+      }
+    }
+    // Los de siempre, igual que antes, también con `fechas` en la URL (el Resumen cuenta la fecha de la venta).
+    const usual = summaryScope({ periodo: "30d", fechas: "deposito" }, "2026-11-10");
+    expect(usual.filters).toEqual({ from: "2026-10-12", to: "2026-11-10" });
+    expect(usual.query.toString()).toBe("periodo=30d");
+  });
 });
 
 describe("chooseCurrency", () => {

@@ -1,5 +1,6 @@
 import "server-only";
 import { PostgrestError } from "@supabase/supabase-js";
+import { PERIOD_PRESETS } from "@/components/ui/url";
 import { ZERO, daysBetween, dec, isISODate, looksAhead, parseMoney, periodRange, toMoney } from "@/lib/pasarelas";
 import type {
   Currency,
@@ -196,6 +197,21 @@ export function parseTxFilters(
     sort: oneOf(SORTS, "orden") ?? "fecha_desc",
     page: PAGE.test(page) ? Number(page) : 1,
   };
+}
+
+type SearchParams = Record<string, string | string[] | undefined>;
+
+/**
+ * La URL de una pantalla con el selector de período de siempre (`UrlPeriod`: el Resumen, Cargadores y la ficha de una
+ * empresa), sin lo que ese selector no ofrece: `fechas` (cuentan siempre la fecha de la venta) y un `periodo` que no
+ * está en `PERIOD_PRESETS` (ayer, hoy, mañana, los próximos 7 días, que son solo de Cobros). Sin él rige «Este mes»,
+ * lo mismo que muestra el selector, y así la pantalla filtra lo que dice. Lo que devuelve sirve también para sus
+ * enlaces a la lista: llevan el mismo período. Un `periodo` repetido decide por el primero, como `parseTxFilters`.
+ */
+export function usualPeriodParams(sp: SearchParams): SearchParams {
+  const { fechas: _basis, periodo, ...rest } = sp;
+  const first = Array.isArray(periodo) ? periodo[0] : periodo;
+  return PERIOD_PRESETS.some((preset) => preset.value === first) ? { ...rest, periodo } : rest;
 }
 
 /**

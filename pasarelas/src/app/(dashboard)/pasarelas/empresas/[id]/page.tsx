@@ -12,7 +12,7 @@ import { requireSession } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { companyLogoUrls, getCompany } from "@/server/pasarelas/queries/companies";
 import { getPayConfig } from "@/server/pasarelas/queries/session-config";
-import { leanTx, parseTxFilters } from "@/server/pasarelas/queries/transactions";
+import { leanTx, parseTxFilters, usualPeriodParams } from "@/server/pasarelas/queries/transactions";
 
 export const metadata: Metadata = { title: "Empresa" };
 
@@ -28,8 +28,9 @@ export default async function EmpresaPage({ params, searchParams }: PageProps<"/
   if (company === null) notFound();
 
   const today = todayNY(new Date());
-  // Del filtro de la URL solo vale el período: la empresa es esta.
-  const { from, to } = parseTxFilters(sp, today).filters;
+  // Del filtro de la URL solo vale el período, uno de los que ofrece su selector (`usualPeriodParams`): la empresa es
+  // esta.
+  const { from, to } = parseTxFilters(usualPeriodParams(sp), today).filters;
   const [rows, logos] = await Promise.all([
     leanTx(supabase, { companyId: company.id, from, to }, today, cfg),
     companyLogoUrls(supabase, company.logoPath === null ? [] : [company.logoPath]),

@@ -3,7 +3,7 @@ import { hrefWith } from "@/components/ui/url";
 import { summarize } from "@/lib/pasarelas";
 import type { Currency, ISODate, Totals } from "@/lib/pasarelas";
 import type { Db } from "../dto";
-import { NO_LOADER, leanTx, parseTxFilters, type TxFilters } from "./transactions";
+import { NO_LOADER, leanTx, parseTxFilters, usualPeriodParams, type TxFilters } from "./transactions";
 
 /**
  * Lo que pinta la pantalla de Cargadores: cada cargador con su nota, cuántos cobros tiene (lo que decide si se puede
@@ -85,9 +85,11 @@ async function salesOf(supabase: Db, filters: TxFilters, today: ISODate): Promis
 
 /**
  * El reporte del período que pide la URL (`periodo`, `desde`, `hasta`, como el Resumen; sin ellos, este mes): cada
- * cargador con sus ventas y su enlace, y la fila «Sin cargador». Una lectura por fila, todas a la vez.
+ * cargador con sus ventas y su enlace, y la fila «Sin cargador». Una lectura por fila, todas a la vez. Como en el
+ * Resumen, el período es solo uno de los que ofrece su selector (`usualPeriodParams`), y el enlace lleva ese mismo.
  */
-export async function loadLoaderReport(supabase: Db, sp: SearchParams, today: ISODate): Promise<LoaderReport> {
+export async function loadLoaderReport(supabase: Db, url: SearchParams, today: ISODate): Promise<LoaderReport> {
+  const sp = usualPeriodParams(url);
   // `parseTxFilters` siempre trae el período (sin `periodo`, este mes).
   const { from = today, to = today } = parseTxFilters(sp, today).filters;
   const query = new URLSearchParams();

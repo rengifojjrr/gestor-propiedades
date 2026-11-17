@@ -3,7 +3,15 @@ import { companyTxHref } from "@/components/pasarelas/companies/txHref";
 import { looksAhead, periodRange, todayNY, type PeriodPreset } from "@/lib/pasarelas";
 import type { Db } from "../dto";
 import type { CompanyTotal } from "./companies";
-import { applyTxFilters, cleanSearch, leanTx, listTx, pageToday, parseTxFilters } from "./transactions";
+import {
+  applyTxFilters,
+  cleanSearch,
+  leanTx,
+  listTx,
+  pageToday,
+  parseTxFilters,
+  usualPeriodParams,
+} from "./transactions";
 
 /** Viernes 13 de noviembre de 2026. */
 const TODAY = "2026-11-13";
@@ -306,6 +314,26 @@ describe("parseTxFilters", () => {
 
   test("nunca filtra por la papelera: eso lo decide la pantalla, no la URL", () => {
     expect("trashed" in filtersOf({ trashed: "true", papelera: "1" })).toBe(false);
+  });
+});
+
+describe("usualPeriodParams: la URL de una pantalla con el selector de período de siempre", () => {
+  test("los períodos de siempre y lo demás pasan tal cual; `fechas` no (esas pantallas cuentan la venta)", () => {
+    const sp = { periodo: "personalizado", desde: "2026-10-01", hasta: "2026-10-31", empresa: ID, fechas: "deposito" };
+    expect(usualPeriodParams(sp)).toEqual({ periodo: "personalizado", desde: "2026-10-01", hasta: "2026-10-31", empresa: ID });
+    for (const periodo of ["este_mes", "mes_anterior", "30d", "90d", "365d", "este_anio"]) {
+      expect(usualPeriodParams({ periodo })).toEqual({ periodo });
+    }
+  });
+
+  test("lo que su selector no ofrece se quita: rige «Este mes», lo mismo que dice el selector", () => {
+    for (const periodo of ["ayer", "hoy", "manana", "proximos_7d", "siempre", ""]) {
+      expect(usualPeriodParams({ periodo, empresa: ID })).toEqual({ empresa: ID });
+      expect(filtersOf(usualPeriodParams({ periodo, fechas: "deposito" }))).toEqual(THIS_MONTH);
+    }
+    // Repetido, vale el primero, como en `parseTxFilters`.
+    expect(usualPeriodParams({ periodo: ["hoy", "30d"] })).toEqual({});
+    expect(usualPeriodParams({ periodo: ["30d", "hoy"] })).toEqual({ periodo: ["30d", "hoy"] });
   });
 });
 

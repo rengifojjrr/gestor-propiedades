@@ -34,7 +34,7 @@ import type {
 import { LEAN_TX_COLUMNS, toLeanTx, type Db } from "../dto";
 import { SAVE_BATCH_SIZE } from "../tx-save";
 import { EXACT_COUNT, readAll as readAllRows, type PageRead } from "./paging";
-import { chunked, leanTx, parseTxFilters, type TxFilters } from "./transactions";
+import { chunked, leanTx, parseTxFilters, usualPeriodParams, type TxFilters } from "./transactions";
 
 /**
  * Lo que pinta el Resumen (`/pasarelas`). Arriba, «Dinero en camino»: lo que está por caer ahora mismo, sin
@@ -143,13 +143,16 @@ export type SummaryView = {
 
 /**
  * Lo que filtra el Resumen: período, empresa, canal y pasarela (con `parseTxFilters`, la misma lectura que la
- * lista de cobros), y la moneda pedida. Lo demás que traiga la URL (estado, cuenta, búsqueda…) no cuenta aquí.
- * `query` son esas claves tal como llegaron, para que un enlace a la lista vea exactamente los mismos cobros.
+ * lista de cobros), y la moneda pedida. Lo demás que traiga la URL (estado, cuenta, búsqueda…) no cuenta aquí. El
+ * período es solo uno de los que ofrece su selector, por la fecha de la venta (`usualPeriodParams`): uno de Cobros
+ * escrito a mano («Ayer», «Hoy»…) es «Este mes», lo que dice el selector. `query` son esas claves tal como llegaron
+ * (sin ese período), para que un enlace a la lista vea exactamente los mismos cobros.
  */
 export function summaryScope(
-  sp: SearchParams,
+  url: SearchParams,
   today: ISODate,
 ): { filters: TxFilters; requestedCurrency: Currency | undefined; query: URLSearchParams } {
+  const sp = usualPeriodParams(url);
   const { filters } = parseTxFilters(sp, today);
   const { from, to, companyId, channelId, gatewayId, currency } = filters;
   const scoped: TxFilters = Object.fromEntries(

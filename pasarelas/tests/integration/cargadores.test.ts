@@ -18,7 +18,7 @@ import { deleteLoader, saveLoader, setLoaderActive } from "@/server/pasarelas/op
 import { assignLoaderTx, createTx, editTx, trashTx } from "@/server/pasarelas/ops/transactions";
 import { loadPayConfig } from "@/server/pasarelas/queries/config";
 import { getImportMappings } from "@/server/pasarelas/queries/import";
-import { listLoaders, loadLoaderReport } from "@/server/pasarelas/queries/loaders";
+import { listLoaders, loadLoaderReport, type LoaderReport } from "@/server/pasarelas/queries/loaders";
 import { loadSummary } from "@/server/pasarelas/queries/summary";
 import { getTx, leanTx, listTx, parseTxFilters } from "@/server/pasarelas/queries/transactions";
 import {
@@ -396,6 +396,31 @@ describe("C4: el reporte por cargador del período", () => {
     // El enlace trae exactamente lo que suma su fila.
     const deDos = parseTxFilters({ periodo: "este_mes", cargador: dos }, TODAY).filters;
     expect(totalsOf(await leanTx(user.client, deDos, TODAY)).USD?.count).toBe(3);
+  });
+
+  it("D3: «Ayer» u «Hoy» escritos a mano en la URL valen «Este mes», como dice su selector, y sus enlaces también", async () => {
+    const esteMes = await loadLoaderReport(user.client, ESTE_MES, TODAY);
+    const sales = (report: LoaderReport) => [...report.loaders.map((loader) => loader.sales), report.unassigned.sales];
+    for (const periodo of ["ayer", "hoy", "manana", "proximos_7d"]) {
+      for (const fechas of [{}, { fechas: "deposito" }]) {
+        const report = await loadLoaderReport(user.client, { periodo, ...fechas }, TODAY);
+        expect(report.period).toEqual(esteMes.period);
+        expect(sales(report)).toEqual(sales(esteMes));
+        // El enlace a la lista no lleva ese período: la lista también dice «Este mes».
+        expect(report.unassigned.href).toBe("/pasarelas/cobros?cargador=sin");
+      }
+    }
+  });
+
+  it("D3: el Resumen, igual: lo que filtra es lo que dice su selector, y lo que enlaza también", async () => {
+    const cfg = await loadPayConfig(user.client);
+    const esteMes = await loadSummary(user.client, ESTE_MES, TODAY, cfg);
+    for (const periodo of ["ayer", "hoy"]) {
+      const view = await loadSummary(user.client, { periodo }, TODAY, cfg);
+      expect(view.period).toEqual(esteMes.period);
+      expect(view.summary).toEqual(esteMes.summary);
+      expect(view.links.pending).not.toContain("periodo=");
+    }
   });
 
   it("las cifras cuadran con el Resumen del mismo período: cada una, sumada entre cargadores y «Sin cargador»", async () => {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { extractText, getDocumentProxy } from "unpdf";
-import { addDays, todayNY } from "../src/lib/pasarelas";
+import { addDays, formatDate, todayNY } from "../src/lib/pasarelas";
 import { signInAal1, unwrap, type Db } from "../tests/integration/helpers";
 import { expectNoHorizontalOverflow } from "./axe";
 import { waitForStillToasts } from "./avisos";
@@ -400,6 +400,55 @@ test.describe("el reparto del filtro de Cobros", () => {
     await expect(covered.filter({ hasText: `${tag}-1` })).toHaveText(new RegExp(`^${tag}-1.*descuento de \\$50,00$`));
     await expect(covered.filter({ hasText: `${tag}-2` })).toContainText("$485,40");
     await expect(settlements).not.toContainText("-$50,00");
+    await checkScreen(page);
+  });
+
+  test("D3: «Ayer» escrito a mano en el Resumen, Cargadores o la ficha de una empresa vale lo que dice su selector", async ({
+    page,
+    isMobile,
+  }) => {
+    const book = await setupBook();
+    const today = todayNY(new Date());
+    const yesterday = addDays(today, -1);
+    const tag = `D3-${randomUUID().slice(0, 6)}`;
+    await book.charge({ gross: "100.00", on: today, gateway: "stripe", reference: `${tag}-hoy` });
+    await book.charge({ gross: "200.00", on: yesterday, gateway: "stripe", reference: `${tag}-ayer` });
+    // «Este mes», lo que dicen sus selectores: los dos (o solo el de hoy, si hoy es día 1). «Ayer» sería el de 200,00.
+    const sameMonth = yesterday.slice(0, 7) === today.slice(0, 7);
+    const [count, gross] = sameMonth ? ["2", "$300,00"] : ["1", "$100,00"];
+    const range = `Del ${formatDate(`${today.slice(0, 8)}01`)} al ${formatDate(today)}`;
+    await login(page, book.user);
+
+    // El Resumen: el selector dice «Este mes» y las cifras y el período son los de este mes.
+    await page.goto("/pasarelas?periodo=ayer");
+    const figures = page.getByRole("region", { name: "Cifras del período" });
+    await expect(figures.getByRole("group", { name: "Cobros", exact: true })).toHaveText(new RegExp(`^Cobros\\s*${count}$`));
+    await expect(figures.getByRole("group", { name: "Bruto", exact: true })).toContainText(gross);
+    await expect(page.getByText(range)).toBeVisible();
+    if (isMobile) await page.getByRole("button", { name: /^Filtros Este mes/ }).click();
+    await expect(page.getByLabel("Período", { exact: true })).toHaveValue("este_mes");
+    await checkScreen(page);
+
+    // Cargadores: lo mismo, y su enlace lleva a la lista con ese mismo período (sin «ayer»).
+    await page.goto("/pasarelas/cargadores?periodo=ayer");
+    await expect(page.getByLabel("Período", { exact: true })).toHaveValue("este_mes");
+    await expect(page.getByText(`${range}.`)).toBeVisible();
+    const loader = page.getByRole("region", { name: "Cargador Uno" });
+    await expect(loader.getByRole("group", { name: "Cobros", exact: true })).toHaveText(new RegExp(`^Cobros\\s*${count}$`));
+    await expect(loader.getByRole("group", { name: "Bruto", exact: true })).toContainText(gross);
+    await expect(loader.getByRole("link", { name: "Ver los cobros de Cargador Uno" })).toHaveAttribute(
+      "href",
+      `/pasarelas/cobros?cargador=${book.loaderId}`,
+    );
+    await checkScreen(page);
+
+    // La ficha de la empresa: lo facturado en el período es lo de este mes.
+    const company = unwrap(await book.db.from("pay_companies").select("id").eq("name", "Tienda Demo").single(), "empresa");
+    await page.goto(`/pasarelas/empresas/${company.id}?periodo=ayer`);
+    await expect(page.getByLabel("Período", { exact: true })).toHaveValue("este_mes");
+    await expect(page.getByRole("region", { name: "Lo facturado" })).toContainText(
+      `Esta empresa ha facturado ${gross} en el período y $300,00 en total.`,
+    );
     await checkScreen(page);
   });
 });
