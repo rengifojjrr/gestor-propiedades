@@ -3,6 +3,7 @@ import { ZERO } from "@/lib/pasarelas/decimal";
 import { cmp, formatMoney, neg } from "@/lib/pasarelas/money";
 import type { PayoutStatus } from "@/lib/pasarelas/payouts";
 import type { Currency, ISODate, Money } from "@/lib/pasarelas/types";
+import { cobros } from "./plural";
 
 /**
  * Los textos de los pagos a las partes del reparto: la marca de la lista y lo que dice «Deshacer». Funciones puras:
@@ -84,4 +85,17 @@ export function undoPayoutText(p: UndoPayment): string {
   const covered = [`este (${part(p.here)})`, ...p.others.map((tx) => `${coveredTxName(tx)} (${part(tx.amount)})`)];
   const sentence = `${head.charAt(0).toUpperCase()}${head.slice(1)}`;
   return `${sentence} cubre ${count} cobros, y se desmarcan ${all}: ${listed(covered)}. No se puede deshacer.`;
+}
+
+/**
+ * Lo que dice «Pagar…» del «Reparto del filtro» cuando en algunos cobros a la parte se le pagó de más: cuánto, y
+ * cómo se descuenta. Hasta 500 cobros, de este mismo pago. Con más (`apart`), `payoutChunks` lo registra en un pago
+ * aparte, de monto negativo, que en la ficha de la parte sale como «Devolución»: lo dice antes de registrarlo.
+ */
+export function overpaidText(overpaid: { count: number; amount: Money; currency: Currency }, apart: boolean): string {
+  const amount = formatMoney(overpaid.amount, overpaid.currency);
+  const head = `En ${cobros(overpaid.count)} del filtro se le pagó de más ${amount}`;
+  return apart
+    ? `${head}: se descuenta del total y va en un pago aparte, que en su ficha sale como «Devolución».`
+    : `${head}: se descuenta de este pago.`;
 }

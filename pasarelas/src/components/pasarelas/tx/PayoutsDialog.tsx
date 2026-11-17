@@ -10,6 +10,7 @@ import type { NamedOwedGroup } from "@/server/pasarelas/queries/settlements";
 import { ActionError, DialogActionError, useRefreshOnClose } from "../ActionError";
 import { RETRY_TEXT, callAction, callActionOr, failureOf, type ActionFailure } from "../callAction";
 import { MAX_PAYOUT_ITEMS, payoutChunks } from "./payoutChunks";
+import { overpaidText } from "./payoutText";
 import { cobros } from "./plural";
 import { tooManyForSplitText } from "./splitText";
 
@@ -24,8 +25,8 @@ import { tooManyForSplitText } from "./splitText";
  *
  * El mismo diálogo paga a UNA parte desde el «Reparto del filtro» (`fromFilter`): lo que le falta en los cobros del
  * filtro, la misma «falta» del resumen (lo que se le pagó de más en alguno se descuenta, como aquí, y se dice). Un pago
- * de más de 500 cobros se registra como varios de hasta 500 (lo que se descuenta, aparte), todos en la misma llamada:
- * quedan todos o ninguno.
+ * de más de 500 cobros se registra como varios de hasta 500 (lo que se descuenta, aparte, y también se dice), todos en
+ * la misma llamada: quedan todos o ninguno.
  */
 
 const DATE_TEXT = "Elige la fecha del pago.";
@@ -174,6 +175,8 @@ function PayoutsForm({ ids, query, beneficiaryId, currency, name, onClose, onDon
   }, [ids, query, beneficiaryId, currency, name]);
 
   const owes = (choices ?? []).filter((choice) => cmp(choice.owed, ZERO) > 0);
+  // Con más de 500 cobros, `payoutChunks` deja lo que se descuenta en un pago aparte.
+  const discountApart = owes.some((choice) => payoutChunks(choice.items).length > 1);
   const returns = (choices ?? []).filter((choice) => cmp(choice.owed, ZERO) < 0);
   const picked = (choices ?? []).filter((choice) => chosen.has(choice.key));
   // Un pago por cada 500 cobros de cada parte elegida: todos van en la misma llamada.
@@ -274,10 +277,7 @@ function PayoutsForm({ ids, query, beneficiaryId, currency, name, onClose, onDon
         </fieldset>
       )}
       {loaded.overpaid === null ? null : (
-        <p className="text-sm text-ink-soft">
-          En {cobros(loaded.overpaid.count)} del filtro se le pagó de más{" "}
-          <Money value={loaded.overpaid.amount} currency={loaded.overpaid.currency} />: se descuenta de este pago.
-        </p>
+        <p className="text-sm text-ink-soft">{overpaidText(loaded.overpaid, discountApart)}</p>
       )}
       {payouts.length > picked.length ? (
         <Alert tone="info">

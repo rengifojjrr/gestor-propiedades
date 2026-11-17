@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PayoutStatus } from "@/lib/pasarelas";
-import { coveredTxName, isDiscount, payoutMarkText, undoPayoutText } from "./payoutText";
+import { coveredTxName, isDiscount, overpaidText, payoutMarkText, undoPayoutText } from "./payoutText";
 
 const part = (state: "pagado" | "falta" | "de_mas") => ({
   beneficiaryId: "x",
@@ -98,7 +98,8 @@ describe("undoPayoutText: qué desmarca «Deshacer»", () => {
     });
 
     it("desde otro cobro del mismo pago: el descontado también se dice como descuento, no como «-$50,00»", () => {
-      const fromSecond = { ...discounted, here: "485.40", others: [covered("ref-1", "-50.00"), covered("ref-3", "96.95")] };
+      const others = [covered("ref-1", "-50.00"), covered("ref-3", "96.95")];
+      const fromSecond = { ...discounted, here: "485.40", others };
       expect(undoPayoutText(fromSecond)).toBe(
         "El pago a Socio Uno de $532,35 del mar 17 nov 2026 cubre 3 cobros, y se desmarcan los tres: este ($485,40), " +
           "el cobro ref-1 (descuento de $50,00) y el cobro ref-3 ($96,95). No se puede deshacer.",
@@ -121,5 +122,20 @@ describe("isDiscount: lo de un cobro que va en contra de su pago", () => {
     expect(isDiscount("532.35", "485.40")).toBe(false);
     expect(isDiscount("-40.00", "10.00")).toBe(true);
     expect(isDiscount("-40.00", "-50.00")).toBe(false);
+  });
+});
+
+describe("overpaidText: lo pagado de más que «Pagar…» descuenta, dicho como se registra", () => {
+  it("hasta 500 cobros va todo en un pago: se descuenta de este pago", () => {
+    expect(overpaidText({ count: 1, amount: "50.00", currency: "USD" }, false)).toBe(
+      "En 1 cobro del filtro se le pagó de más $50,00: se descuenta de este pago.",
+    );
+  });
+
+  it("con más de 500, se descuenta del total en un pago aparte, que en su ficha sale como «Devolución»", () => {
+    expect(overpaidText({ count: 2, amount: "56.10", currency: "USD" }, true)).toBe(
+      "En 2 cobros del filtro se le pagó de más $56,10: se descuenta del total y va en un pago aparte, que en su " +
+        "ficha sale como «Devolución».",
+    );
   });
 });
