@@ -440,6 +440,20 @@ describe("periodRange", () => {
     expect(periodRange("este_anio", HOY)).toEqual({ from: "2026-01-01", to: HOY });
   });
 
+  test("ayer, hoy y mañana: un solo día, también al cruzar de mes o de año", () => {
+    expect(periodRange("ayer", HOY)).toEqual({ from: "2026-11-08", to: "2026-11-08" });
+    expect(periodRange("hoy", HOY)).toEqual({ from: HOY, to: HOY });
+    expect(periodRange("manana", HOY)).toEqual({ from: "2026-11-10", to: "2026-11-10" });
+    expect(periodRange("ayer", "2027-01-01")).toEqual({ from: "2026-12-31", to: "2026-12-31" });
+    expect(periodRange("manana", "2026-12-31")).toEqual({ from: "2027-01-01", to: "2027-01-01" });
+  });
+
+  test("proximos_7d: hoy y los 6 días siguientes", () => {
+    expect(periodRange("proximos_7d", HOY)).toEqual({ from: HOY, to: "2026-11-15" });
+    expect(daysBetween(HOY, periodRange("proximos_7d", HOY).to)).toBe(6);
+    expect(periodRange("proximos_7d", "2026-12-28")).toEqual({ from: "2026-12-28", to: "2027-01-03" });
+  });
+
   test("personalizado con las dos fechas: esas, intercambiadas si vienen al revés", () => {
     expect(periodRange("personalizado", HOY, { from: "2026-02-01", to: "2026-03-15" })).toEqual({
       from: "2026-02-01",

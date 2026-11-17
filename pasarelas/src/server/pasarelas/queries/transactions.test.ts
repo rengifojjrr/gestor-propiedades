@@ -61,6 +61,53 @@ describe("parseTxFilters", () => {
     });
   });
 
+  describe("fechas de la venta o del depósito", () => {
+    const BY_DEPOSIT = { fechas: "deposito" };
+
+    test("`fechas=deposito`: el período es de la fecha del depósito; otro valor, de la venta (no se dice)", () => {
+      expect(filtersOf(BY_DEPOSIT)).toEqual({ ...THIS_MONTH, dateBasis: "deposito" });
+      for (const other of ["venta", "", "DEPOSITO", "depósito", "deposito "]) {
+        expect(filtersOf({ fechas: other })).toEqual(THIS_MONTH);
+      }
+      expect(filtersOf({ fechas: ["deposito", "venta"] })).toEqual({ ...THIS_MONTH, dateBasis: "deposito" });
+      expect(filtersOf({ fechas: ["venta", "deposito"] })).toEqual(THIS_MONTH);
+    });
+
+    test("ayer y hoy valen con las dos fechas", () => {
+      for (const basis of [{}, BY_DEPOSIT]) {
+        const more = "fechas" in basis ? { dateBasis: "deposito" } : {};
+        expect(filtersOf({ ...basis, periodo: "ayer" })).toEqual({ from: "2026-11-12", to: "2026-11-12", ...more });
+        expect(filtersOf({ ...basis, periodo: "hoy" })).toEqual({ from: TODAY, to: TODAY, ...more });
+      }
+    });
+
+    test("mañana y los próximos 7 días, solo con el depósito; con la venta, este mes", () => {
+      expect(filtersOf({ ...BY_DEPOSIT, periodo: "manana" })).toEqual({
+        from: "2026-11-14",
+        to: "2026-11-14",
+        dateBasis: "deposito",
+      });
+      expect(filtersOf({ ...BY_DEPOSIT, periodo: "proximos_7d" })).toEqual({
+        from: TODAY,
+        to: "2026-11-19",
+        dateBasis: "deposito",
+      });
+      expect(filtersOf({ periodo: "manana" })).toEqual(THIS_MONTH);
+      expect(filtersOf({ periodo: "proximos_7d" })).toEqual(THIS_MONTH);
+      expect(filtersOf({ fechas: "venta", periodo: "manana" })).toEqual(THIS_MONTH);
+    });
+
+    test("fechas elegidas a futuro: pasan con las dos (con la venta, hay cobros registrados a futuro)", () => {
+      const custom = { periodo: "personalizado", desde: "2026-11-16", hasta: "2026-11-30" };
+      expect(filtersOf({ ...BY_DEPOSIT, ...custom })).toEqual({
+        from: "2026-11-16",
+        to: "2026-11-30",
+        dateBasis: "deposito",
+      });
+      expect(filtersOf(custom)).toEqual({ from: "2026-11-16", to: "2026-11-30" });
+    });
+  });
+
   describe("filtros por id", () => {
     test("empresa, canal, pasarela y cuenta", () => {
       const other = "11111111-1111-1111-1111-111111111111";
@@ -265,6 +312,40 @@ describe("applyTxFilters", () => {
     expect(loaderCalls({ loaderId: ID })).toEqual([["eq", "loader_id", ID]]);
     expect(loaderCalls({ loaderId: null })).toEqual([["is", "loader_id", null]]);
     expect(loaderCalls({})).toEqual([]);
+  });
+
+  test("con la venta, el período es la fecha del cobro", () => {
+    const calls = applyTxFilters(new Recorder(), THIS_MONTH, TODAY).calls;
+    expect(calls).toEqual([
+      ["is", "deleted_at", null],
+      ["gte", "occurred_on", THIS_MONTH.from],
+      ["lte", "occurred_on", THIS_MONTH.to],
+    ]);
+  });
+
+  test("con el depósito: la fecha en que se marcó depositado o, si no lo está, la estimada (la más tardía)", () => {
+    const calls = applyTxFilters(new Recorder(), { ...THIS_MONTH, dateBasis: "deposito" }, TODAY).calls;
+    expect(calls).toEqual([
+      ["is", "deleted_at", null],
+      [
+        "or",
+        "and(deposited_on.gte.2026-11-01,deposited_on.lte.2026-11-13)," +
+          "and(deposited_on.is.null,estimated_deposit_on.gte.2026-11-01,estimated_deposit_on.lte.2026-11-13)",
+      ],
+    ]);
+  });
+
+  test("con el depósito y una sola punta del período, solo esa", () => {
+    const only = (filters: Parameters<typeof applyTxFilters>[1]) =>
+      applyTxFilters(new Recorder(), { ...filters, dateBasis: "deposito" }, TODAY).calls.slice(1);
+    expect(only({ from: "2026-11-14" })).toEqual([
+      ["or", "and(deposited_on.gte.2026-11-14),and(deposited_on.is.null,estimated_deposit_on.gte.2026-11-14)"],
+    ]);
+    expect(only({ to: "2026-11-14" })).toEqual([
+      ["or", "and(deposited_on.lte.2026-11-14),and(deposited_on.is.null,estimated_deposit_on.lte.2026-11-14)"],
+    ]);
+    // Sin período no hay nada que filtrar por fecha.
+    expect(only({})).toEqual([]);
   });
 
   test("el cargador se suma a los demás filtros, sin quitar ninguno", () => {

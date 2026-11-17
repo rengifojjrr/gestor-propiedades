@@ -20,8 +20,8 @@ export type PdfRequest = { kind: "elegidos"; ids: string[] } | { kind: "filtro";
 /**
  * Lo que pide la URL de `/pasarelas/cobros/pdf`:
  * - con `id` (uno por cobro), los elegidos: cada id válido una vez, en su orden. Lo que no es un id se ignora;
- * - sin `id`, las mismas claves que la lista y el CSV (`parseTxFilters`; la página no cuenta). Además
- *   `periodo=hoy`: solo el día de hoy en Nueva York (`desde` y `hasta` no cuentan).
+ * - sin `id`, las mismas claves que la lista y el CSV (`parseTxFilters`; la página no cuenta), con `periodo=hoy`
+ *   (el día de hoy en Nueva York) y, con `fechas=deposito`, por la fecha del depósito.
  * Todo valor es entrada no confiable: nunca lanza.
  */
 export function pdfRequestOf(params: URLSearchParams, today: ISODate): PdfRequest {
@@ -33,15 +33,18 @@ export function pdfRequestOf(params: URLSearchParams, today: ISODate): PdfReques
   const sp: Record<string, string[]> = Object.fromEntries(
     [...new Set(params.keys())].map((key) => [key, params.getAll(key)]),
   );
-  if (sp.periodo?.[0] === "hoy") Object.assign(sp, { periodo: ["personalizado"], desde: [today], hasta: [today] });
   const { filters, sort } = parseTxFilters(sp, today);
   return { kind: "filtro", filters, sort };
 }
 
-/** «Hoy, sáb 14 nov 2026», «El vie 13 nov 2026» o «Del dom 1 nov 2026 al sáb 14 nov 2026». */
-function periodText(from: ISODate, to: ISODate, today: ISODate): string {
-  if (from !== to) return `Del ${formatDate(from)} al ${formatDate(to)}`;
-  return from === today ? `Hoy, ${formatDate(from)}` : `El ${formatDate(from)}`;
+/**
+ * «Hoy, sáb 14 nov 2026», «El vie 13 nov 2026» o «Del dom 1 nov 2026 al sáb 14 nov 2026». Por la fecha del depósito:
+ * «Depósitos de hoy, …», «Depósitos del vie 13 nov 2026» o «Depósitos del … al …».
+ */
+function periodText(from: ISODate, to: ISODate, today: ISODate, byDeposit: boolean): string {
+  if (from !== to) return `${byDeposit ? "Depósitos del" : "Del"} ${formatDate(from)} al ${formatDate(to)}`;
+  if (from === today) return `${byDeposit ? "Depósitos de hoy" : "Hoy"}, ${formatDate(from)}`;
+  return `${byDeposit ? "Depósitos del" : "El"} ${formatDate(from)}`;
 }
 
 const STATUS_FILTER_LABEL: Record<NonNullable<TxFilters["status"]>, string> = {
@@ -98,7 +101,7 @@ export function scopeText(request: PdfRequest, count: number, cfg: PayConfig, to
   if (request.kind === "elegidos") return `Seleccionados (${count})`;
   const { filters } = request;
   // `parseTxFilters` siempre pone las dos fechas del período.
-  const period = periodText(filters.from ?? today, filters.to ?? today, today);
+  const period = periodText(filters.from ?? today, filters.to ?? today, today, filters.dateBasis === "deposito");
   return [period, ...filterTexts(filters, cfg)].join(" · ");
 }
 

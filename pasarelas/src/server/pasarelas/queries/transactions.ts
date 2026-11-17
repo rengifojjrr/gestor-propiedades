@@ -36,9 +36,15 @@ import { EXACT_COUNT, readAll } from "./paging";
  */
 
 export type TxFilters = {
-  /** Fecha del cobro (en Nueva York), ambas incluidas. */
+  /** El período, ambas fechas incluidas: de la venta (la fecha del cobro en Nueva York) o, con `dateBasis`, del depósito. */
   from?: ISODate;
   to?: ISODate;
+  /**
+   * De qué es la fecha del período. Sin decirlo, de la venta (`occurred_on`). «deposito»: la fecha en que se marcó
+   * depositado (`deposited_on`) o, si no lo está, la estimada (`estimated_deposit_on`, la más tardía de su ventana,
+   * la misma de «estimada» y de «atrasado»). Un cobro sin ninguna de las dos no entra.
+   */
+  dateBasis?: "deposito";
   companyId?: string;
   channelId?: string;
   gatewayId?: string;
@@ -79,8 +85,15 @@ const PERIODS: Record<PeriodPreset, true> = {
   "90d": true,
   "365d": true,
   este_anio: true,
+  ayer: true,
+  hoy: true,
+  manana: true,
+  proximos_7d: true,
   personalizado: true,
 };
+/** Los períodos que miran hacia adelante: solo tienen sentido con la fecha del depósito. */
+const FUTURE_PERIODS: ReadonlySet<PeriodPreset> = new Set(["manana", "proximos_7d"]);
+const DATE_BASES: Record<NonNullable<TxFilters["dateBasis"]>, true> = { deposito: true };
 const STATUSES: Record<NonNullable<TxFilters["status"]>, true> = {
   fallido: true,
   en_disputa: true,
@@ -121,12 +134,13 @@ export function cleanSearch(q: string): string {
 
 /**
  * Los filtros, el orden y la página que pide la URL de una lista de cobros (los parámetros del kit: `periodo`,
- * `desde`, `hasta`, `empresa`, `canal`, `pasarela`, `cuenta`, `moneda`, `estado`, `comprobante`, `estimada`, `q`,
- * `reparto`, `cargador` —un id, o `sin`—, `orden`, `pagina`). Todo valor es entrada no confiable: lo que no se
- * entiende se ignora, nunca lanza.
+ * `desde`, `hasta`, `fechas` —`deposito`, o nada: la venta—, `empresa`, `canal`, `pasarela`, `cuenta`, `moneda`,
+ * `estado`, `comprobante`, `estimada`, `q`, `reparto`, `cargador` —un id, o `sin`—, `orden`, `pagina`). Todo valor
+ * es entrada no confiable: lo que no se entiende se ignora, nunca lanza.
  *
- * Sin `periodo` rige «este mes»; `desde` y `hasta` solo cuentan con `periodo=personalizado`. La papelera no se
- * pide por la URL: la pone la pantalla que la muestra.
+ * Sin `periodo` rige «este mes»; `desde` y `hasta` solo cuentan con `periodo=personalizado`. «Mañana» y «próximos 7
+ * días» solo valen con `fechas=deposito`: con la venta, rige «este mes». La papelera no se pide por la URL: la pone
+ * la pantalla que la muestra.
  */
 export function parseTxFilters(
   sp: Record<string, string | string[] | undefined>,
@@ -148,7 +162,9 @@ export function parseTxFilters(
   const id = (key: string): string | undefined => zId.safeParse(text(key)).data;
   const loader = text("cargador") === NO_LOADER ? null : id("cargador");
 
-  const period = periodRange(oneOf(PERIODS, "periodo") ?? "este_mes", today, {
+  const dateBasis = oneOf(DATE_BASES, "fechas");
+  const preset = oneOf(PERIODS, "periodo") ?? "este_mes";
+  const period = periodRange(dateBasis === undefined && FUTURE_PERIODS.has(preset) ? "este_mes" : preset, today, {
     from: date("desde"),
     to: date("hasta"),
   });
@@ -156,6 +172,7 @@ export function parseTxFilters(
   const filters: TxFilters = {
     from: period.from,
     to: period.to,
+    dateBasis,
     companyId: id("empresa"),
     channelId: id("canal"),
     gatewayId: id("pasarela"),
@@ -236,6 +253,20 @@ function applyStatus<Q extends TxFilterBuilder<Q>>(query: Q, status: TxFilters["
 }
 
 /**
+ * El período por la fecha del depósito, como condiciones de PostgREST unidas por «o»: la fecha en que se marcó
+ * depositado (que existe si y solo si está depositado) o, si no la tiene, la estimada. `null` sin período.
+ */
+function depositConditions(from: ISODate | undefined, to: ISODate | undefined): string | null {
+  const within = (column: string) => [
+    ...(from === undefined ? [] : [`${column}.gte.${from}`]),
+    ...(to === undefined ? [] : [`${column}.lte.${to}`]),
+  ];
+  const deposited = within("deposited_on");
+  if (deposited.length === 0) return null;
+  return `and(${deposited.join(",")}),and(deposited_on.is.null,${within("estimated_deposit_on").join(",")})`;
+}
+
+/**
  * La búsqueda como condiciones de PostgREST unidas por «o»: el texto limpio dentro de la referencia o de la nota
  * (sin distinguir mayúsculas), los cobros de las empresas, canales y pasarelas cuyo nombre lo contiene y, si lo
  * escrito es un monto, los de ese bruto original. `null` si no queda nada que buscar.
@@ -275,8 +306,13 @@ export function applyTxFilters<Q extends TxFilterBuilder<Q>>(
   cfg?: PayConfig,
 ): Q {
   let q = filters.trashed ? query.not("deleted_at", "is", null) : query.is("deleted_at", null);
-  if (filters.from !== undefined) q = q.gte("occurred_on", filters.from);
-  if (filters.to !== undefined) q = q.lte("occurred_on", filters.to);
+  if (filters.dateBasis === "deposito") {
+    const byDeposit = depositConditions(filters.from, filters.to);
+    if (byDeposit !== null) q = q.or(byDeposit);
+  } else {
+    if (filters.from !== undefined) q = q.gte("occurred_on", filters.from);
+    if (filters.to !== undefined) q = q.lte("occurred_on", filters.to);
+  }
   if (filters.companyId !== undefined) q = q.eq("company_id", filters.companyId);
   if (filters.channelId !== undefined) q = q.eq("channel_id", filters.channelId);
   if (filters.gatewayId !== undefined) q = q.eq("gateway_id", filters.gatewayId);

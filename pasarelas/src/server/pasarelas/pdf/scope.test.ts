@@ -91,6 +91,20 @@ describe("pdfRequestOf: qué cobros pide la URL", () => {
   });
 });
 
+describe("pdfRequestOf: por la fecha del depósito", () => {
+  test("`fechas=deposito` llega al filtro del PDF, también con mañana, los próximos 7 días o «hoy»", () => {
+    expect(pdfRequestOf(params("fechas=deposito&periodo=manana"), TODAY)).toEqual(
+      filtro({ from: "2026-11-15", to: "2026-11-15", dateBasis: "deposito" }),
+    );
+    expect(pdfRequestOf(params("fechas=deposito&periodo=proximos_7d"), TODAY)).toEqual(
+      filtro({ from: TODAY, to: "2026-11-20", dateBasis: "deposito" }),
+    );
+    expect(pdfRequestOf(params("fechas=deposito&periodo=hoy"), TODAY)).toEqual(
+      filtro({ from: TODAY, to: TODAY, dateBasis: "deposito" }),
+    );
+  });
+});
+
 describe("scopeText: qué abarca, en palabras", () => {
   test("los elegidos dicen cuántos salen", () => {
     expect(scopeText({ kind: "elegidos", ids: [IDS.a, IDS.b] }, 1, CFG, TODAY)).toBe("Seleccionados (1)");
@@ -105,6 +119,16 @@ describe("scopeText: qué abarca, en palabras", () => {
     );
     // `parseTxFilters` siempre pone las dos fechas; si faltaran, la que falta es hoy.
     expect(scopeText(filtro({}), 3, CFG, TODAY)).toBe("Hoy, sáb 14 nov 2026");
+  });
+
+  test("por la fecha del depósito: «Depósitos del … al …», «Depósitos de hoy, …» o «Depósitos del …»", () => {
+    const byDeposit = (filters: TxFilters) => scopeText(filtro({ ...filters, dateBasis: "deposito" }), 3, CFG, TODAY);
+    expect(byDeposit({ from: "2026-11-01", to: TODAY })).toBe("Depósitos del dom 1 nov 2026 al sáb 14 nov 2026");
+    expect(byDeposit({ from: TODAY, to: TODAY })).toBe("Depósitos de hoy, sáb 14 nov 2026");
+    expect(byDeposit({ from: "2026-11-15", to: "2026-11-15" })).toBe("Depósitos del dom 15 nov 2026");
+    expect(byDeposit({ from: "2026-11-01", to: "2026-11-14", companyId: IDS.company })).toBe(
+      "Depósitos del dom 1 nov 2026 al sáb 14 nov 2026 · Empresa: Tienda Demo",
+    );
   });
 
   test("cada filtro con su nombre", () => {

@@ -127,14 +127,29 @@ export function depositWindowOf(t: {
 
 // ─── Períodos ───────────────────────────────────────────────────────────────────────────────────────────────
 
-export type PeriodPreset = "este_mes" | "mes_anterior" | "30d" | "90d" | "365d" | "este_anio" | "personalizado";
+export type PeriodPreset =
+  | "este_mes"
+  | "mes_anterior"
+  | "30d"
+  | "90d"
+  | "365d"
+  | "este_anio"
+  | "ayer"
+  | "hoy"
+  | "manana"
+  | "proximos_7d"
+  | "personalizado";
 
 const ROLLING_DAYS = { "30d": 30, "90d": 90, "365d": 365 } as const;
+/** Los períodos de un solo día, contados desde hoy. */
+const ONE_DAY = { ayer: -1, hoy: 0, manana: 1 } as const;
+/** «Próximos 7 días»: hoy y los 6 siguientes. */
+const NEXT_DAYS = 7;
 
 /**
- * El rango de fechas (ambas incluidas) de un período, contado desde `today`. Las fechas de `custom` solo se usan
- * con `personalizado`: las dos → esas (en orden); solo `from` → hasta hoy; solo `to` → desde el día 1 de su mes;
- * ninguna → este mes.
+ * El rango de fechas (ambas incluidas) de un período, contado desde `today`: ayer, hoy y mañana son un solo día;
+ * `proximos_7d`, hoy y los 6 siguientes. Las fechas de `custom` solo se usan con `personalizado`: las dos → esas (en
+ * orden); solo `from` → hasta hoy; solo `to` → desde el día 1 de su mes; ninguna → este mes.
  */
 export function periodRange(
   preset: PeriodPreset,
@@ -156,6 +171,14 @@ export function periodRange(
       return { from: addDays(today, 1 - ROLLING_DAYS[preset]), to: today };
     case "este_anio":
       return { from: `${today.slice(0, 4)}-01-01`, to: today };
+    case "ayer":
+    case "hoy":
+    case "manana": {
+      const day = addDays(today, ONE_DAY[preset]);
+      return { from: day, to: day };
+    }
+    case "proximos_7d":
+      return { from: today, to: addDays(today, NEXT_DAYS - 1) };
     case "personalizado": {
       const from = custom?.from ?? null;
       const to = custom?.to ?? null;
