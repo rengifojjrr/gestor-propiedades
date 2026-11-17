@@ -5,7 +5,7 @@ import type { Db } from "../dto";
 import { payoutStatuses } from "../queries/settlements";
 import { getSnapshots, listTx } from "../queries/transactions";
 import { drawPdf } from "./draw";
-import { pdfModel } from "./model";
+import { pdfModel, type PdfModel } from "./model";
 import { PDF_MAX, pdfFileName, scopeText, tooManyText, type PdfRequest } from "./scope";
 
 /*
@@ -44,20 +44,33 @@ async function chosen(
 }
 
 /**
- * El PDF de los cobros que pide `request`, generado en `now`. Lo pagado a cada parte se lee solo de esos cobros (su
- * reparto, lo retenido y los pagos ligados a ellos), por tramos.
+ * Lo que dibuja el PDF de los cobros que pide `request`, generado en `now`, con cuántos cobros son; o, si pasan de
+ * `PDF_MAX`, cuántos son. Lo pagado a cada parte se lee solo de esos cobros (su reparto, lo retenido y los pagos
+ * ligados a ellos), por tramos.
  */
-export async function txPdf(supabase: Db, cfg: PayConfig, request: PdfRequest, now: Date): Promise<PdfResult> {
+export async function txPdfModel(
+  supabase: Db,
+  cfg: PayConfig,
+  request: PdfRequest,
+  now: Date,
+): Promise<{ model: PdfModel; count: number } | { tooMany: number }> {
   const today = todayNY(now);
   const found = await chosen(supabase, cfg, request, today);
-  if ("tooMany" in found) return { ok: false, count: found.tooMany, message: tooManyText(request, found.tooMany) };
+  if ("tooMany" in found) return found;
   const scope = scopeText(request, found.txs.length, cfg, today);
   const payouts = await payoutStatuses(supabase, found.txs);
+  return { model: pdfModel({ txs: found.txs, payouts, cfg, scope, now }), count: found.txs.length };
+}
+
+/** El PDF de los cobros que pide `request`, generado en `now` (`txPdfModel`, dibujado). */
+export async function txPdf(supabase: Db, cfg: PayConfig, request: PdfRequest, now: Date): Promise<PdfResult> {
+  const built = await txPdfModel(supabase, cfg, request, now);
+  if ("tooMany" in built) return { ok: false, count: built.tooMany, message: tooManyText(request, built.tooMany) };
   return {
     ok: true,
-    bytes: await drawPdf(pdfModel({ txs: found.txs, payouts, cfg, scope, now })),
-    fileName: pdfFileName(request, today),
-    count: found.txs.length,
+    bytes: await drawPdf(built.model),
+    fileName: pdfFileName(request, todayNY(now)),
+    count: built.count,
   };
 }
 

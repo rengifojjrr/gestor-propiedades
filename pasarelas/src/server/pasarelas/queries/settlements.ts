@@ -112,17 +112,22 @@ function byTx(rows: readonly AmountRow[]): Map<string, BeneficiaryAmount[]> {
 
 const AMOUNT_COLUMNS = "transaction_id, beneficiary_id, amount::text";
 
+/** Lo que guarda la base de cada cobro para su estado de pago: el reparto, lo retenido y lo pagado, por cobro. */
+export type PayoutFactsByTx = {
+  /** `pay_allocations`. */
+  allocations: Map<string, BeneficiaryAmount[]>;
+  /** Lo que la pasarela ya le retuvo a cada persona (`pay_retention_shares`). */
+  retained: Map<string, BeneficiaryAmount[]>;
+  /** Lo ya pagado ligado a cada cobro (`pay_settlement_items`). */
+  paid: Map<string, BeneficiaryAmount[]>;
+};
+
 /**
- * Lo que se le debe a cada parte del reparto de esos cobros (`payoutStatus` del motor), por cobro: con el reparto
- * (`pay_allocations`), lo que la pasarela ya le retuvo a cada persona (`pay_retention_shares`) y lo ya pagado ligado
- * a cada cobro (`pay_settlement_items`). `null` para los que no tienen nada que decir: sin reparto, fallidos o en la
- * papelera. Los ids van por tramos (no caben en la URL) y cada tramo se lee entero.
+ * El reparto, lo retenido y lo pagado de esos cobros, por cobro. Los ids van por tramos (no caben en la URL) y cada
+ * tramo se lee entero; las tres tablas, a la vez. Un cobro que no tiene filas en una tabla no está en su mapa.
  */
-export async function payoutStatuses(
-  supabase: Db,
-  txs: readonly { id: string; status: string; deletedAt: string | null }[],
-): Promise<Map<string, PayoutStatus | null>> {
-  const ids = [...new Set(txs.map((tx) => tx.id))];
+export async function readPayoutFacts(supabase: Db, txIds: readonly string[]): Promise<PayoutFactsByTx> {
+  const ids = [...new Set(txIds)];
   const read = (table: "pay_allocations" | "pay_retention_shares" | "pay_settlement_items") =>
     Promise.all(
       chunked(ids).map((chunk) =>
@@ -144,6 +149,23 @@ export async function payoutStatuses(
     read("pay_retention_shares"),
     read("pay_settlement_items"),
   ]);
+  return { allocations, retained, paid };
+}
+
+/**
+ * Lo que se le debe a cada parte del reparto de esos cobros (`payoutStatus` del motor), por cobro: con el reparto
+ * (`pay_allocations`), lo que la pasarela ya le retuvo a cada persona (`pay_retention_shares`) y lo ya pagado ligado
+ * a cada cobro (`pay_settlement_items`). `null` para los que no tienen nada que decir: sin reparto, fallidos o en la
+ * papelera. Los ids van por tramos (no caben en la URL) y cada tramo se lee entero.
+ */
+export async function payoutStatuses(
+  supabase: Db,
+  txs: readonly { id: string; status: string; deletedAt: string | null }[],
+): Promise<Map<string, PayoutStatus | null>> {
+  const { allocations, retained, paid } = await readPayoutFacts(
+    supabase,
+    txs.map((tx) => tx.id),
+  );
   return new Map(
     txs.map((tx) => [
       tx.id,

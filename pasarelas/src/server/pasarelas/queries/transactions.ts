@@ -36,7 +36,9 @@ import { EXACT_COUNT, readAll } from "./paging";
  */
 
 export type TxFilters = {
-  /** El período, ambas fechas incluidas: de la venta (la fecha del cobro en Nueva York) o, con `dateBasis`, del depósito. */
+  /**
+   * El período, las dos fechas incluidas: de la venta (la del cobro en Nueva York) o, con `dateBasis`, del depósito.
+   */
   from?: ISODate;
   to?: ISODate;
   /**
@@ -404,6 +406,30 @@ export async function listTx(
   return { rows: data.map(toTxListItem), total: totalOf(count) };
 }
 
+/** Un tramo de una lectura de todo el filtro: sus filas, cuántas tiene el filtro y el error, como lo da PostgREST. */
+type FilteredPage<Row> = PromiseLike<{
+  data: Row[] | null;
+  count: number | null;
+  error: { code: string; message: string; details: string; hint: string } | null;
+}>;
+
+/**
+ * TODAS las filas de una lectura del filtro: la API da 1000 filas por petición como mucho, y se pide por tramos
+ * (`page`, de `from` a `to`) hasta tener las que el filtro dice que hay. Si entre un tramo y otro se borraron
+ * cobros, el siguiente puede empezar después del final: ya están todas.
+ */
+async function readFiltered<Row>(page: (from: number, to: number) => FilteredPage<Row>): Promise<Row[]> {
+  const rows: Row[] = [];
+  for (;;) {
+    const { data, count, error } = await page(rows.length, rows.length + LEAN_PAGE_SIZE - 1);
+    if (isPastTheEnd(error)) return rows;
+    if (error) throw new PostgrestError(error);
+    const total = totalOf(count);
+    rows.push(...(data ?? []));
+    if (data === null || data.length === 0 || rows.length >= total) return rows;
+  }
+}
+
 /**
  * TODOS los cobros del filtro, como filas mínimas para sumar (del más reciente al más antiguo). La API da 1000
  * filas por petición como mucho: se pide por páginas hasta tener las que el filtro dice que hay.
@@ -411,24 +437,35 @@ export async function listTx(
  */
 export async function leanTx(supabase: Db, f: TxFilters, today: ISODate, cfg?: PayConfig): Promise<LeanTx[]> {
   const names = await searchConfig(supabase, f, cfg);
-  const rows: LeanTx[] = [];
-  for (;;) {
-    const { data, count, error } = await applyTxFilters(
-      supabase.from("pay_transactions").select(LEAN_TX_COLUMNS, { count: "exact" }),
+  const rows = await readFiltered((from, to) =>
+    applyTxFilters(supabase.from("pay_transactions").select(LEAN_TX_COLUMNS, { count: "exact" }), f, today, names)
+      .order("occurred_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, to),
+  );
+  return rows.map(toLeanTx);
+}
+
+/** Un cobro del filtro con lo justo para sumar su reparto: su id, su moneda y su paso en el ciclo del dinero. */
+export type TxRef = { id: string; currency: Currency; status: string };
+
+/**
+ * TODOS los cobros del filtro, con lo justo para sumar su reparto (`TxRef`), del más reciente al más antiguo. Como
+ * `leanTx`, por tramos y con el mismo `applyTxFilters`, pero sin las cifras de cada cobro.
+ */
+export async function txRefs(supabase: Db, f: TxFilters, today: ISODate, cfg?: PayConfig): Promise<TxRef[]> {
+  const names = await searchConfig(supabase, f, cfg);
+  return readFiltered((from, to) =>
+    applyTxFilters(
+      supabase.from("pay_transactions").select("id, currency, status", { count: "exact" }),
       f,
       today,
       names,
     )
       .order("occurred_at", { ascending: false })
       .order("id", { ascending: false })
-      .range(rows.length, rows.length + LEAN_PAGE_SIZE - 1);
-    // Si entre una página y otra se borraron cobros, la siguiente puede empezar después del final: ya están todos.
-    if (isPastTheEnd(error)) return rows;
-    if (error) throw new PostgrestError(error);
-    const total = totalOf(count);
-    rows.push(...data.map(toLeanTx));
-    if (data.length === 0 || rows.length >= total) return rows;
-  }
+      .range(from, to),
+  );
 }
 
 // ─── Un cobro ───────────────────────────────────────────────────────────────────────────────────────────────

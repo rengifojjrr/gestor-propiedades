@@ -2,10 +2,13 @@
 
 import "server-only";
 import { z } from "zod";
-import { isZero, neg } from "@/lib/pasarelas";
+import { MAX_PAYOUTS, MAX_PAYOUT_ITEMS } from "@/components/pasarelas/tx/payoutChunks";
+import { isZero, neg, todayNY } from "@/lib/pasarelas";
 import { runAction } from "../action";
 import * as ops from "../ops/settlements";
+import { owedInFilter, type FilterOwed } from "../queries/filter-split";
 import { listOwed, type NamedOwedGroup } from "../queries/settlements";
+import { parseTxFilters } from "../queries/transactions";
 import type { ActionResult } from "../result";
 import { zCurrency, zDate, zId, zMoney, zOptionalText, zPositiveMoney } from "../zod";
 
@@ -17,10 +20,6 @@ import { zCurrency, zDate, zId, zMoney, zOptionalText, zPositiveMoney } from "..
 /** Los mismos tipos y el mismo tope que el bucket y que la tabla. */
 const RECEIPT_MIMES = ["image/jpeg", "image/png", "image/webp", "application/pdf"] as const;
 const MAX_RECEIPT_BYTES = 10 * 1024 * 1024;
-/** Lo más que crea `pay_record_payouts` de una vez. */
-const MAX_PAYOUTS = 200;
-/** Los cobros de un pago: una página de la lista de Cobros cabe holgada. */
-const MAX_PAYOUT_ITEMS = 500;
 
 const zSettlement = z
   .object({
@@ -116,6 +115,27 @@ export async function owedForTransactions(input: unknown): Promise<ActionResult<
     z.object({ ids: z.array(zId).min(1).max(MAX_PAYOUT_ITEMS) }),
     input,
     async ({ supabase }, { ids }) => ({ groups: await listOwed(supabase, ids) }),
+    { revalidate: [] },
+  );
+}
+
+/**
+ * «Pagar…» desde el «Reparto del filtro» de Cobros: lo que se le debe ahora a esa parte en esa moneda, en los cobros
+ * del filtro donde se le debe (`owedInFilter`). `query` es la URL de la lista (sus parámetros, como los lee la
+ * página: `parseTxFilters`). Solo lee: no revalida nada. El pago se registra después con `recordPayouts`.
+ */
+export async function owedForFilter(input: unknown): Promise<ActionResult<{ owed: FilterOwed }>> {
+  return runAction(
+    z.object({ query: z.string().max(4000), beneficiaryId: zId, currency: zCurrency }),
+    input,
+    async ({ supabase }, { query, beneficiaryId, currency }) => {
+      const params = new URLSearchParams(query);
+      // Un parámetro repetido llega como lista: `parseTxFilters` se queda con el primero, igual que en la pantalla.
+      const sp = Object.fromEntries([...new Set(params.keys())].map((key) => [key, params.getAll(key)]));
+      const today = todayNY(new Date());
+      const { filters } = parseTxFilters(sp, today);
+      return { owed: await owedInFilter(supabase, filters, today, beneficiaryId, currency) };
+    },
     { revalidate: [] },
   );
 }

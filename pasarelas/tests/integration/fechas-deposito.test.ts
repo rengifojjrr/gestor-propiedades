@@ -40,7 +40,11 @@ async function ledger(): Promise<Ledger> {
     });
   const saved = await saveTransactions(db, [
     tx("cae-manana", "2", { estimated_deposit_on: "2026-11-18" }),
-    tx("depositado-ayer", "3", { estimated_deposit_on: "2026-11-18", status: "depositado", deposited_on: "2026-11-16" }),
+    tx("depositado-ayer", "3", {
+      estimated_deposit_on: "2026-11-18",
+      status: "depositado",
+      deposited_on: "2026-11-16",
+    }),
     tx("sin-fecha", "4", { estimated_deposit_on: null }),
     tx("ventana", "5", { estimated_deposit_from: "2026-11-18", estimated_deposit_on: "2026-11-19" }),
     tx("cae-el-20", "6", { estimated_deposit_on: "2026-11-20" }),
@@ -61,17 +65,17 @@ async function listed({ db, cfg }: Ledger, query: Record<string, string>): Promi
 const BY_DEPOSIT = { fechas: "deposito" };
 
 describe("Cobros por la fecha del depósito", () => {
-  it("R2: «Mañana» trae los por caer estimados el 18 (el último día de su ventana), no el que ya se depositó", async () => {
+  it("R2: «Mañana» trae los por caer estimados el 18 (último día de su ventana), no el ya depositado", async () => {
     const book = await ledger();
     expect(await listed(book, { ...BY_DEPOSIT, periodo: "manana" })).toEqual(["cae-manana"]);
     // El depositado ayer sale con «Ayer», aunque su estimada fuera el 18.
     expect(await listed(book, { ...BY_DEPOSIT, periodo: "ayer" })).toEqual(["depositado-ayer"]);
     // La ventana del 18 al 19 cuenta por el 19: no sale el 18 para no pagar antes de que pueda llegar el dinero.
-    expect(await listed(book, { ...BY_DEPOSIT, periodo: "personalizado", desde: "2026-11-19", hasta: "2026-11-19" })).toEqual(
-      ["ventana"],
-    );
+    const the19th = { ...BY_DEPOSIT, periodo: "personalizado", desde: "2026-11-19", hasta: "2026-11-19" };
+    expect(await listed(book, the19th)).toEqual(["ventana"]);
     // Los próximos 7 días (del 17 al 23): los tres por caer con fecha.
-    expect(await listed(book, { ...BY_DEPOSIT, periodo: "proximos_7d" })).toEqual(["cae-el-20", "cae-manana", "ventana"]);
+    const nextDays = await listed(book, { ...BY_DEPOSIT, periodo: "proximos_7d" });
+    expect(nextDays).toEqual(["cae-el-20", "cae-manana", "ventana"]);
     expect(await listed(book, { ...BY_DEPOSIT, periodo: "hoy" })).toEqual([]);
   });
 
@@ -97,7 +101,8 @@ describe("Cobros por la fecha del depósito", () => {
       [1, 2].map((page) => listTx(book.db, filters, "estimada_asc", page, TODAY, 2, book.cfg)),
     );
     expect(pages.map((page) => page.total)).toEqual([3, 3]);
-    expect(pages.flatMap((page) => page.rows.map((row) => row.reference))).toEqual(["cae-manana", "ventana", "cae-el-20"]);
+    const references = pages.flatMap((page) => page.rows.map((row) => row.reference));
+    expect(references).toEqual(["cae-manana", "ventana", "cae-el-20"]);
     // Los totales: los tres, 3 × 90,30 de neto.
     const totals = totalsOf(await leanTx(book.db, filters, TODAY, book.cfg));
     expect(totals.USD).toMatchObject({ count: 3, gross: "300.00", net: "270.90" });

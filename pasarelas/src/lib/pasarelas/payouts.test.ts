@@ -428,7 +428,10 @@ describe("partyTotals: lo de cada parte en varios cobros de una moneda", () => {
     };
     const { parties, advances } = partyTotals([outside(), outside()], nameOf);
     expect(advances).toEqual([{ beneficiaryId: "tc", name: "Titular C", amount: "60.00" }]);
-    expect(parties).toEqual([total("ga", "200.00", "0.00", "0.00", "200.00"), total("ta", "100.00", "40.00", "0.00", "60.00")]);
+    expect(parties).toEqual([
+      total("ga", "200.00", "0.00", "0.00", "200.00"),
+      total("ta", "100.00", "40.00", "0.00", "60.00"),
+    ]);
     // Con un pago ligado al cobro ya es una parte: lo suyo retenido cuenta como recibido, no como adelanto.
     const paidToo = partyTotals([outside([{ beneficiaryId: "tc", amount: "5.00" }])], nameOf);
     expect(paidToo.advances).toEqual([]);
@@ -488,8 +491,10 @@ describe("partyTotals: lo de cada parte en varios cobros de una moneda", () => {
     for (let i = 0; i < 200; i++) {
       const txs = Array.from({ length: 1 + Math.floor(rnd() * 6) }, (): PartyFacts => {
         const allocations = ["ga", "gb", "ta"].map((beneficiaryId) => ({ beneficiaryId, amount: cents() }));
-        const retained = ["ta", "tc"].filter(() => rnd() < 0.5).map((beneficiaryId) => ({ beneficiaryId, amount: cents() }));
-        const paid = ["ga", "gb", "x"].filter(() => rnd() < 0.5).map((beneficiaryId) => ({ beneficiaryId, amount: cents() }));
+        const some = (ids: string[]) =>
+          ids.filter(() => rnd() < 0.5).map((beneficiaryId) => ({ beneficiaryId, amount: cents() }));
+        const retained = some(["ta", "tc"]);
+        const paid = some(["ga", "gb", "x"]);
         return {
           status: payoutStatus({ counts: true, allocations, retained, paid }),
           inAllocation: allocations.map((line) => line.beneficiaryId),
