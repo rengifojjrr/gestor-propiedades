@@ -1,9 +1,9 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { companyTxHref } from "@/components/pasarelas/companies/txHref";
-import { looksAhead, periodRange, type PeriodPreset } from "@/lib/pasarelas";
+import { looksAhead, periodRange, todayNY, type PeriodPreset } from "@/lib/pasarelas";
 import type { Db } from "../dto";
 import type { CompanyTotal } from "./companies";
-import { applyTxFilters, cleanSearch, leanTx, listTx, parseTxFilters } from "./transactions";
+import { applyTxFilters, cleanSearch, leanTx, listTx, pageToday, parseTxFilters } from "./transactions";
 
 /** Viernes 13 de noviembre de 2026. */
 const TODAY = "2026-11-13";
@@ -306,6 +306,37 @@ describe("parseTxFilters", () => {
 
   test("nunca filtra por la papelera: eso lo decide la pantalla, no la URL", () => {
     expect("trashed" in filtersOf({ trashed: "true", papelera: "1" })).toBe(false);
+  });
+});
+
+describe("pageToday: el «hoy» de la página, para una acción que vuelve a leer su URL («Pagar…»)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("el de la página si es el de hoy del servidor, el de antes o el de después; si no, el del servidor", () => {
+    expect(pageToday("2026-11-18", "2026-11-18")).toBe("2026-11-18");
+    expect(pageToday("2026-11-17", "2026-11-18")).toBe("2026-11-17");
+    expect(pageToday("2026-11-19", "2026-11-18")).toBe("2026-11-19");
+    expect(pageToday("2026-12-31", "2027-01-01")).toBe("2026-12-31");
+    // Más lejos es entrada no confiable: rige el del servidor.
+    for (const far of ["2026-11-16", "2026-11-20", "2025-11-18", "2000-01-01", "2099-12-31"]) {
+      expect(pageToday(far, "2026-11-18")).toBe("2026-11-18");
+    }
+  });
+
+  test("D4: Cobros cargada con «Hoy» a las 23:59:30 del 17 (Nueva York); «Pagar…» a las 00:00:30 del 18 lee el 17", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-18T04:59:30Z"));
+    const loaded = todayNY(new Date());
+    vi.setSystemTime(new Date("2026-11-18T05:00:30Z"));
+    const clicked = todayNY(new Date());
+    expect([loaded, clicked]).toEqual(["2026-11-17", "2026-11-18"]);
+    const query = { periodo: "hoy", fechas: "deposito" };
+    expect(parseTxFilters(query, loaded).filters).toEqual({ from: loaded, to: loaded, dateBasis: "deposito" });
+    // Con su propio día, la acción leería los del 18; con el de la página, los mismos que sumó la página.
+    expect(parseTxFilters(query, clicked).filters).toMatchObject({ from: "2026-11-18", to: "2026-11-18" });
+    expect(parseTxFilters(query, pageToday(loaded, clicked)).filters).toEqual(parseTxFilters(query, loaded).filters);
   });
 });
 

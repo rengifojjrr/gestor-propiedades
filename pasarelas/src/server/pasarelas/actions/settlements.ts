@@ -8,7 +8,7 @@ import { runAction } from "../action";
 import * as ops from "../ops/settlements";
 import { owedInFilter, type FilterOwed } from "../queries/filter-split";
 import { listOwed, type NamedOwedGroup } from "../queries/settlements";
-import { parseTxFilters } from "../queries/transactions";
+import { pageToday, parseTxFilters } from "../queries/transactions";
 import type { ActionResult } from "../result";
 import { zCurrency, zDate, zId, zMoney, zOptionalText, zPositiveMoney } from "../zod";
 
@@ -122,17 +122,19 @@ export async function owedForTransactions(input: unknown): Promise<ActionResult<
 /**
  * «Pagar…» desde el «Reparto del filtro» de Cobros: lo que se le debe ahora a esa parte en esa moneda, en los cobros
  * del filtro (`owedInFilter`). `query` es la URL de la lista (sus parámetros, como los lee la página:
- * `parseTxFilters`). Solo lee: no revalida nada. El pago se registra después con `recordPayouts`.
+ * `parseTxFilters`) y `today`, el día con que la página la leyó: un período relativo se cuenta desde ese día
+ * (`pageToday`), y así se leen los mismos cobros que sumó el resumen aunque haya pasado la medianoche. Solo lee: no
+ * revalida nada. El pago se registra después con `recordPayouts`.
  */
 export async function owedForFilter(input: unknown): Promise<ActionResult<{ owed: FilterOwed }>> {
   return runAction(
-    z.object({ query: z.string().max(4000), beneficiaryId: zId, currency: zCurrency }),
+    z.object({ query: z.string().max(4000), beneficiaryId: zId, currency: zCurrency, today: zDate }),
     input,
-    async ({ supabase }, { query, beneficiaryId, currency }) => {
+    async ({ supabase }, { query, beneficiaryId, currency, today: seen }) => {
       const params = new URLSearchParams(query);
       // Un parámetro repetido llega como lista: `parseTxFilters` se queda con el primero, igual que en la pantalla.
       const sp = Object.fromEntries([...new Set(params.keys())].map((key) => [key, params.getAll(key)]));
-      const today = todayNY(new Date());
+      const today = pageToday(seen, todayNY(new Date()));
       const { filters } = parseTxFilters(sp, today);
       return { owed: await owedInFilter(supabase, filters, today, beneficiaryId, currency) };
     },

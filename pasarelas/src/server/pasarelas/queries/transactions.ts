@@ -1,6 +1,6 @@
 import "server-only";
 import { PostgrestError } from "@supabase/supabase-js";
-import { ZERO, dec, isISODate, looksAhead, parseMoney, periodRange, toMoney } from "@/lib/pasarelas";
+import { ZERO, daysBetween, dec, isISODate, looksAhead, parseMoney, periodRange, toMoney } from "@/lib/pasarelas";
 import type {
   Currency,
   DisplayStatus,
@@ -196,6 +196,17 @@ export function parseTxFilters(
     sort: oneOf(SORTS, "orden") ?? "fecha_desc",
     page: PAGE.test(page) ? Number(page) : 1,
   };
+}
+
+/**
+ * El día desde el que se cuenta un período relativo («Hoy», «Mañana», «Este mes»…) cuando una acción vuelve a leer la
+ * URL de una lista ya cargada, como «Pagar…» del «Reparto del filtro». Cerca de la medianoche de Nueva York, la página
+ * y la acción pueden caer en días distintos, y la acción leería otros cobros que los que sumó la página. Vale el día
+ * de la página (`seen`, que llega del navegador y la acción ya validó con `zDate`) si es el de hoy del servidor, el
+ * de antes o el de después; si no, el del servidor: más lejos es entrada no confiable.
+ */
+export function pageToday(seen: ISODate, serverToday: ISODate): ISODate {
+  return Math.abs(daysBetween(serverToday, seen)) <= 1 ? seen : serverToday;
 }
 
 // ─── Los filtros, una sola vez ──────────────────────────────────────────────────────────────────────────────

@@ -97,20 +97,30 @@ type Loaded = {
   notice: string | null;
 };
 
-/** Qué se lee al abrir: los cobros elegidos, o una parte (con su nombre) en una moneda de los cobros del filtro. */
-type OwedRequest = { ids?: string[]; query?: string; beneficiaryId?: string; currency?: Currency; name?: string };
+/**
+ * Qué se lee al abrir: los cobros elegidos, o una parte (con su nombre) en una moneda de los cobros del filtro. `today`
+ * es el día con que la página leyó el filtro: el servidor cuenta desde él un período relativo («Hoy», «Este mes»).
+ */
+type OwedRequest = {
+  ids?: string[];
+  query?: string;
+  beneficiaryId?: string;
+  currency?: Currency;
+  name?: string;
+  today: ISODate;
+};
 
 type FormProps = Omit<Common, "open"> & OwedRequest;
 
 /** Lo que se le debe ahora: a cada parte en los cobros elegidos, o a una parte en los cobros del filtro. */
-async function loadOwed({ ids, query, beneficiaryId, currency, name }: OwedRequest) {
+async function loadOwed({ ids, query, beneficiaryId, currency, name, today }: OwedRequest) {
   const failed = () => ({ ok: false as const, error: RETRY_TEXT });
   if (ids !== undefined) {
     const result = await callActionOr(() => owedForTransactions({ ids }), failed);
     if (!result.ok) return result;
     return { ok: true as const, loaded: { groups: result.data.groups, overpaid: null, notice: null } };
   }
-  const result = await callActionOr(() => owedForFilter({ query, beneficiaryId, currency }), failed);
+  const result = await callActionOr(() => owedForFilter({ query, beneficiaryId, currency, today }), failed);
   if (!result.ok) return result;
   const { owed } = result.data;
   const loaded: Loaded =
@@ -153,7 +163,7 @@ function PayoutsForm({ ids, query, beneficiaryId, currency, name, onClose, onDon
 
   useEffect(() => {
     let current = true;
-    void loadOwed({ ids, query, beneficiaryId, currency, name }).then((result) => {
+    void loadOwed({ ids, query, beneficiaryId, currency, name, today }).then((result) => {
       if (!current) return;
       if (!result.ok) {
         setLoadError({ text: result.error, unsure: false });
@@ -172,7 +182,7 @@ function PayoutsForm({ ids, query, beneficiaryId, currency, name, onClose, onDon
     return () => {
       current = false;
     };
-  }, [ids, query, beneficiaryId, currency, name]);
+  }, [ids, query, beneficiaryId, currency, name, today]);
 
   const owes = (choices ?? []).filter((choice) => cmp(choice.owed, ZERO) > 0);
   // Con más de 500 cobros, `payoutChunks` deja lo que se descuenta en un pago aparte.
