@@ -2,7 +2,15 @@ import { describe, expect, test } from "vitest";
 import { compute, recompute, retentionOf } from "./breakdown";
 import { D, toMoney } from "./decimal";
 import { add, sub } from "./money";
-import { fitsOwed, owedByPart, payoutStatus, type PayoutFacts, type PayoutStatus } from "./payouts";
+import {
+  fitsOwed,
+  owedByPart,
+  partyTotals,
+  payoutStatus,
+  type PartyFacts,
+  type PayoutFacts,
+  type PayoutStatus,
+} from "./payouts";
 import type { Breakdown, Money, Rules } from "./types";
 
 // ─── E10 (el de la retención, tarea 49) ─────────────────────────────────────────────────────────────────────
@@ -344,6 +352,154 @@ describe("fitsOwed: lo que se puede pagar de lo que falta", () => {
     expect(fitsOwed("-600.01", "-600.00")).toBe(false);
     expect(fitsOwed("5.00", "-600.00")).toBe(false);
     expect(fitsOwed(sub("0.00", "0.01"), "-0.01")).toBe(true);
+  });
+});
+
+describe("partyTotals: lo de cada parte en varios cobros de una moneda", () => {
+  const NAMES: Record<string, string> = {
+    ga: "Grupo A",
+    gb: "Grupo B",
+    ta: "Titular A",
+    tb: "Titular B",
+    tc: "Titular C",
+    z: "Ángel Demo",
+  };
+  const nameOf = (id: string) => NAMES[id] ?? "Beneficiario que ya no existe";
+  /** Lo que se sabe de un cobro calculado por el motor, con lo ya pagado: lo mismo que se lee de la base. */
+  const partyFactsOf = (b: Breakdown, paid: PayoutFacts["paid"] = []): PartyFacts => {
+    const facts = factsOf(b, paid);
+    return {
+      status: payoutStatus(facts),
+      inAllocation: facts.allocations.map((line) => line.beneficiaryId),
+      retained: facts.retained,
+    };
+  };
+  const total = (beneficiaryId: string, allocated: Money, retained: Money, paid: Money, owed: Money) => ({
+    beneficiaryId,
+    name: nameOf(beneficiaryId),
+    allocated,
+    retained,
+    paid,
+    owed,
+  });
+
+  test("P3: dos cobros como E10 suman lo de cada parte; lo retenido ya lo recibió y no falta", () => {
+    const { parties, advances } = partyTotals([partyFactsOf(E10), partyFactsOf(E10, P2_PAID)], nameOf);
+    expect(parties).toEqual([
+      total("ga", "1161.06", "0.00", "580.53", "580.53"),
+      total("gb", "580.54", "0.00", "290.27", "290.27"),
+      total("ta", "100.00", "50.00", "25.00", "25.00"),
+      total("tb", "100.00", "50.00", "25.00", "25.00"),
+    ]);
+    expect(advances).toEqual([]);
+  });
+
+  test("lo pagado de más resta: «falta» negativa; quien tiene pagos sin estar en el reparto es una parte", () => {
+    const over = partyFactsOf(E10, [
+      { beneficiaryId: "ga", amount: "600.00" },
+      { beneficiaryId: "x", amount: "1.00" },
+    ]);
+    const { parties } = partyTotals([over], nameOf);
+    expect(parties).toEqual([
+      total("x", "0.00", "0.00", "1.00", "-1.00"),
+      total("ga", "580.53", "0.00", "600.00", "-19.47"),
+      total("gb", "290.27", "0.00", "0.00", "290.27"),
+      total("ta", "50.00", "25.00", "0.00", "25.00"),
+      total("tb", "50.00", "25.00", "0.00", "25.00"),
+    ]);
+  });
+
+  test("quien recibe lo retenido sin ser parte de un cobro tiene un adelanto; lo de varios cobros se suma", () => {
+    const outside = (paid: PayoutFacts["paid"] = []): PartyFacts => {
+      const allocations = [
+        { beneficiaryId: "ga", amount: "100.00" },
+        { beneficiaryId: "ta", amount: "50.00" },
+      ];
+      const retained = [
+        { beneficiaryId: "tc", amount: "30.00" },
+        { beneficiaryId: "ta", amount: "20.00" },
+        { beneficiaryId: "tb", amount: "0.00" },
+      ];
+      return {
+        status: payoutStatus({ counts: true, allocations, retained, paid }),
+        inAllocation: allocations.map((line) => line.beneficiaryId),
+        retained,
+      };
+    };
+    const { parties, advances } = partyTotals([outside(), outside()], nameOf);
+    expect(advances).toEqual([{ beneficiaryId: "tc", name: "Titular C", amount: "60.00" }]);
+    expect(parties).toEqual([total("ga", "200.00", "0.00", "0.00", "200.00"), total("ta", "100.00", "40.00", "0.00", "60.00")]);
+    // Con un pago ligado al cobro ya es una parte: lo suyo retenido cuenta como recibido, no como adelanto.
+    const paidToo = partyTotals([outside([{ beneficiaryId: "tc", amount: "5.00" }])], nameOf);
+    expect(paidToo.advances).toEqual([]);
+    expect(paidToo.parties.find((party) => party.beneficiaryId === "tc")).toEqual(
+      total("tc", "0.00", "30.00", "5.00", "-35.00"),
+    );
+  });
+
+  test("sin estado de pago no suma partes; quien está en el reparto no tiene adelanto, aunque no haya estado", () => {
+    const { parties, advances } = partyTotals(
+      [
+        {
+          status: null,
+          inAllocation: ["ta"],
+          retained: [
+            { beneficiaryId: "ta", amount: "25.00" },
+            { beneficiaryId: "tc", amount: "25.00" },
+          ],
+        },
+      ],
+      nameOf,
+    );
+    expect(parties).toEqual([]);
+    expect(advances).toEqual([{ beneficiaryId: "tc", name: "Titular C", amount: "25.00" }]);
+    expect(partyTotals([], nameOf)).toEqual({ parties: [], advances: [] });
+  });
+
+  test("por nombre, en español; cada nombre se pide una sola vez por parte", () => {
+    const asked: string[] = [];
+    const counting = (id: string) => {
+      asked.push(id);
+      return nameOf(id);
+    };
+    const facts: PartyFacts = {
+      status: payoutStatus({
+        counts: true,
+        allocations: [
+          { beneficiaryId: "tb", amount: "1.00" },
+          { beneficiaryId: "z", amount: "1.00" },
+          { beneficiaryId: "ga", amount: "1.00" },
+        ],
+        retained: [],
+        paid: [],
+      }),
+      inAllocation: ["tb", "z", "ga"],
+      retained: [{ beneficiaryId: "tc", amount: "1.00" }],
+    };
+    const { parties, advances } = partyTotals([facts, facts], counting);
+    expect(parties.map((party) => party.name)).toEqual(["Ángel Demo", "Grupo A", "Titular B"]);
+    expect(advances.map((advance) => advance.amount)).toEqual(["2.00"]);
+    expect(asked.sort()).toEqual(["ga", "tb", "tc", "z"]);
+  });
+
+  test("propiedad: en cada parte, lo pagado más lo que falta más lo retenido es exactamente su reparto", () => {
+    const rnd = mulberry32(20261118);
+    const cents = (): Money => toMoney(new D(Math.floor(rnd() * 20_000) - 5_000).div(100));
+    for (let i = 0; i < 200; i++) {
+      const txs = Array.from({ length: 1 + Math.floor(rnd() * 6) }, (): PartyFacts => {
+        const allocations = ["ga", "gb", "ta"].map((beneficiaryId) => ({ beneficiaryId, amount: cents() }));
+        const retained = ["ta", "tc"].filter(() => rnd() < 0.5).map((beneficiaryId) => ({ beneficiaryId, amount: cents() }));
+        const paid = ["ga", "gb", "x"].filter(() => rnd() < 0.5).map((beneficiaryId) => ({ beneficiaryId, amount: cents() }));
+        return {
+          status: payoutStatus({ counts: true, allocations, retained, paid }),
+          inAllocation: allocations.map((line) => line.beneficiaryId),
+          retained,
+        };
+      });
+      for (const party of partyTotals(txs, nameOf).parties) {
+        expect(add(party.paid, party.owed, party.retained)).toBe(party.allocated);
+      }
+    }
   });
 });
 

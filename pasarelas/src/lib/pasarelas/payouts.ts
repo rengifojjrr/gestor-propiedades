@@ -9,7 +9,7 @@
  * «Reparto pendiente» (`pay_payout_pending`).
  */
 import { ZERO, dec, toMoney } from "./decimal";
-import { cmp } from "./money";
+import { add, cmp, isZero } from "./money";
 import type { Currency, Money } from "./types";
 
 /** El estado de una parte: pagada, le falta algo, o se le pagó de más. */
@@ -139,4 +139,83 @@ export function owedByPart(
 export function fitsOwed(amount: Money, owed: Money): boolean {
   const sign = cmp(owed, ZERO);
   return sign !== 0 && cmp(amount, ZERO) === sign && dec(amount).abs().lte(dec(owed).abs());
+}
+
+// ─── Lo de cada parte en varios cobros ──────────────────────────────────────────────────────────────────────
+
+/** Lo que se sabe de un cobro para sumar lo de cada parte en varios cobros (los mismos hechos que guarda la base). */
+export type PartyFacts = {
+  /** Su estado de pago (`payoutStatus`); `null` si no tiene nada que decir. */
+  status: PayoutStatus | null;
+  /** Quienes están en su reparto. */
+  inAllocation: readonly string[];
+  /** Lo que la pasarela le retuvo a cada persona en este cobro (y le paga directo). */
+  retained: readonly BeneficiaryAmount[];
+};
+
+/**
+ * Lo de una parte en varios cobros de una moneda, sumado de su estado de pago en cada uno: `paid + owed + retained =
+ * allocated`, como en cada cobro.
+ */
+export type PartyTotal = {
+  beneficiaryId: string;
+  name: string;
+  /** Lo que le tocó en el reparto. */
+  allocated: Money;
+  /** Lo que la pasarela le retuvo y le paga directo: ya lo recibió. */
+  retained: Money;
+  /** Lo ya pagado, ligado a esos cobros. */
+  paid: Money;
+  /** Lo que se le debe todavía: positivo, falta; negativo, se le pagó de más. */
+  owed: Money;
+};
+
+/** Lo que recibió de lo retenido quien no es parte del reparto de esos cobros: un adelanto que le baja el saldo. */
+export type PartyAdvance = { beneficiaryId: string; name: string; amount: Money };
+
+const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name, "es");
+
+/**
+ * Lo de cada parte en varios cobros de UNA moneda (nunca se suman monedas distintas), sumado de su estado de pago en
+ * cada uno: reparto, retenido, pagado y lo que se le debe. Y lo que recibió de lo retenido quien no es parte de un
+ * cobro (ni está en su reparto ni tiene pagos ligados a él): un adelanto. Es la cuenta de los totales del PDF y del
+ * «Reparto del filtro» de Cobros. Quien llama deja fuera lo que no cuenta (fallidos, papelera). `nameOf` da el nombre
+ * de cada beneficiario (una vez por cada uno); cada lista va por nombre.
+ */
+export function partyTotals(
+  txs: readonly PartyFacts[],
+  nameOf: (beneficiaryId: string) => string,
+): { parties: PartyTotal[]; advances: PartyAdvance[] } {
+  const parties = new Map<string, PartyTotal>();
+  const advances = new Map<string, PartyAdvance>();
+  for (const tx of txs) {
+    const parts = tx.status?.parts ?? [];
+    for (const part of parts) {
+      const id = part.beneficiaryId;
+      const total = parties.get(id) ?? {
+        beneficiaryId: id,
+        name: nameOf(id),
+        allocated: ZERO,
+        retained: ZERO,
+        paid: ZERO,
+        owed: ZERO,
+      };
+      parties.set(id, {
+        ...total,
+        allocated: add(total.allocated, part.allocated),
+        retained: add(total.retained, part.retained),
+        paid: add(total.paid, part.paid),
+        owed: add(total.owed, part.owed),
+      });
+    }
+    // Quien está en el reparto o tiene pagos ligados es una parte: lo retenido ya cuenta en lo suyo.
+    const partIds = new Set([...tx.inAllocation, ...parts.map((part) => part.beneficiaryId)]);
+    for (const share of tx.retained) {
+      if (isZero(share.amount) || partIds.has(share.beneficiaryId)) continue;
+      const id = share.beneficiaryId;
+      const advance = advances.get(id) ?? { beneficiaryId: id, name: nameOf(id), amount: ZERO };
+      advances.set(id, { ...advance, amount: add(advance.amount, share.amount) });
+    }
+  }
+  return { parties: [...parties.values()].sort(byName), advances: [...advances.values()].sort(byName) };
 }

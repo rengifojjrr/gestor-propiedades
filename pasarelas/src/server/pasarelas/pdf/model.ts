@@ -11,7 +11,13 @@ import {
 } from "@/lib/pasarelas/dates";
 import { ZERO } from "@/lib/pasarelas/decimal";
 import { add, cmp, formatMoney, formatPct, isZero, neg, sub } from "@/lib/pasarelas/money";
-import type { PayoutPart, PayoutStatus } from "@/lib/pasarelas/payouts";
+import {
+  partyTotals,
+  type PartyAdvance,
+  type PartyTotal,
+  type PayoutPart,
+  type PayoutStatus,
+} from "@/lib/pasarelas/payouts";
 import { STATUS_LABEL, displayStatus, isOverdue, isPartialRefund } from "@/lib/pasarelas/status";
 import type {
   AllocLine,
@@ -65,25 +71,8 @@ export type PdfTx = {
  */
 export type PdfPayouts = ReadonlyMap<string, PayoutStatus | null>;
 
-/**
- * Lo de una parte en los cobros de una moneda, sumado de su estado de pago en cada uno: `paid + owed + retained =
- * allocated`, como en cada cobro.
- */
-export type PartyTotal = {
-  beneficiaryId: string;
-  name: string;
-  /** Lo que le tocó en el reparto. */
-  allocated: Money;
-  /** Lo que la pasarela le retuvo y le paga directo: ya lo recibió. */
-  retained: Money;
-  /** Lo ya pagado, ligado a esos cobros. */
-  paid: Money;
-  /** Lo que se le debe todavía: positivo, falta; negativo, se le pagó de más. */
-  owed: Money;
-};
-
-/** Lo que recibió de lo retenido quien no es parte del reparto de esos cobros: un adelanto que le baja el saldo. */
-export type PartyAdvance = { beneficiaryId: string; name: string; amount: Money };
+/** Lo de cada parte en los cobros de una moneda, y los adelantos: la cuenta es `partyTotals` del motor. */
+export type { PartyAdvance, PartyTotal };
 
 /** Una columna de montos de una tabla: su título y, con `strong`, en negrita (lo que más importa). */
 export type PdfColumn = { title: string; strong?: boolean };
@@ -391,50 +380,28 @@ function byCurrency(txs: readonly TxSnapshot[]): Map<Currency, TxSnapshot[]> {
   return groups;
 }
 
-const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name, "es");
-
 /**
- * Lo de cada parte en esos cobros, sumado de su estado de pago en cada uno (reparto, retenido, pagado y lo que se le
- * debe), y lo que recibió de lo retenido quien no es parte de un cobro (un adelanto). Cada lista, por nombre.
+ * Lo de cada parte en esos cobros (`partyTotals` del motor, la misma cuenta que el «Reparto del filtro» de Cobros):
+ * reparto, retenido, pagado y lo que se le debe, y los adelantos de quien recibe lo retenido sin ser parte. Los
+ * nombres, los de ahora o, si ya no existen, los congelados en el desglose del primer cobro que los tiene.
  */
 function partiesOf(
   txs: readonly TxSnapshot[],
   payouts: PdfPayouts,
   cfg: PayConfig,
 ): { parties: PartyTotal[]; advances: PartyAdvance[] } {
-  const parties = new Map<string, PartyTotal>();
-  const advances = new Map<string, PartyAdvance>();
+  const frozen = new Map<string, string>();
   for (const tx of txs) {
-    const names = frozenNames(tx.breakdown);
-    const parts = payouts.get(tx.id)?.parts ?? [];
-    for (const part of parts) {
-      const id = part.beneficiaryId;
-      const total = parties.get(id) ?? {
-        beneficiaryId: id,
-        name: nameOf(cfg, id, names),
-        allocated: ZERO,
-        retained: ZERO,
-        paid: ZERO,
-        owed: ZERO,
-      };
-      parties.set(id, {
-        ...total,
-        allocated: add(total.allocated, part.allocated),
-        retained: add(total.retained, part.retained),
-        paid: add(total.paid, part.paid),
-        owed: add(total.owed, part.owed),
-      });
-    }
-    // Quien está en el reparto o tiene pagos ligados es una parte: lo retenido ya cuenta en lo suyo.
-    const partIds = new Set([...tx.breakdown.alloc.lines, ...parts].map((item) => item.beneficiaryId));
-    for (const share of retentionOf(tx.breakdown)?.shares ?? []) {
-      if (isZero(share.amount) || partIds.has(share.beneficiaryId)) continue;
-      const id = share.beneficiaryId;
-      const advance = advances.get(id) ?? { beneficiaryId: id, name: nameOf(cfg, id, names), amount: ZERO };
-      advances.set(id, { ...advance, amount: add(advance.amount, share.amount) });
-    }
+    for (const [id, name] of frozenNames(tx.breakdown)) if (!frozen.has(id)) frozen.set(id, name);
   }
-  return { parties: [...parties.values()].sort(byName), advances: [...advances.values()].sort(byName) };
+  return partyTotals(
+    txs.map((tx) => ({
+      status: payouts.get(tx.id) ?? null,
+      inAllocation: tx.breakdown.alloc.lines.map((line) => line.beneficiaryId),
+      retained: retentionOf(tx.breakdown)?.shares ?? [],
+    })),
+    (id) => nameOf(cfg, id, frozen),
+  );
 }
 
 const PARTY_COLUMNS: readonly PdfColumn[] = [
