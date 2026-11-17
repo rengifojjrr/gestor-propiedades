@@ -300,7 +300,7 @@ test.describe("pagos a las partes del reparto", () => {
     await expect(listed(page, isMobile, done)).toContainText("Reparto pagado");
     // «Reparto pendiente», en «Más filtros».
     await page.getByText("Más filtros").click();
-    await page.getByLabel("Reparto").selectOption({ label: "Reparto pendiente" });
+    await page.getByLabel("Reparto", { exact: true }).selectOption({ label: "Reparto pendiente" });
     await expect(page).toHaveURL(/reparto=pendiente/);
     await expect(page.getByText("Más filtros (1)")).toBeVisible();
     await expect(listed(page, isMobile, done)).toHaveCount(0);
