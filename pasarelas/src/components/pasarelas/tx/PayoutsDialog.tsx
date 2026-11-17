@@ -23,8 +23,9 @@ import { tooManyForSplitText } from "./splitText";
  * devuelve no se registra solo, lo decide el dueño.
  *
  * El mismo diálogo paga a UNA parte desde el «Reparto del filtro» (`fromFilter`): lo que le falta en los cobros del
- * filtro donde se le debe (los pagados de más no se descuentan y se dicen aparte). Un pago de más de 500 cobros se
- * registra como varios de hasta 500, todos en la misma llamada: quedan todos o ninguno.
+ * filtro, la misma «falta» del resumen (lo que se le pagó de más en alguno se descuenta, como aquí, y se dice). Un pago
+ * de más de 500 cobros se registra como varios de hasta 500 (lo que se descuenta, aparte), todos en la misma llamada:
+ * quedan todos o ninguno.
  */
 
 const DATE_TEXT = "Elige la fecha del pago.";
@@ -54,8 +55,8 @@ export function PayoutsDialog({ ids, fromFilter, open, onClose, onDone, today }:
     fromFilter === undefined
       ? `Lo que se le debe a cada parte en ${cobros(ids.length)}. Se registra un pago por parte y moneda, con lo de ` +
         "cada cobro."
-      : `Lo que le falta en los cobros del filtro (${fromFilter.currency}) donde se le debe. Solo se anota lo que ya ` +
-        "le pagaste por fuera: no se mueve dinero.";
+      : `Lo que le falta en los cobros del filtro (${fromFilter.currency}), como dice el «Reparto del filtro». Solo ` +
+        "se anota lo que ya le pagaste por fuera: no se mueve dinero.";
   return (
     <Dialog open={open} onClose={onClose} title={title} description={description}>
       {/* Solo existe mientras está abierto: cada vez lee lo que se debe ahora y empieza sin errores. */}
@@ -89,7 +90,7 @@ function ChoiceLabel({ choice, owes }: { choice: Choice; owes: boolean }) {
 /** Lo que se leyó al abrir: las partes con lo que se les debe, o un aviso de que no hay nada que pagar. */
 type Loaded = {
   groups: NamedOwedGroup[];
-  /** Con `fromFilter`: en cuántos cobros del filtro se le pagó de más, y cuánto (no se descuenta). */
+  /** Con `fromFilter`: en cuántos cobros del filtro se le pagó de más, y cuánto (se descuenta del pago). */
   overpaid: { count: number; amount: MoneyValue; currency: Currency } | null;
   /** Por qué no hay nada que pagar, si lo hay. */
   notice: string | null;
@@ -275,13 +276,14 @@ function PayoutsForm({ ids, query, beneficiaryId, currency, name, onClose, onDon
       {loaded.overpaid === null ? null : (
         <p className="text-sm text-ink-soft">
           En {cobros(loaded.overpaid.count)} del filtro se le pagó de más{" "}
-          <Money value={loaded.overpaid.amount} currency={loaded.overpaid.currency} />: no se descuenta de este pago.
+          <Money value={loaded.overpaid.amount} currency={loaded.overpaid.currency} />: se descuenta de este pago.
         </p>
       )}
       {payouts.length > picked.length ? (
         <Alert tone="info">
           Son más de {MAX_PAYOUT_ITEMS} cobros: se registran {payouts.length} pagos de hasta {MAX_PAYOUT_ITEMS} cobros
-          cada uno, todos juntos (si uno no se puede guardar, no se guarda ninguno).
+          cada uno{loaded.overpaid === null ? "" : " (lo que se descuenta, aparte)"}, todos juntos (si uno no se puede
+          guardar, no se guarda ninguno).
         </Alert>
       ) : null}
       <Field label="Fecha del pago" error={dateError}>

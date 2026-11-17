@@ -16,7 +16,7 @@ import { createUser, e1Item, saveTransactions, seedBasics, unwrap, type Db } fro
 /**
  * El «Reparto del filtro» de Cobros y «Pagar…» desde él, contra el Supabase local con las operaciones de la app: lo de
  * cada parte en TODOS los cobros del filtro (por moneda: le toca, retenido, pagado y lo que falta), igual que el PDF
- * del mismo filtro; y el pago a una parte de lo que falta en los cobros donde se le debe, con la misma comprobación de
+ * del mismo filtro; y el pago a una parte de lo que le falta en esos cobros, con la misma comprobación de
  * «Pagar repartos…» (`recordPayouts`). Cada prueba crea su usuario. Datos inventados.
  *
  * El libro: «Tienda Demo»; «Stripe Demo» (2,9 % + 0,30) y «OTF Demo» (2,9 % + 0,20, retiene el 5 % para «Titular A»);
@@ -377,7 +377,7 @@ describe("«Pagar…» desde el reparto del filtro", () => {
     expect(await settlementsOf(b.db, b.ids["Socio Dos"])).toEqual([["388.32", 1]]);
   });
 
-  it("R5: a quien se le pagó de más no se le paga; un cobro pagado de más no se descuenta", async () => {
+  it("R5: a quien se le pagó de más no se le paga; un cobro pagado de más se descuenta, como en el resumen", async () => {
     const b = await book();
     const [first, second, third] = await r1(b);
     await recordPayouts(b.db, [
@@ -391,20 +391,41 @@ describe("«Pagar…» desde el reparto del filtro", () => {
     expect(partyOf(split.currencies[0], "Socio Uno")).toEqual(["-1.60", "0.00", "48.40", "-50.00"]);
     const { filters } = parseTxFilters(firstOnly, TODAY);
     expect(await owedInFilter(b.db, filters, TODAY, b.ids["Socio Uno"], "USD")).toEqual({ kind: "nada" });
-    // Con los tres, en total le falta: se le paga lo de los cobros donde se le debe, y lo de más se dice aparte.
+
+    // Con los tres, en total le falta 485,40 + 96,95 − 50,00 = 532,35: lo que dice el resumen («Falta $532,35»). Lo
+    // pagado de más en el primero se descuenta (y se dice), como en «Pagar repartos…» de esos cobros.
+    const before = await splitOf(b, r1Query(b));
+    if (!before.ok) throw new Error("debía sumar");
+    expect(partyOf(before.currencies[0], "Socio Uno")).toEqual(["580.75", "0.00", "48.40", "532.35"]);
     const all = parseTxFilters(r1Query(b), TODAY).filters;
     const owed = await owedInFilter(b.db, all, TODAY, b.ids["Socio Uno"], "USD");
-    expect(owed).toMatchObject({ kind: "debe", owed: "582.35", overpaid: { count: 1, amount: "50.00" } });
+    expect(owed).toMatchObject({ kind: "debe", owed: "532.35", overpaid: { count: 1, amount: "50.00" } });
     if (owed.kind !== "debe") return;
     expect(sorted(owed.items)).toEqual(
       sorted([
+        { transactionId: first, amount: "-50.00" },
         { transactionId: second, amount: "485.40" },
         { transactionId: third, amount: "96.95" },
       ]),
     );
+    const fromList = (await listOwed(b.db, [first, second, third])).find((group) => group.name === "Socio Uno");
+    expect(fromList?.items).toEqual(owed.items);
+
+    // Pagado: un solo pago de 532,35 ligado a los tres; su «falta» queda en 0 y el resto de las partes no cambia.
+    expect(await recordPayouts(b.db, payoutsOf(owed))).toEqual({ created: 1 });
+    expect(await settlementsOf(b.db, b.ids["Socio Uno"])).toEqual([
+      ["532.35", 3],
+      ["48.40", 1],
+    ]);
+    const after = await splitOf(b, r1Query(b));
+    if (!after.ok) throw new Error("debía sumar");
+    expect(partyOf(after.currencies[0], "Socio Uno")).toEqual(["580.75", "0.00", "580.75", "0.00"]);
+    expect(partyOf(after.currencies[0], "Socio Dos")).toEqual(partyOf(before.currencies[0], "Socio Dos"));
+    expect(partyOf(after.currencies[0], "Titular A")).toEqual(partyOf(before.currencies[0], "Titular A"));
+    expect(await owedInFilter(b.db, all, TODAY, b.ids["Socio Uno"], "USD")).toEqual({ kind: "nada" });
   });
 
-  it("R8: más de 500 cobros con deuda: varios pagos de hasta 500 en una sola llamada, todos o ninguno", async () => {
+  it("R8: más de 500 cobros con deuda: varios pagos de hasta 500 en una sola llamada, todos o ninguno; lo de más, aparte", async () => {
     const { client: db } = await createUser();
     const basics = await seedBasics(db);
     const item = (n: number) =>
@@ -435,17 +456,29 @@ describe("«Pagar…» desde el reparto del filtro", () => {
     await expect(recordPayouts(db, payouts)).rejects.toThrow(PAYOUT_CHANGED_TEXT);
     expect(await settlementsOf(db, basics.beneficiaryIds.b)).toEqual([["27.09", 1]]);
 
-    // Leído de nuevo: los 519 que faltan, en dos pagos que quedan juntos.
+    // Y después ese cobro se reembolsó entero: la pérdida (2,9 % + 0,30 = 3,20) se reparte y a Grupo B le toca el
+    // 30 %, −0,96. Ahí se le pagó de más 27,09 + 0,96 = 28,05. En total le falta 519 × 27,09 − 28,05 = 14.031,66.
+    await setRefundTotalTx(db, one?.id ?? "", "100.00");
+    const before = await filterSplit(db, await txRefs(db, filters, TODAY), await loadPayConfig(db));
+    if (!before.ok) throw new Error("debía sumar");
+    expect(partyOf(before.currencies[0], "Grupo B")).toEqual(["14058.75", "0.00", "27.09", "14031.66"]);
+
+    // Leído de nuevo: lo de más se descuenta, como en el resumen. Los 519 que faltan van en dos pagos y lo que se
+    // descuenta en un tercero (en tramos seguidos, uno podría sumar cero); los tres quedan juntos.
     const again = await owedInFilter(db, filters, TODAY, basics.beneficiaryIds.b, "USD");
     if (again.kind !== "debe") throw new Error("debía deberle");
-    expect(await recordPayouts(db, payoutsOf(again))).toEqual({ created: 2 });
+    expect(again).toMatchObject({ owed: "14031.66", overpaid: { count: 1, amount: "28.05" } });
+    const last = payoutsOf(again);
+    expect(last.map((payout) => payout.items.length)).toEqual([500, 19, 1]);
+    expect(await recordPayouts(db, last)).toEqual({ created: 3 });
     expect(await settlementsOf(db, basics.beneficiaryIds.b)).toEqual([
       ["13545.00", 500],
       ["514.71", 19],
       ["27.09", 1],
+      ["-28.05", 1],
     ]);
     const split = await filterSplit(db, await txRefs(db, filters, TODAY), await loadPayConfig(db));
     if (!split.ok) throw new Error("debía sumar");
-    expect(partyOf(split.currencies[0], "Grupo B")).toEqual(["14086.80", "0.00", "14086.80", "0.00"]);
+    expect(partyOf(split.currencies[0], "Grupo B")).toEqual(["14058.75", "0.00", "14058.75", "0.00"]);
   });
 });

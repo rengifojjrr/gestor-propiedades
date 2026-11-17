@@ -61,18 +61,21 @@ export async function filterSplit(supabase: Db, txs: readonly TxRef[], cfg: PayC
   };
 }
 
-/** Lo que se le debe a una parte en los cobros del filtro donde se le debe, para «Pagar…». */
+/** Lo que se le debe a una parte en los cobros del filtro, para «Pagar…». */
 export type FilterOwed =
   | {
       kind: "debe";
       beneficiaryId: string;
       name: string;
       currency: Currency;
-      /** Lo que falta en esos cobros: la suma de `items`. */
+      /** Lo que le falta en los cobros del filtro: la suma de `items`, la misma «falta» del resumen. Mayor que 0. */
       owed: Money;
-      /** Un cobro por fila, con lo que falta en él (positivo): las partes del pago. */
+      /**
+       * Un cobro por fila, con lo que se le debe en él (nunca 0): las partes del pago. Negativo donde se le pagó de
+       * más: se descuenta.
+       */
       items: { transactionId: string; amount: Money }[];
-      /** Los cobros del filtro donde se le pagó de más: no se descuentan del pago (cuántos y cuánto, en positivo). */
+      /** Los cobros del filtro donde se le pagó de más, que se descuentan del pago (cuántos y cuánto, en positivo). */
       overpaid: { count: number; amount: Money } | null;
     }
   /** En total no se le debe nada en esos cobros (o se le pagó de más): no hay nada que pagarle. */
@@ -82,9 +85,10 @@ export type FilterOwed =
 
 /**
  * «Pagar…» a una parte desde el «Reparto del filtro»: lo que se le debe ahora (leído de la base, no de lo que se pintó)
- * en los cobros del filtro de esa moneda donde se le debe, con lo de cada uno. Es lo mismo que «Pagar repartos…» de
- * la lista (`listOwed`), pero solo con los cobros donde le falta algo: los que se le pagaron de más no se descuentan
- * (se dicen aparte). Si en total no le falta nada, `nada`: una parte a la que se le pagó de más no se paga desde aquí.
+ * en los cobros del filtro de esa moneda, con lo de cada uno. Es lo mismo que «Pagar repartos…» de la lista
+ * (`listOwed`): los cobros donde está saldada no entran, y lo que se le pagó de más en otros se descuenta (y se dice
+ * aparte). Así se paga exactamente la «falta» del resumen y queda en 0. Si en total no le falta nada, `nada`: una
+ * parte a la que se le pagó de más no se paga desde aquí.
  */
 export async function owedInFilter(
   supabase: Db,
@@ -100,15 +104,14 @@ export async function owedInFilter(
     (candidate) => candidate.beneficiaryId === beneficiaryId && candidate.currency === currency,
   );
   if (group === undefined || cmp(group.owed, ZERO) <= 0) return { kind: "nada" };
-  const items = group.items.filter((item) => cmp(item.amount, ZERO) > 0);
   const over = group.items.filter((item) => cmp(item.amount, ZERO) < 0);
   return {
     kind: "debe",
     beneficiaryId,
     name: group.name,
     currency,
-    owed: add(ZERO, ...items.map((item) => item.amount)),
-    items,
+    owed: group.owed,
+    items: group.items,
     overpaid:
       over.length === 0 ? null : { count: over.length, amount: neg(add(ZERO, ...over.map((item) => item.amount))) },
   };

@@ -121,8 +121,8 @@ export async function owedForTransactions(input: unknown): Promise<ActionResult<
 
 /**
  * «Pagar…» desde el «Reparto del filtro» de Cobros: lo que se le debe ahora a esa parte en esa moneda, en los cobros
- * del filtro donde se le debe (`owedInFilter`). `query` es la URL de la lista (sus parámetros, como los lee la
- * página: `parseTxFilters`). Solo lee: no revalida nada. El pago se registra después con `recordPayouts`.
+ * del filtro (`owedInFilter`). `query` es la URL de la lista (sus parámetros, como los lee la página:
+ * `parseTxFilters`). Solo lee: no revalida nada. El pago se registra después con `recordPayouts`.
  */
 export async function owedForFilter(input: unknown): Promise<ActionResult<{ owed: FilterOwed }>> {
   return runAction(

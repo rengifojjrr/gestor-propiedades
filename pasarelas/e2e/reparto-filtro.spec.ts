@@ -314,7 +314,9 @@ test.describe("el reparto del filtro de Cobros", () => {
     await checkScreen(page);
   });
 
-  test("R5: a quien se le pagó de más lo dice, y no tiene «Pagar…»", async ({ page }) => {
+  test("R5: a quien se le pagó de más lo dice, y no tiene «Pagar…»; si en total le falta, se descuenta", async ({
+    page,
+  }) => {
     const book = await setupBook();
     const [first] = await r1(book, `R5-${randomUUID().slice(0, 6)}`);
     await paid(book, [[book.ids["Socio Uno"], first, "48.40"]]);
@@ -328,6 +330,24 @@ test.describe("el reparto del filtro de Cobros", () => {
     await expect(party(section, "Socio Uno")).toContainText("Se le pagó de más $50,00");
     await expect(party(section, "Socio Uno").getByRole("button")).toHaveCount(0);
     await expect(section.getByRole("button", { name: /^Pagar…/ })).toHaveCount(0);
+    await checkScreen(page);
+
+    // Con los tres cobros, en total le falta 485,40 + 96,95 − 50,00: «Pagar…» propone eso mismo (lo de más se
+    // descuenta, y lo dice) y, pagado, queda en «Pagado».
+    await page.goto(r1Url(book));
+    await openSplit(page);
+    await expect(party(section, "Socio Uno")).toContainText("Falta $532,35");
+    await party(section, "Socio Uno").getByRole("button", { name: "Pagar… a Socio Uno en USD" }).click();
+    const dialog = page.getByRole("dialog", { name: "Pagar a Socio Uno" });
+    await expect(dialog.getByText("Socio Uno", { exact: true }).locator("..")).toContainText("$532,35");
+    await expect(dialog.getByText("en 3 cobros", { exact: true })).toBeVisible();
+    await expect(dialog).toContainText("En 1 cobro del filtro se le pagó de más $50,00: se descuenta de este pago.");
+    await checkScreen(page);
+    await dialog.getByRole("button", { name: "Registrar 1 pago" }).click();
+    await expect(toastWith(page, "Pago registrado")).toBeVisible();
+    await expect(dialog).toBeHidden();
+    await expect(party(section, "Socio Uno")).toContainText("Pagado");
+    await expect(party(section, "Socio Uno").getByRole("button")).toHaveCount(0);
     await checkScreen(page);
   });
 });
