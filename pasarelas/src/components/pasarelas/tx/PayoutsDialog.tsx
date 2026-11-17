@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState, useTransition, type FormEvent } from "react";
-import { Button, Checkbox, Dialog, Field, Input, Money, notify } from "@/components/ui";
+import { useEffect, useState, useTransition, type FormEvent, type ReactNode } from "react";
+import { Alert, Button, Checkbox, Dialog, Field, Input, Money, notify } from "@/components/ui";
 import { ZERO } from "@/lib/pasarelas/decimal";
 import { cmp, neg } from "@/lib/pasarelas/money";
-import type { ISODate } from "@/lib/pasarelas/types";
-import { owedForTransactions, recordPayouts } from "@/server/pasarelas/actions/settlements";
+import type { Currency, ISODate, Money as MoneyValue } from "@/lib/pasarelas/types";
+import { owedForFilter, owedForTransactions, recordPayouts } from "@/server/pasarelas/actions/settlements";
 import type { NamedOwedGroup } from "@/server/pasarelas/queries/settlements";
 import { ActionError, DialogActionError, useRefreshOnClose } from "../ActionError";
 import { RETRY_TEXT, callAction, callActionOr, failureOf, type ActionFailure } from "../callAction";
+import { MAX_PAYOUT_ITEMS, payoutChunks } from "./payoutChunks";
 import { cobros } from "./plural";
+import { tooManyForSplitText } from "./splitText";
 
 /**
  * «Pagar repartos…» de los cobros elegidos en la lista: lo que se le debe a cada parte en ellos, por moneda, con una
@@ -19,16 +21,21 @@ import { cobros } from "./plural";
  * Lo que se debe se lee del servidor al abrir (lo de ahora, no lo de cuando se pintó la lista). Las partes que no
  * deben nada no salen. Si a alguna se le pagó de más (en total, en esos cobros), sale aparte y sin marcar: lo que
  * devuelve no se registra solo, lo decide el dueño.
+ *
+ * El mismo diálogo paga a UNA parte desde el «Reparto del filtro» (`fromFilter`): lo que le falta en los cobros del
+ * filtro donde se le debe (los pagados de más no se descuentan y se dicen aparte). Un pago de más de 500 cobros se
+ * registra como varios de hasta 500, todos en la misma llamada: quedan todos o ninguno.
  */
 
 const DATE_TEXT = "Elige la fecha del pago.";
 
-/** Una parte con su casilla y el id del pago que se registra si se marca (el mismo si se repite tras un corte). */
-type Choice = NamedOwedGroup & { key: string; payoutId: string };
+/** Una parte con su casilla y los ids de sus pagos (uno por cada 500 cobros; los mismos si se repite tras un corte). */
+type Choice = NamedOwedGroup & { key: string; payoutIds: string[] };
 
-export type PayoutsDialogProps = {
-  /** Los cobros elegidos. */
-  ids: string[];
+/** «Pagar…» a una parte desde el «Reparto del filtro»: la URL de la lista, la parte y la moneda. */
+export type FilterPayout = { query: string; beneficiaryId: string; currency: Currency; name: string };
+
+type Common = {
   open: boolean;
   onClose: () => void;
   /** Tras registrar los pagos. */
@@ -37,16 +44,31 @@ export type PayoutsDialogProps = {
   today: ISODate;
 };
 
-export function PayoutsDialog({ ids, open, onClose, onDone, today }: PayoutsDialogProps) {
+/** Los cobros elegidos (`ids`), o una parte en los cobros del filtro (`fromFilter`). */
+export type PayoutsDialogProps = Common &
+  ({ ids: string[]; fromFilter?: undefined } | { ids?: undefined; fromFilter: FilterPayout });
+
+export function PayoutsDialog({ ids, fromFilter, open, onClose, onDone, today }: PayoutsDialogProps) {
+  const title = fromFilter === undefined ? "Pagar repartos" : `Pagar a ${fromFilter.name}`;
+  const description =
+    fromFilter === undefined
+      ? `Lo que se le debe a cada parte en ${cobros(ids.length)}. Se registra un pago por parte y moneda, con lo de ` +
+        "cada cobro."
+      : `Lo que le falta en los cobros del filtro (${fromFilter.currency}) donde se le debe. Solo se anota lo que ya ` +
+        "le pagaste por fuera: no se mueve dinero.";
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      title="Pagar repartos"
-      description={`Lo que se le debe a cada parte en ${cobros(ids.length)}. Se registra un pago por parte y moneda, con lo de cada cobro.`}
-    >
+    <Dialog open={open} onClose={onClose} title={title} description={description}>
       {/* Solo existe mientras está abierto: cada vez lee lo que se debe ahora y empieza sin errores. */}
-      <PayoutsForm ids={ids} onClose={onClose} onDone={onDone} today={today} />
+      <PayoutsForm
+        ids={ids}
+        query={fromFilter?.query}
+        beneficiaryId={fromFilter?.beneficiaryId}
+        currency={fromFilter?.currency}
+        name={fromFilter?.name}
+        onClose={onClose}
+        onDone={onDone}
+        today={today}
+      />
     </Dialog>
   );
 }
@@ -64,8 +86,52 @@ function ChoiceLabel({ choice, owes }: { choice: Choice; owes: boolean }) {
   );
 }
 
-function PayoutsForm({ ids, onClose, onDone, today }: Omit<PayoutsDialogProps, "open">) {
+/** Lo que se leyó al abrir: las partes con lo que se les debe, o un aviso de que no hay nada que pagar. */
+type Loaded = {
+  groups: NamedOwedGroup[];
+  /** Con `fromFilter`: en cuántos cobros del filtro se le pagó de más, y cuánto (no se descuenta). */
+  overpaid: { count: number; amount: MoneyValue; currency: Currency } | null;
+  /** Por qué no hay nada que pagar, si lo hay. */
+  notice: string | null;
+};
+
+/** Qué se lee al abrir: los cobros elegidos, o una parte (con su nombre) en una moneda de los cobros del filtro. */
+type OwedRequest = { ids?: string[]; query?: string; beneficiaryId?: string; currency?: Currency; name?: string };
+
+type FormProps = Omit<Common, "open"> & OwedRequest;
+
+/** Lo que se le debe ahora: a cada parte en los cobros elegidos, o a una parte en los cobros del filtro. */
+async function loadOwed({ ids, query, beneficiaryId, currency, name }: OwedRequest) {
+  const failed = () => ({ ok: false as const, error: RETRY_TEXT });
+  if (ids !== undefined) {
+    const result = await callActionOr(() => owedForTransactions({ ids }), failed);
+    if (!result.ok) return result;
+    return { ok: true as const, loaded: { groups: result.data.groups, overpaid: null, notice: null } };
+  }
+  const result = await callActionOr(() => owedForFilter({ query, beneficiaryId, currency }), failed);
+  if (!result.ok) return result;
+  const { owed } = result.data;
+  const loaded: Loaded =
+    owed.kind === "debe"
+      ? {
+          groups: [owed],
+          overpaid: owed.overpaid === null ? null : { ...owed.overpaid, currency: owed.currency },
+          notice: null,
+        }
+      : {
+          groups: [],
+          overpaid: null,
+          notice:
+            owed.kind === "nada"
+              ? `A ${name ?? ""} ya no le falta nada en los cobros del filtro.`
+              : tooManyForSplitText(owed.count),
+        };
+  return { ok: true as const, loaded };
+}
+
+function PayoutsForm({ ids, query, beneficiaryId, currency, name, onClose, onDone, today }: FormProps) {
   const [choices, setChoices] = useState<Choice[] | null>(null);
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState<ActionFailure | null>(null);
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
   const [paidOn, setPaidOn] = useState(today);
@@ -77,32 +143,41 @@ function PayoutsForm({ ids, onClose, onDone, today }: Omit<PayoutsDialogProps, "
 
   useEffect(() => {
     let current = true;
-    void callActionOr(
-      () => owedForTransactions({ ids }),
-      () => ({ ok: false as const, error: RETRY_TEXT }),
-    ).then((result) => {
+    void loadOwed({ ids, query, beneficiaryId, currency, name }).then((result) => {
       if (!current) return;
       if (!result.ok) {
         setLoadError({ text: result.error, unsure: false });
         return;
       }
-      const loaded = result.data.groups.map((group) => ({
+      const list = result.loaded.groups.map((group) => ({
         ...group,
         key: `${group.currency} ${group.beneficiaryId}`,
-        payoutId: crypto.randomUUID(),
+        payoutIds: payoutChunks(group.items).map(() => crypto.randomUUID()),
       }));
-      setChoices(loaded);
+      setLoaded(result.loaded);
+      setChoices(list);
       // Las que deben algo vienen marcadas; las que tienen que devolver, no.
-      setChosen(new Set(loaded.filter((choice) => cmp(choice.owed, ZERO) > 0).map((choice) => choice.key)));
+      setChosen(new Set(list.filter((choice) => cmp(choice.owed, ZERO) > 0).map((choice) => choice.key)));
     });
     return () => {
       current = false;
     };
-  }, [ids]);
+  }, [ids, query, beneficiaryId, currency, name]);
 
   const owes = (choices ?? []).filter((choice) => cmp(choice.owed, ZERO) > 0);
   const returns = (choices ?? []).filter((choice) => cmp(choice.owed, ZERO) < 0);
   const picked = (choices ?? []).filter((choice) => chosen.has(choice.key));
+  // Un pago por cada 500 cobros de cada parte elegida: todos van en la misma llamada.
+  const payouts = picked.flatMap((choice) =>
+    payoutChunks(choice.items).map((items, i) => ({
+      id: choice.payoutIds[i] ?? "",
+      beneficiaryId: choice.beneficiaryId,
+      currency: choice.currency,
+      paidOn,
+      method,
+      items,
+    })),
+  );
 
   function toggle(key: string, on: boolean) {
     setChosen((previous) => {
@@ -121,14 +196,6 @@ function PayoutsForm({ ids, onClose, onDone, today }: Omit<PayoutsDialogProps, "
     }
     setDateError(null);
     setError(null);
-    const payouts = picked.map((choice) => ({
-      id: choice.payoutId,
-      beneficiaryId: choice.beneficiaryId,
-      currency: choice.currency,
-      paidOn,
-      method,
-      items: choice.items,
-    }));
     startTransition(async () => {
       const result = await callAction(() => recordPayouts({ payouts }));
       if (!result.ok) {
@@ -140,31 +207,27 @@ function PayoutsForm({ ids, onClose, onDone, today }: Omit<PayoutsDialogProps, "
     });
   }
 
-  if (loadError !== null) {
-    return (
-      <div className="flex flex-col gap-4">
-        <ActionError failure={loadError} />
-        <Button className="self-end" onClick={onClose}>
-          Cerrar
-        </Button>
-      </div>
-    );
-  }
-  if (choices === null) {
+  const closeOnly = (message: ReactNode) => (
+    <div className="flex flex-col gap-4">
+      {message}
+      <Button className="self-end" onClick={onClose}>
+        Cerrar
+      </Button>
+    </div>
+  );
+
+  if (loadError !== null) return closeOnly(<ActionError failure={loadError} />);
+  if (choices === null || loaded === null) {
     return (
       <p role="status" className="text-ink-soft">
         Leyendo lo que se le debe a cada parte…
       </p>
     );
   }
+  if (loaded.notice !== null) return closeOnly(<p role="status">{loaded.notice}</p>);
   if (choices.length === 0) {
-    return (
-      <div className="flex flex-col gap-4">
-        <p role="status">Las partes de estos cobros no deben nada: ya está todo pagado (o no tienen reparto).</p>
-        <Button className="self-end" onClick={onClose}>
-          Cerrar
-        </Button>
-      </div>
+    return closeOnly(
+      <p role="status">Las partes de estos cobros no deben nada: ya está todo pagado (o no tienen reparto).</p>,
     );
   }
 
@@ -172,7 +235,7 @@ function PayoutsForm({ ids, onClose, onDone, today }: Omit<PayoutsDialogProps, "
     <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
       {owes.length === 0 ? null : (
         <fieldset className="flex flex-col">
-          <legend className="font-semibold">Les falta</legend>
+          <legend className="font-semibold">{query === undefined ? "Les falta" : "Le falta"}</legend>
           {owes.map((choice) => (
             <Checkbox
               key={choice.key}
@@ -201,6 +264,18 @@ function PayoutsForm({ ids, onClose, onDone, today }: Omit<PayoutsDialogProps, "
           ))}
         </fieldset>
       )}
+      {loaded.overpaid === null ? null : (
+        <p className="text-sm text-ink-soft">
+          En {cobros(loaded.overpaid.count)} del filtro se le pagó de más{" "}
+          <Money value={loaded.overpaid.amount} currency={loaded.overpaid.currency} />: no se descuenta de este pago.
+        </p>
+      )}
+      {payouts.length > picked.length ? (
+        <Alert tone="info">
+          Son más de {MAX_PAYOUT_ITEMS} cobros: se registran {payouts.length} pagos de hasta {MAX_PAYOUT_ITEMS} cobros
+          cada uno, todos juntos (si uno no se puede guardar, no se guarda ninguno).
+        </Alert>
+      ) : null}
       <Field label="Fecha del pago" error={dateError}>
         <Input type="date" value={paidOn} onChange={(event) => setPaidOn(event.currentTarget.value)} required />
       </Field>
@@ -212,8 +287,8 @@ function PayoutsForm({ ids, onClose, onDone, today }: Omit<PayoutsDialogProps, "
         <Button onClick={onClose} disabled={pending}>
           Cancelar
         </Button>
-        <Button type="submit" variant="primary" disabled={pending || picked.length === 0}>
-          {picked.length === 1 ? "Registrar 1 pago" : `Registrar ${picked.length} pagos`}
+        <Button type="submit" variant="primary" disabled={pending || payouts.length === 0}>
+          {payouts.length === 1 ? "Registrar 1 pago" : `Registrar ${payouts.length} pagos`}
         </Button>
       </div>
     </form>

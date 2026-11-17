@@ -1,6 +1,7 @@
 import "server-only";
 import { ZERO, add, cmp, neg, partyTotals, payoutStatus } from "@/lib/pasarelas";
 import type { Currency, ISODate, Money, PartyAdvance, PartyTotal, PayConfig } from "@/lib/pasarelas";
+import { SPLIT_MAX } from "@/components/pasarelas/tx/splitText";
 import type { Db } from "../dto";
 import { listOwed, readPayoutFacts } from "./settlements";
 import { txRefs, type TxFilters, type TxRef } from "./transactions";
@@ -12,11 +13,8 @@ import { txRefs, type TxFilters, type TxRef } from "./transactions";
  * —el reparto, lo retenido y lo pagado de esos cobros— por tramos, con el cliente del usuario (la RLS manda).
  */
 
-/**
- * Cuántos cobros suma como mucho el «Reparto del filtro» (y lee su «Pagar…»). Con más no se suma nada: se dice
- * cuántos son y que hay que acotar el filtro, nunca las cifras de una parte presentadas como si fueran todas.
- */
-export const SPLIT_MAX = 5000;
+/** El tope de cobros del «Reparto del filtro» (vive con sus textos: la pantalla también lo nombra). */
+export { SPLIT_MAX };
 
 /** Lo de cada parte en los cobros del filtro de UNA moneda, y los adelantos (lo retenido a quien no es parte). */
 export type CurrencySplit = { currency: Currency; parties: PartyTotal[]; advances: PartyAdvance[] };

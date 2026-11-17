@@ -1,8 +1,9 @@
 import { ChevronDown } from "lucide-react";
 import { Suspense } from "react";
-import { UrlPeriod, UrlSearch, UrlSelect } from "@/components/ui";
+import { UrlSearch, UrlSelect } from "@/components/ui";
 import { STATUS_LABEL } from "@/lib/pasarelas/status";
 import type { DisplayStatus } from "@/lib/pasarelas/types";
+import { TxPeriod } from "./TxPeriod";
 
 type Option = { value: string; label: string };
 
@@ -48,9 +49,9 @@ const SORT_OPTIONS: Option[] = [
 const NO_LOADER_OPTION: Option = { value: "sin", label: "Sin cargador" };
 
 /**
- * Búsqueda, período, orden y «Más filtros» (empresa, canal, pasarela, cuenta, moneda, estado, comprobante, reparto y
- * cargador), todo en la URL con las claves que entiende `parseTxFilters`. Cambiar un filtro vuelve a la primera
- * página.
+ * Búsqueda, período (de la venta o del depósito), orden y «Más filtros» (empresa, canal, pasarela, cuenta, moneda,
+ * estado, comprobante, reparto y cargador), todo en la URL con las claves que entiende `parseTxFilters`. Cambiar un
+ * filtro vuelve a la primera página.
  */
 export function TxFilters({ companies, channels, gateways, accounts, currencies, loaders, activeMore }: TxFiltersProps) {
   return (
@@ -59,7 +60,7 @@ export function TxFilters({ companies, channels, gateways, accounts, currencies,
       <div className="flex flex-col gap-3">
         <UrlSearch label="Buscar" placeholder="Referencia, nota, empresa o monto" />
         <div className="grid gap-3 sm:grid-cols-2">
-          <UrlPeriod />
+          <TxPeriod />
           <UrlSelect param="orden" label="Orden" allLabel="Más recientes primero" options={SORT_OPTIONS} />
         </div>
         <details open={activeMore > 0} className="group rounded-card border border-rule bg-surface">

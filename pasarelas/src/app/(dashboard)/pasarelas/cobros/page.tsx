@@ -7,6 +7,7 @@ import { PdfButton } from "@/components/pasarelas/tx/PdfButton";
 import { TxBulkBar, TxSelectionProvider } from "@/components/pasarelas/tx/TxBulkBar";
 import { TxCards } from "@/components/pasarelas/tx/TxCards";
 import { TxFilters } from "@/components/pasarelas/tx/TxFilters";
+import { TxSplit } from "@/components/pasarelas/tx/TxSplit";
 import { TxTable, type TxRowView } from "@/components/pasarelas/tx/TxTable";
 import { TxTotals } from "@/components/pasarelas/tx/TxTotals";
 import { ButtonLink, DateText, EmptyState, PageHeader, Pagination } from "@/components/ui";
@@ -14,6 +15,7 @@ import { hrefWith } from "@/components/ui/url";
 import { requireSession } from "@/lib/auth/session";
 import { todayNY, totalsOf, type Currency, type PayConfig } from "@/lib/pasarelas";
 import { createClient } from "@/lib/supabase/server";
+import { filterSplit } from "@/server/pasarelas/queries/filter-split";
 import { getPayConfig } from "@/server/pasarelas/queries/session-config";
 import { payoutStatuses } from "@/server/pasarelas/queries/settlements";
 import { leanTx, listTx, parseTxFilters, type TxFilters as Filters } from "@/server/pasarelas/queries/transactions";
@@ -139,9 +141,10 @@ function ExportMenu({ href }: { href: (formato: string | null) => string }) {
 }
 
 /**
- * Cobros: búsqueda, filtros, orden y páginas de 50, todo en la URL; los totales de TODO el filtro por moneda
- * (plegados, con una línea de resumen); la selección con sus acciones en lote; y el CSV del filtro, en un menú.
- * Tabla desde 768 px, tarjetas en el celular.
+ * Cobros: búsqueda, filtros (el período, de la venta o del depósito), orden y páginas de 50, todo en la URL; los
+ * totales de TODO el filtro por moneda y el reparto de esos cobros por parte, con «Pagar…» (los dos plegados, con una
+ * línea de resumen); la selección con sus acciones en lote; y el CSV del filtro, en un menú. Tabla desde 768 px,
+ * tarjetas en el celular.
  */
 export default async function CobrosPage({ searchParams }: PageProps<"/pasarelas/cobros">) {
   await requireSession();
@@ -153,7 +156,7 @@ export default async function CobrosPage({ searchParams }: PageProps<"/pasarelas
     listTx(supabase, filters, sort, page, today, PAGE_SIZE, cfg),
     leanTx(supabase, filters, today, cfg),
   ]);
-  const payouts = await payoutStatuses(supabase, list.rows);
+  const [payouts, split] = await Promise.all([payoutStatuses(supabase, list.rows), filterSplit(supabase, lean, cfg)]);
   const totals = totalsOf(lean);
   const rows: TxRowView[] = list.rows
     .map(withNames(cfg))
@@ -194,6 +197,7 @@ export default async function CobrosPage({ searchParams }: PageProps<"/pasarelas
           </p>
         )}
         <TxTotals totals={totals} />
+        <TxSplit split={split} query={query.toString()} today={today} />
 
         {/* Con otros filtros u otra página, la selección empieza de cero. Va por fuera de la lista: si una acción en
             lote la vacía, lleva el foco al aviso de la lista vacía. */}
