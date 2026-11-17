@@ -114,7 +114,15 @@ async function loadOwed({ ids, query, beneficiaryId, currency, name }: OwedReque
   const loaded: Loaded =
     owed.kind === "debe"
       ? {
-          groups: [owed],
+          groups: [
+            {
+              beneficiaryId: owed.beneficiaryId,
+              name: owed.name,
+              currency: owed.currency,
+              owed: owed.owed,
+              items: owed.items,
+            },
+          ],
           overpaid: owed.overpaid === null ? null : { ...owed.overpaid, currency: owed.currency },
           notice: null,
         }
