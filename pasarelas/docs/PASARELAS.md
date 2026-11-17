@@ -20,6 +20,7 @@ como está guardado, con punto (`"90.30"`).
 7. [Lo que se congela y lo que lo cambia](#lo-que-se-congela-y-lo-que-lo-cambia)
 8. [Estados de un cobro](#estados-de-un-cobro)
 9. [Repartos y liquidaciones](#repartos-y-liquidaciones) (ejemplos P1 a P5)
+    - [El reparto del filtro](#el-reparto-del-filtro)
 10. [Cargadores](#cargadores)
 11. [La base de datos](#la-base-de-datos)
 12. [Seguridad](#seguridad)
@@ -276,8 +277,8 @@ Las cuentas, en [Lo pagado a cada parte de un cobro](#lo-pagado-a-cada-parte-de-
   - Un cobro fallido o en la papelera no tiene estado ni «Marcar…». Sus pagos se ven y se pueden deshacer.
 - **En la lista de Cobros.** Bajo la empresa y la pasarela, una marca: **«Reparto pagado»** o **«Reparto: 2 de 4
   pagados»**. Sin reparto, no hay marca. «Más filtros» → «Reparto» → **«Reparto pendiente»** deja solo los cobros
-  con alguna parte a la que le falta algo o a la que se le pagó de más. Vale para la página, los totales, el CSV y el
-  PDF del filtro.
+  con alguna parte a la que le falta algo o a la que se le pagó de más. Vale para la página, los totales, el
+  «Reparto del filtro», el CSV y el PDF del filtro.
 - **Pagar varios cobros a la vez.** Marcar las casillas de los cobros → en la barra, **«Pagar repartos…»**. Dice lo
   que se le debe ahora a cada parte en esos cobros, por moneda: Grupo A, $1.161,06, «en 2 cobros». Cada parte tiene
   su casilla:
@@ -299,6 +300,72 @@ Las cuentas, en [Lo pagado a cada parte de un cobro](#lo-pagado-a-cada-parte-de-
   beneficiario) y vuelve a intentarlo.» «Vaciar la papelera» se niega igual si alguno los tiene, y no dice cuál (fila
   [(ah)](#decisiones-tomadas-y-por-confirmar)).
 - **Exportar todo** lleva de qué cobros es cada pago y cuánto de cada uno.
+
+**Filtrar por la fecha del depósito.** En Cobros, junto a «Período», **«Fechas de»** dice de qué es la fecha del
+período:
+
+- **«La venta»**, la de siempre y la que viene puesta: la fecha del cobro.
+- **«El depósito»**: el día en que el dinero cae en el banco. Si el cobro está marcado depositado, la fecha en que se
+  marcó. Si no, la estimada, y de su ventana el **último** día: así no lleva a pagar antes de que el dinero pueda
+  haber llegado. Un cobro sin ninguna de las dos no sale. Debajo, una línea lo recuerda: «Por depósito: la fecha en
+  que lo marcaste depositado o, si no, la estimada (el último día de su ventana).»
+
+«Período» trae además **«Ayer»** y **«Hoy»**, con las dos. Con «El depósito» salen también **«Mañana»** y
+**«Próximos 7 días»** (hoy y los 6 siguientes). Si se vuelve a «La venta» con una de esas dos, el período pasa a
+«Este mes». «Elegir fechas» admite días futuros con las dos (fila [(aq)](#decisiones-tomadas-y-por-confirmar)).
+
+Todo va en la URL (`fechas=deposito`, `periodo=manana`…). Lo respetan la lista, sus páginas, «Totales del filtro»,
+el «Reparto del filtro», el CSV y el PDF, que lo dice arriba: «Depósitos del mar 17 nov 2026 al lun 23 nov 2026».
+Estos períodos son solo de Cobros: el Resumen y Cargadores siguen con los de siempre.
+
+Antes de pagar con esto, tres cosas:
+
+- **«Mañana toca pagar» sale de una fecha estimada.** La app no ve el banco. Un cobro sin marcar sale el día en que
+  se estima que cae, haya llegado o no. Y uno atrasado sin marcar queda en el día en que debió llegar: no sale en
+  «Hoy» ni en «Mañana».
+- **Para pagar solo lo que ya llegó:** «Fechas de» «El depósito» y, en «Más filtros», «Estado» «Depositado» y
+  «Reparto» «Reparto pendiente». Para eso hay que marcar los depósitos («Marcar depositado»): lo que no se marcó no
+  está «Depositado».
+- **No es lo mismo que «Puede llegar hoy»** de «Dinero en camino». Ahí cuenta toda la ventana; aquí, solo su último
+  día. Un cobro que puede caer hoy o mañana sale con «Mañana».
+
+**Ver cuánto le falta a cada parte en lo filtrado.** En Cobros, debajo de «Totales del filtro», va **«Reparto del
+filtro»**: lo de cada parte del reparto en **todos** los cobros del filtro, no solo en la página. Los fallidos no
+cuentan. Las reglas, en [El reparto del filtro](#el-reparto-del-filtro).
+
+- **Plegado**, una línea por moneda: «USD: Falta pagar $1.211,50 a 3 partes», o «Todo pagado». A quien se le pagó de
+  más se le cuenta aparte: «Todo pagado · a 1 se le pagó de más».
+- **Abierto**, un bloque por moneda: nunca se suman monedas. Cada parte lleva su estado a la vista, con las palabras
+  del detalle («Falta $630,75», «Pagado» o «Se le pagó de más $50,00»), y debajo **«Le toca»**, **«Retenido»** y
+  **«Pagado»**. «Retenido» es lo que la pasarela le pagó directo: ya lo recibió y no cuenta en lo que falta.
+- Quien recibió retención sin estar en el reparto de esos cobros sale en una frase aparte: «Grupo C recibió $50,00
+  de la retención sin estar en el reparto de estos cobros: es un adelanto y su saldo baja.»
+- **Con más de 5000 cobros** no da ninguna cifra: «Son 6234 cobros: el reparto se suma con hasta 5000. Acota el
+  filtro (por ejemplo, por fechas) para verlo.»
+
+**Pagar desde el «Reparto del filtro».** Cada parte a la que le falta algo lleva **«Pagar…»**; a quien se le pagó de
+más, no. Abre el diálogo de «Pagar repartos…» con esa parte y esa moneda: «Pagar a Socio Dos».
+
+- Al abrir, lee lo que se le debe **ahora** en los cobros del filtro: el monto, que es la misma «Falta» del resumen,
+  y en cuántos cobros («en 2 cobros»). La fecha viene con hoy; el medio es opcional.
+- Si en algún cobro del filtro se le pagó de más, se descuenta, y el diálogo lo dice: «En 1 cobro del filtro se le
+  pagó de más $50,00: se descuenta de este pago.»
+- También dice: «Solo se anota lo que ya le pagaste por fuera: no se mueve dinero.»
+- **«Registrar 1 pago»** crea una liquidación de esa parte ligada a los cobros donde tenía algo pendiente, con lo de
+  cada uno. Los cobros donde ya estaba saldada no entran. El detalle de cada cobro lo dice igual que con «Pagar
+  repartos…»: «Pagado el …: $388,32 (de un pago de $465,88 por 2 cobros)».
+- Después, el resumen y la lista se ponen al día: la parte queda «Pagado» y, con «Reparto pendiente», los cobros que
+  quedaron saldados salen de la lista.
+- Si algo cambió mientras tanto (otro pago, un reembolso), no se guarda nada y lo dice, como en «Pagar repartos…».
+  Si al abrir ya no le falta nada: «A Socio Dos ya no le falta nada en los cobros del filtro.»
+- **Con más de 500 cobros**, se registran varios pagos de hasta 500, todos juntos: «Son más de 500 cobros: se
+  registran 2 pagos de hasta 500 cobros cada uno, todos juntos (si uno no se puede guardar, no se guarda ninguno).»
+  El botón dice «Registrar 2 pagos».
+
+**Un reembolso después de pagar** deja a la parte con «Se le pagó de más» en ese cobro, y también en el resumen. La
+app solo lo anota: recuperar ese dinero es cosa del dueño. Si en otros cobros del filtro le falta más que eso,
+«Pagar…» se lo descuenta. Si no, queda a la vista hasta que se registre su devolución desde «Pagar repartos…»,
+marcándola (fila [(ai)](#decisiones-tomadas-y-por-confirmar)).
 
 **Reportarle a cada cargador sus ventas.** Un cargador es quien le trae una venta al dueño. Solo sirve para
 reportar: no cobra del reparto ni cambia ninguna cifra. Todo, en [Cargadores](#cargadores).
@@ -334,8 +401,9 @@ Cobros:
   se eligieron. El archivo: `cobros-elegidos-2026-11-14.pdf`.
 - **El filtro de la lista.** **«PDF»**, junto a «Exportar CSV»: todo el filtro, no solo la página, con las mismas
   claves que el CSV y en el orden de la lista. El archivo: `cobros-2026-11-14.pdf`.
-- **Hoy.** **«PDF de hoy»**, al lado: los cobros de hoy en Nueva York, sin mirar el filtro. Está porque la lista no
-  tiene «Hoy» entre sus períodos. El archivo, como el del filtro.
+- **Hoy.** **«PDF de hoy»**, al lado: los cobros de hoy en Nueva York, por la fecha de la venta, sin mirar el
+  filtro. Es lo mismo que «PDF» con «Período» «Hoy», «Fechas de» «La venta» y ningún otro filtro. El archivo, como el
+  del filtro.
 
 La fecha del nombre es la de hoy en Nueva York. No salen los cobros de la papelera, ni un id que el usuario no ve
 (de otro usuario o que no existe), y eso no es un error.
@@ -346,9 +414,10 @@ La fecha del nombre es la de hoy en Nueva York. No salen los cobros de la papele
   dibujar, contra el Supabase local.
 - **Qué lleva.** Página Carta vertical y «Página X de Y» al pie.
   - Arriba: «Cobros», qué abarca y cuándo se generó. Qué abarca es «Seleccionados (12)», o el período y los filtros
-    en palabras: «Del dom 1 nov 2026 al sáb 14 nov 2026 · Empresa: Tienda Demo · Estado: Depositado». El filtro de
-    cargador sale como «Cargador: Cargador Uno» o «Sin cargador». Debajo, «Generado el sáb 14 nov 2026, 10:30 (hora
-    de Nueva York)».
+    en palabras: «Del dom 1 nov 2026 al sáb 14 nov 2026 · Empresa: Tienda Demo · Estado: Depositado». Con
+    «Fechas de» «El depósito», el período dice «Depósitos del … al …» (o «Depósitos de hoy, …», «Depósitos del …» si
+    es un solo día). El filtro de cargador sale como «Cargador: Cargador Uno» o «Sin cargador». Debajo, «Generado el
+    sáb 14 nov 2026, 10:30 (hora de Nueva York)».
   - Cada cobro, en un bloque: la empresa (y el canal), la fecha y hora, la pasarela, la referencia, la moneda y, si
     lo tiene, el cargador («Cargador: Cargador Uno», con su nombre de ahora), y el estado con la fecha del depósito,
     real o estimada («Depositado el vie 13 nov 2026», «Registrado · llega el jue 12 nov»). Debajo, dos columnas:
@@ -387,9 +456,10 @@ con cualquier dato:
   la que pone la app) no se detecta: se toma como el mismo envío y ese cambio se pierde.
 - En una liquidación avisa si cambió el beneficiario, la fecha, la moneda o el monto, o si se puso o se quitó el
   comprobante. Un cambio en el medio de pago o en la nota no se detecta y se pierde.
-- Al marcar pagos («Marcar pagado…», «Marcar todo el reparto pagado…» o «Pagar repartos…») avisa si cambió la fecha
-  o el monto: «Ese pago ya se había guardado en el primer intento, con los datos de entonces: lo que cambiaste no se
-  guardó. Mira cómo quedó el reparto.» Un cambio en el medio no se detecta y se pierde.
+- Al marcar pagos («Marcar pagado…», «Marcar todo el reparto pagado…», «Pagar repartos…» o «Pagar…» del «Reparto
+  del filtro») avisa si cambió la fecha o el monto: «Ese pago ya se había guardado en el primer intento, con los datos
+  de entonces: lo que cambiaste no se guardó. Mira cómo quedó el reparto.» Un cambio en el medio no se detecta y se
+  pierde.
 
 Lo mismo pasa al entrar, al escribir el código y en Ajustes → Seguridad. Entrar y el código piden repetir, que es
 seguro. Al entrar se conserva el correo, pero la contraseña y los códigos de 6 dígitos hay que escribirlos otra vez.
@@ -460,13 +530,13 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 | `breakdown.ts` | El cálculo de un cobro y el desglose que se congela. Lo que retiene la pasarela (`retentionOf`), lo que llega al banco (`payoutOf`) y cuándo se libera (`retentionReleaseOn`) |
 | `rules.ts` | De la configuración a las reglas de un cobro, y los días que tarda el depósito. Valida la retención de una pasarela (`validateRetention`) |
 | `versions.ts` | Qué versión (tarifa o esquema) rige en una fecha |
-| `dates.ts`, `holidays.ts` | Fechas, días hábiles y feriados bancarios |
+| `dates.ts`, `holidays.ts` | Fechas, días hábiles y feriados bancarios. Los períodos de las listas (`periodRange`), también ayer, hoy, mañana y los próximos 7 días |
 | `status.ts` | El estado que se muestra, «por caer» y «atrasado» |
 | `write.ts` | Cada cambio sobre un cobro (crear, editar, reembolsar, disputar, depositar…), planeado como una escritura |
 | `stats.ts` | Resumen por moneda (con lo retenido y lo que llega al banco), tiempos reales de depósito y los grupos de depósitos por fecha y cuenta (`upcomingDeposits`) |
 | `transit.ts` | «Dinero en camino»: la fase y la cuenta regresiva de cada cobro por caer, las cifras de cada fase, por cuenta, lo detenido por disputas, lo retenido sin liberar y lo marcado depositado en los últimos 30 días (`moneyInTransit`) |
 | `schemes.ts` | Validar un esquema de reparto antes de guardarlo |
-| `payouts.ts` | Lo que falta pagarle a cada parte del reparto de un cobro (`payoutStatus`), lo que se le debe a cada parte en varios cobros, por moneda (`owedByPart`), y cuánto se le puede pagar sin pasarse (`fitsOwed`) |
+| `payouts.ts` | Lo que falta pagarle a cada parte del reparto de un cobro (`payoutStatus`), lo que se le debe a cada parte en varios cobros, por moneda (`owedByPart`), y cuánto se le puede pagar sin pasarse (`fitsOwed`). Lo de cada parte en varios cobros de una moneda (le toca, retenido, pagado y lo que falta) y los adelantos (`partyTotals`): la cuenta de los totales por parte del PDF y del «Reparto del filtro» |
 | `guards.ts` | Guardas para textos libres: tarjetas, números largos y enlaces |
 | `csv.ts` | Armar un CSV para descargar, protegido contra fórmulas |
 | `import/` | Leer el CSV de una pasarela: reconocer el formato, convertir cada fila y separar repetidos y posibles repetidos |
@@ -481,13 +551,14 @@ lo suyo), convierte el dinero a texto en la frontera y el motor suma lo que haga
 | `tx-save.ts` | Manda las escrituras del motor a `pay_save_transactions`, en lotes de 500 |
 | `action.ts` | `runAction`: la envoltura de cada acción del servidor (sesión, validación, error en español, revalidar) |
 | `queries/config.ts`, `queries/session-config.ts` | Lee toda la configuración del usuario (`loadPayConfig`, `getPayConfig`) y siembra los feriados (`ensureHolidays`) |
-| `queries/transactions.ts` | Los filtros, la lista por páginas, las filas para totales y el detalle de un cobro |
-| `queries/settlements.ts` | Las liquidaciones de un beneficiario con sus cobros, el estado de pago de cada cobro (`payoutStatuses`), lo que se debe en los cobros elegidos (`listOwed`) y los pagos ligados a un cobro (`listTxPayouts`) |
+| `queries/transactions.ts` | Los filtros (el período, por la fecha de la venta o por la del depósito: `depositConditions`), la lista por páginas, las filas para totales (`leanTx`), los cobros del filtro con lo justo para sumar su reparto (`txRefs`) y el detalle de un cobro |
+| `queries/settlements.ts` | Las liquidaciones de un beneficiario con sus cobros, el reparto, lo retenido y lo pagado de varios cobros (`readPayoutFacts`), el estado de pago de cada cobro (`payoutStatuses`), lo que se debe en los cobros elegidos (`listOwed`) y los pagos ligados a un cobro (`listTxPayouts`) |
+| `queries/filter-split.ts` | El «Reparto del filtro» de Cobros: lo de cada parte en todos los cobros del filtro, por moneda (`filterSplit`, con `partyTotals`, hasta `SPLIT_MAX` cobros), y lo que se le debe ahora a una parte en ellos, para «Pagar…» (`owedInFilter`) |
 | `queries/loaders.ts` | Los cargadores con cuántos cobros tiene cada uno (`listLoaders`) y el reporte del período por cargador y «Sin cargador» (`loadLoaderReport`): las cifras de `summarize` sobre los cobros del filtro de cada uno, y el enlace a esa lista |
 | `queries/…` | Una lectura por pantalla: resumen, empresas, pasarelas, cuentas, feriados, repartos, importar y exportar |
 | `ops/transactions.ts` | Registrar, editar, reembolsar, disputar, depositar, recalcular, asignar cargador en lote (`assignLoaderTx`), fechas estimadas, papelera y borrado definitivo |
 | `ops/settlements.ts` | Registrar y borrar liquidaciones (con su comprobante) y registrar pagos ligados a sus cobros (`recordPayouts`). Borrar una liquidación es también el «Deshacer» de un pago |
-| `pdf/` | El PDF de cobros: qué cobros pide la URL y cómo se dice (`scope.ts`), el modelo puro (`model.ts`), el dibujo con pdfkit (`draw.ts`) y la lectura con la RLS y la respuesta (`cobros.ts`) |
+| `pdf/` | El PDF de cobros: qué cobros pide la URL y cómo se dice (`scope.ts`), el modelo puro (`model.ts`), el dibujo con pdfkit (`draw.ts`) y la lectura con la RLS y la respuesta (`cobros.ts`; `txPdfModel` da el modelo sin dibujar) |
 | `ops/receipts.ts` | Registrar y quitar un comprobante, y firmar su URL |
 | `ops/loaders.ts` | Crear, renombrar, activar o desactivar y borrar cargadores, con el nombre ya limpio (`cleanLoaderName`). Traduce dos de los rechazos de la base: el nombre repetido y borrar un cargador con cobros |
 | `ops/…` | Las escrituras de cada parte: empresas, pasarelas (con su retención), cuentas, feriados, repartos, liquidaciones e importar |
@@ -1250,8 +1321,9 @@ plegado. Cada cifra es lo que llega al banco.
 ese dato. La dejan fuera quienes le pasan las filas:
 
 - las cuatro [vistas de totales](#vistas-de-totales) de la base;
-- la lista de cobros y las filas para totales (`listTx` y `leanTx`), que pasan por `applyTxFilters`: por defecto
-  solo trae cobros fuera de la papelera (y, cuando se pide la papelera, solo los de ella);
+- la lista de cobros, las filas para totales y los cobros del «Reparto del filtro» (`listTx`, `leanTx` y `txRefs`),
+  que pasan por `applyTxFilters`: por defecto solo trae cobros fuera de la papelera (y, cuando se pide la papelera,
+  solo los de ella);
 - tres lecturas más, cada una con su propio filtro de `deleted_at`: el último cobro (`lastTx`, para «Repetir el
   último»), los repartos de un beneficiario y la búsqueda de posibles repetidos al importar;
 - lo que falta pagar a cada parte: `payoutStatuses` le dice al motor que el cobro no cuenta (`counts: false`) y
@@ -1360,8 +1432,8 @@ Siguiendo E4: el Grupo A quedó con saldo −46,75. Cuando devuelve esos 46,75 s
 Lo liquidado pasa a 45,15 − 46,75 = −1,60, igual que lo asignado, y el saldo queda en 0,00.
 
 Desde la migración 7, una liquidación puede estar **ligada a sus cobros**: dice de qué cobros es y cuánto de cada
-uno. Son las que crean «Marcar pagado…», «Marcar todo el reparto pagado…» y «Pagar repartos…». Las registradas a
-mano en la ficha no dicen de qué cobros son. En el saldo cuentan igual.
+uno. Son las que crean «Marcar pagado…», «Marcar todo el reparto pagado…», «Pagar repartos…» y «Pagar…» del
+«Reparto del filtro». Las registradas a mano en la ficha no dicen de qué cobros son. En el saldo cuentan igual.
 
 ### Lo pagado a cada parte de un cobro
 
@@ -1441,6 +1513,114 @@ Grupo B de $580,54 del sáb 14 nov 2026 cubre 2 cobros, y se desmarcan los dos: 
 - En los dos cobros, Grupo B vuelve a «Falta $290,27». Las otras tres partes siguen pagadas: «Reparto: 3 de 4
   pagados», y los dos vuelven a «Reparto pendiente».
 - El saldo de Grupo B sube 580,54.
+
+### El reparto del filtro
+
+El «Reparto del filtro» de Cobros dice lo de cada parte en todos los cobros de un filtro, y su «Pagar…» le paga a una
+parte lo que le falta en ellos. Lo que ve el dueño, en [Cómo se usa](#cómo-se-usa).
+
+**Qué cobros suma.** Todos los del filtro de la lista, no solo la página: los mismos de «Totales del filtro», del CSV
+y del PDF. Deja fuera los fallidos; los de la papelera no están en la lista. Con «Fechas de» «El depósito», el
+período mira la fecha del depósito de cada cobro:
+
+- si está depositado, la fecha en que se marcó (`deposited_on`, que existe si y solo si lo está);
+- si no, la estimada (`estimated_deposit_on`): el último día de su ventana, el mismo que usa
+  [«atrasado»](#atrasado-y-tiempo-real);
+- sin ninguna de las dos, el cobro no entra.
+
+Esa regla está escrita en un solo lugar, `depositConditions` (`queries/transactions.ts`), y todo lo que lee el filtro
+pasa por ahí (`applyTxFilters`).
+
+**Las cuentas.** Por moneda (nunca se suman monedas) y por parte, la suma de su estado de pago en cada cobro
+(`payoutStatus`, el mismo del detalle):
+
+- **Le toca**: lo que le tocó en el reparto de cada cobro.
+- **Retenido**: lo que la pasarela le retuvo y le paga directo. Ya lo recibió.
+- **Pagado**: lo ya pagado ligado a esos cobros.
+- **Falta** = le toca − retenido − pagado. Negativa: «Se le pagó de más».
+
+En cada parte, pagado + falta + retenido = le toca, como en cada cobro. Además:
+
+- **La falta es neta.** Lo pagado de más en un cobro resta de lo que falta en otro. Si en un cobro le faltan 10,00 y
+  en otro se le pagaron 10,00 de más, dice «Pagado» y no lleva «Pagar…», aunque esos dos cobros sigan en «Reparto
+  pendiente» (como en la fila [(aj)](#decisiones-tomadas-y-por-confirmar)).
+- **La línea plegada** suma lo que falta solo a las partes a las que les falta algo: «Falta pagar $X a N partes».
+  Lo de quien se le pagó de más no se resta: va aparte, «· a N se le(s) pagó de más». Si no le falta nada a nadie,
+  «Todo pagado».
+- **Las partes** son las mismas que en cada cobro: quienes están en su reparto y quienes tienen pagos ligados a él.
+  Quien solo recibe lo retenido sin ser parte de un cobro tiene un **adelanto**, que se dice aparte, como en el PDF.
+- Una moneda sin partes ni adelantos no sale. Sin ninguna, la sección no se pinta.
+
+**La misma cuenta que el PDF.** La hace `partyTotals`, del motor, y la usan esta pantalla y los totales por parte del
+PDF. Para el mismo filtro dan lo mismo: una prueba de integración lo comprueba, también con pagos, un fallido y una
+parte pagada de más.
+
+**Qué lee y cuánto tarda.** Solo lo necesario, con la RLS del usuario: el id, la moneda y el estado de cada cobro
+(en la página, las mismas filas que ya se leen para «Totales del filtro») y, de esos cobros, su reparto, lo retenido
+y lo pagado, por tramos de 100 cobros (`readPayoutFacts`). Medido contra el Supabase local, en cinco corridas:
+
+- 1000 cobros con 3 partes cada uno y 800 pagos: de 97 a 110 ms. Abrir «Pagar…»: de 108 a 140 ms.
+- 5000 cobros: de 495 a 562 ms. Abrir «Pagar…»: de 476 a 595 ms.
+
+Por eso hay un tope de **5000 cobros** (`SPLIT_MAX`). Con más no se suma nada, y la pantalla dice cuántos son y que
+hay que acotar el filtro: nunca da las cifras de una parte de los cobros como si fueran todas. Se calcula en cada
+carga de Cobros, aunque esté plegado.
+
+**Un ejemplo.** «Tienda Demo», el esquema «Socios» sobre el neto (Socio Uno 50 %, Socio Dos 40 %, Titular A 10 %) y
+tres ventas de «Cargador Uno», del 10 al 12 nov 2026:
+
+- Stripe Demo (2,9 % + 0,30), 100,00: neto 96,80 → 48,40 · 38,72 · 9,68.
+- OTF Demo (2,9 % + 0,20, retiene el 5 % para Titular A), 1000,00: neto 970,80 → 485,40 · 388,32 · 97,08, y 50,00
+  retenidos para Titular A.
+- Stripe Demo, 200,00: neto 193,90 → 96,95 · 77,56 · 19,39.
+
+En Cobros, con «Cargador: Cargador Uno» y esas fechas, sin nada pagado:
+
+- Socio Uno: 48,40 + 485,40 + 96,95 = **630,75**: «Falta $630,75».
+- Socio Dos: 38,72 + 388,32 + 77,56 = **504,60**: «Falta $504,60».
+- Titular A: le toca 9,68 + 97,08 + 19,39 = 126,15, retenido 50,00: «Falta $76,15».
+- Plegado: «USD: Falta pagar $1.211,50 a 3 partes». El PDF del mismo filtro da las mismas cifras por parte.
+
+Si a Socio Dos ya se le habían pagado los 38,72 del primero, le faltan 388,32 + 77,56 = **465,88**, «en 2 cobros».
+«Pagar…» registra una liquidación de 465,88 ligada a esos dos; el primero no entra.
+
+**«Pagar…».**
+
+- **Qué lee.** Al abrir, lo que se le debe ahora a esa parte en esa moneda, en los cobros del filtro. La acción
+  `owedForFilter` lee la URL de la lista con `parseTxFilters`, y `owedInFilter` vuelve a leer esos cobros y usa
+  `listOwed`, lo mismo que «Pagar repartos…». Entran los cobros donde la parte tiene algo pendiente, con lo de cada
+  uno: positivo donde le falta, negativo donde se le pagó de más. Los cobros donde está saldada no entran.
+- **Cuánto paga.** La falta neta, la misma del resumen: lo pagado de más se **descuenta**, y el diálogo lo dice (fila
+  [(at)](#decisiones-tomadas-y-por-confirmar)). Si en total no le falta nada, no hay nada que pagar.
+- **Cómo se guarda.** Con `recordPayouts`, como «Pagar repartos…»: comprueba contra lo que hay ahora en la base que
+  lo de cada cobro quepa en lo que falta (`checkOwed`, con `fitsOwed`). Si algo cambió entre leer y pagar, no se
+  guarda nada.
+- **Hasta 500 cobros**, un solo pago con todo: su monto es la falta. **Con más**, varios pagos de hasta 500
+  (`MAX_PAYOUT_ITEMS`), todos en la **misma** llamada a `pay_record_payouts`, que guarda todos o ninguno. Lo que se le
+  paga va en tramos de 500, y lo que se descuenta, en pagos aparte: en tramos seguidos, uno podría sumar 0,00, y una
+  liquidación no puede ser cero. Con el tope de 5000 cobros son 11 pagos como mucho; la llamada admite 200.
+- **No mueve dinero.** Anota lo que el dueño ya pagó por fuera.
+
+**Con lo pagado de más, cómo se ve.** Con el mismo ejemplo: a Socio Uno se le pagaron los 48,40 del primer cobro y
+después se reembolsó entero. Su parte de la pérdida (3,20) es −1,60, así que en ese cobro se le pagó de más
+48,40 + 1,60 = 50,00. Con los tres cobros le falta 485,40 + 96,95 − 50,00 = **532,35**.
+
+- «Pagar…» registra **un** pago de 532,35 por 3 cobros: 485,40, 96,95 y −50,00. En la ficha de Socio Uno, en
+  «Liquidaciones», es un «Pago» de $532,35, «De estos 3 cobros:», y el primero con «-$50,00».
+- En el detalle del primer cobro, la línea de ese pago dice «Devolvió el …: $50,00 (de un pago de -$532,35 por 3
+  cobros)»: el total sale con signo menos aunque fue un pago. Pasa igual con «Pagar repartos…» (está en
+  [Lo que queda](#lo-que-queda)).
+
+**Con más de 500 cobros y lo pagado de más.** 520 cobros como E1 y su Grupo B, con 27,09 en cada uno. A Grupo B se le
+pagó uno y después se reembolsó entero: su parte de la pérdida (3,20) es −0,96, así que se le pagó de más
+27,09 + 0,96 = 28,05. Le falta 519 × 27,09 − 28,05 = **14.031,66**.
+
+- «Pagar…» avisa que son más de 500 y registra **3 pagos** juntos: 13.545,00 por 500 cobros, 514,71 por 19 y
+  **−28,05** por el pagado de más.
+- Ese tercero tiene monto negativo. En la ficha de Grupo B, en «Liquidaciones», sale como una devolución: la marca
+  «Devolución», «-$28,05» y «De este cobro:». En el detalle de ese cobro: «Devolvió el …: $28,05».
+- Nadie devolvió nada: es el descuento de ese mismo pago, en una liquidación aparte. El saldo queda igual que con un
+  solo pago de 14.031,66 (fila [(au)](#decisiones-tomadas-y-por-confirmar)).
 
 ## Cargadores
 
@@ -2160,7 +2340,8 @@ las pasarelas; lo que dicen de las pasarelas conviene confirmarlo en sus página
 definición de «por caer». Las filas (r) a (x) se tomaron al construir las pantallas y tras la revisión final. Las
 filas (y) a (ac) son las de la retención de la pasarela
 ([E10](#e10--la-pasarela-retiene-una-parte-para-ciertas-personas)). Las filas (ad) a (aj) son las de lo pagado a
-cada parte del reparto ([P1 a P5](#lo-pagado-a-cada-parte-de-un-cobro)), y las (ak) a (ao), las del PDF de cobros.
+cada parte del reparto ([P1 a P5](#lo-pagado-a-cada-parte-de-un-cobro)); las (ak) a (ao), las del PDF de cobros, y
+las (ap) a (au), las de las fechas del depósito y el [reparto del filtro](#el-reparto-del-filtro).
 
 | Decisión | Por qué | Qué cambia si el dueño decide lo contrario |
 |---|---|---|
@@ -2205,6 +2386,12 @@ cada parte del reparto ([P1 a P5](#lo-pagado-a-cada-parte-de-un-cobro)), y las (
 | **(am)** Los fallidos salen en el PDF, pero no en sus totales, y el bloque lo dice («Sin contar 1 fallido.»). Una moneda con solo fallidos no tiene bloque. Los de la papelera no salen. Sin cobros, el PDF dice «No hay cobros.» | Como los totales de la lista: un fallido no cobró nada | Si un fallido no debe salir, se filtra en `cobros.ts`. Si debe contar, los totales dejarían de coincidir con los de la lista |
 | **(an)** El reparto por parte de los totales va por nombre y dice lo que cada parte ya recibió de la retención: «ya recibió $50,00 de la retención · falta $50,00» | El dueño usa ese total para pagar: sin lo retenido pagaría de más. Quien solo recibió retención sale con 0,00 y su adelanto | Si solo se quiere el reparto, se quita esa línea del modelo |
 | **(ao)** Los textos del desglose y del reparto del PDF están copiados de `BreakdownCard` y `AllocationList`, en `model.ts`, y el estado de pago de cada parte, de `PayoutBadge` | Un PDF no puede usar los componentes de la pantalla. Desde la tarea 53, el estado de cada parte («Pagado», «Falta», «Se le pagó de más») sale de `payoutStatuses` y `payoutStatus` del motor, la misma cuenta del detalle, y los totales por parte traen lo pagado y lo que falta | Quien cambie `BreakdownCard`, `AllocationList` o `PayoutBadge` cambia también `model.ts` |
+| **(ap)** Con «Fechas de» «El depósito», la fecha de un cobro es la del depósito marcado (`deposited_on`) o, si no está depositado, el **último** día de su ventana estimada (`estimated_deposit_on`). Un cobro sin ninguna de las dos no entra | El dueño paga cuando el dinero cae en el banco. El último día de la ventana no lleva a pagar antes de que el dinero pueda haber llegado, y es la misma fecha que usa «atrasado» | Con el primer día de la ventana (`estimated_deposit_from`), un cobro que cae entre el 18 y el 19 saldría el 18. Es cambiar `depositConditions`, en `queries/transactions.ts`. Para que entren los cobros sin fecha, habría que decir en qué día cuentan |
+| **(aq)** Con «La venta», «Elegir fechas» sigue admitiendo días futuros. «Mañana» y «Próximos 7 días», en cambio, solo se ofrecen con «El depósito»: con la venta, la URL los lee como «Este mes» | Hay ventas registradas a futuro: la fecha de Registrar no tiene tope, y «Ver sus cobros» de la ficha de una empresa (`companyTxHref`) llega hasta la última. Recortar las fechas a hoy las escondería, y ningún período de la venta las mostraría. El encargo pedía el futuro «solo con el depósito» porque daba por hecho que «Elegir fechas» no dejaba pasar de hoy, pero ya lo dejaba | Para cerrarlo con la venta, `parseTxFilters` recorta `hasta` a hoy sin `fechas=deposito`. Hay que cambiar también «Ver sus cobros» (o aceptar que esas ventas no se vean desde la ficha de la empresa) y dar vuelta dos pruebas de `transactions.test.ts` |
+| **(ar)** «Ayer», «Hoy», «Mañana» y «Próximos 7 días» los acepta la URL de todas las pantallas (`parseTxFilters`), pero solo los ofrece el selector de Cobros | La lista, su CSV, su PDF y «Pagar…» leen la URL con `parseTxFilters`, así que la lectura tiene que entenderlos. El Resumen, Cargadores y la ficha de una empresa siguen con el selector de siempre y solo usan las dos fechas del período | Para ofrecerlos también allí, se cambia su selector. Mientras tanto, uno escrito a mano en su URL filtra ese período con el selector diciendo «Este mes» ([Lo que queda](#lo-que-queda)) |
+| **(as)** El «Reparto del filtro» suma todos los cobros del filtro, hasta 5000. Con más, no da ninguna cifra. Se calcula en cada carga de Cobros, aunque esté plegado | Lo pidió el encargo: todos los cobros, no la página, y nunca cifras de una parte presentadas como si fueran todas. En local, 5000 cobros tardan medio segundo, y 1000, una décima | Subir el tope es cambiar `SPLIT_MAX`, en `tx/splitText.ts`: conviene medir antes. Si la carga pesa, se puede leer al abrir la sección |
+| **(at)** «Pagar…» paga la falta neta del resumen: lo pagado de más en algún cobro del filtro se descuenta, y el diálogo lo dice. Es lo mismo que hace «Pagar repartos…» con los cobros elegidos | Así lo que se paga es lo que el resumen dice que falta, y después la «Falta» queda en 0. Pagando solo los cobros con falta positiva, la parte terminaría con «Se le pagó de más» | Para pagar solo donde falta, `owedInFilter` se queda con los cobros positivos. El pago sería mayor que la «Falta» del resumen, y el cobro pagado de más seguiría en «Reparto pendiente» |
+| **(au)** Con más de 500 cobros, «Pagar…» registra varios pagos de hasta 500 en la misma llamada: quedan todos o ninguno. Lo que se descuenta va en pagos aparte, de monto negativo, que en la ficha del beneficiario salen como «Devolución» | Lo que en la realidad fue un solo pago no obliga a acotar el filtro y pagar varias veces. En tramos seguidos, un pago podía sumar 0,00, y la base no deja una liquidación en cero | Para pedir que se acote el filtro, «Pagar…» no dejaría pagar con más de 500. Para que el descuento no salga como «Devolución», habría que repartirlo entre los pagos positivos sin que ninguno quede en cero |
 
 ### Lo que el dueño tiene que decidir
 
@@ -2275,6 +2462,22 @@ están en [«Pasar a producción»](../README.md#pasar-a-producción), en el REA
 - Para probar desde el celular contra `next dev` por la red local hace falta https (`next dev
   --experimental-https`): sin él, el navegador no da los identificadores que usan los formularios. En producción
   siempre hay https.
+- `periodo=ayer` (o `hoy`) escrito a mano en la URL del Resumen, de Cargadores o de la ficha de una empresa filtra
+  ese día, pero el selector de esa pantalla dice «Este mes». Ningún enlace de la app lo pone (fila
+  [(ar)](#decisiones-tomadas-y-por-confirmar)).
+- El «Reparto del filtro» se calcula en cada carga de Cobros, aunque esté plegado: en local, una décima de segundo
+  más con 1000 cobros y medio segundo con 5000. Si un día pesa, se puede leer al abrirlo.
+- En el detalle de un cobro donde se descontó lo pagado de más (con «Pagar…» o con «Pagar repartos…»), la línea de
+  ese pago dice «Devolvió el …: $50,00 (de un pago de -$532,35 por 3 cobros)»: el total sale con signo menos aunque
+  fue un pago ([El reparto del filtro](#el-reparto-del-filtro)).
+- Con más de 500 cobros y algo pagado de más, «Pagar…» registra el descuento como una liquidación aparte, de monto
+  negativo. En la ficha del beneficiario sale como «Devolución», aunque nadie devolvió nada (fila
+  [(au)](#decisiones-tomadas-y-por-confirmar)).
+- Con «Fechas de» «El depósito», un cobro que no se marcó depositado cuenta por su fecha estimada: sigue en ese día
+  aunque el dinero ya haya llegado, y uno atrasado queda en el día en que debió llegar. Para pagar solo lo que llegó
+  hay que marcar los depósitos y filtrar «Estado» «Depositado».
+- Un reembolso después de pagar deja a la parte con «Se le pagó de más». La app no cobra esa devolución: solo la
+  anota cuando el dueño la registra.
 
 ## Fase C: conectar con las pasarelas
 

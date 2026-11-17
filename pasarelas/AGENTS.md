@@ -80,7 +80,8 @@ Qué es y por qué: [`docs/PASARELAS.md`](docs/PASARELAS.md). Diseño: `docs/sup
       PDF no puede usar componentes. **Quien cambie esas pantallas tiene que cambiar también el PDF** (y
       `model.test.ts`). El estado de pago de cada parte sale de `payoutStatuses` y `payoutStatus` del motor, la
       misma cuenta que el detalle, y sus palabras («Pagado», «Falta X», «Se le pagó de más X») están copiadas de
-      `PayoutBadge` en `partText`: quien cambie esa insignia cambia también el PDF.
+      `PayoutBadge` en `partText`: quien cambie esa insignia cambia también el PDF. Los totales por parte salen de
+      `partyTotals` (regla 15).
     - Un filtro nuevo de la lista llega al PDF sin tocarlo (`parseTxFilters` y `listTx`), pero el encabezado lo
       nombra solo si está en `filterTexts` de `scope.ts`.
     - La fuente es la Helvetica estándar (WinAnsi), sin incrustar: todo texto pasa por `pdfText`, que cambia lo que
@@ -104,6 +105,19 @@ Qué es y por qué: [`docs/PASARELAS.md`](docs/PASARELAS.md). Diseño: `docs/sup
       en `importTransactions`.
     - Un cargador con cobros no se borra: la clave no lleva cascada. `deleteLoader` traduce ese rechazo; guardar un
       cobro con un cargador que ya no existe da el general de 23503 de `errors.ts`.
+15. **El reparto del filtro y la fecha del depósito** (Cobros; sin migración).
+    - Lo de cada parte en varios cobros (le toca, retenido, pagado, falta y adelantos) sale solo de `partyTotals` de
+      `payouts.ts`. Lo usan el «Reparto del filtro» (`filterSplit`) y los totales del PDF: no sumes partes a mano.
+      `tests/integration/reparto-filtro.test.ts` comprueba que la pantalla y el PDF digan lo mismo. Con más de
+      `SPLIT_MAX` (5000) cobros no da ninguna cifra.
+    - La fecha del depósito se define solo en `depositConditions` (`queries/transactions.ts`): `deposited_on` o, sin
+      depositar, `estimated_deposit_on` (el último día de la ventana); sin ninguna, no entra. Todo lo del filtro la
+      toma de `applyTxFilters`: no la repitas en otra lectura.
+    - Que `manana` y `proximos_7d` sin `fechas=deposito` valgan «este mes» está escrito dos veces: `FUTURE_PERIODS`
+      (`parseTxFilters`) y `future` (`tx/period.ts`). Si cambias una, cambia la otra.
+    - «Pagar…» escribe solo con `recordPayouts` → `checkOwed` → `pay_record_payouts`, y paga la falta neta (lo pagado
+      de más se descuenta). Con más de 500 cobros, `payoutChunks` (`tx/payoutChunks.ts`, donde viven también
+      `MAX_PAYOUT_ITEMS` y `MAX_PAYOUTS`) los parte en varios pagos de la misma llamada, con lo descontado aparte.
 
 ## Comandos (desde `pasarelas/`)
 
