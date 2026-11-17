@@ -6,8 +6,9 @@ import type { Currency, ISODate, Money } from "@/lib/pasarelas/types";
 import { cobros } from "./plural";
 
 /**
- * Los textos de los pagos a las partes del reparto: la marca de la lista y lo que dice «Deshacer». Funciones puras:
- * las usan el servidor y el navegador.
+ * Los textos de los pagos a las partes del reparto: la marca de la lista, lo que dice «Deshacer», cuándo lo de un
+ * cobro es un descuento de su pago (`isDiscount`) y lo que «Pagar…» dice de lo pagado de más. Funciones puras: las
+ * usan el servidor y el navegador.
  */
 
 /** La marca de un cobro en la lista: «Reparto pagado», o «Reparto: 2 de 4 pagados». */
