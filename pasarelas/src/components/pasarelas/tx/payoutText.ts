@@ -1,4 +1,5 @@
 import { formatDate } from "@/lib/pasarelas/dates";
+import { ZERO } from "@/lib/pasarelas/decimal";
 import { cmp, formatMoney, neg } from "@/lib/pasarelas/money";
 import type { PayoutStatus } from "@/lib/pasarelas/payouts";
 import type { Currency, ISODate, Money } from "@/lib/pasarelas/types";
@@ -13,6 +14,21 @@ export function payoutMarkText(status: PayoutStatus): string {
   const total = status.parts.length;
   if (!status.pending) return "Reparto pagado";
   return `Reparto: ${status.paidCount} de ${total} ${total === 1 ? "pagado" : "pagados"}`;
+}
+
+/** Un monto sin su signo, como se dice en un texto que ya dice qué es («Devolvió…», «descuento de…»). */
+export function unsigned(amount: Money): Money {
+  return cmp(amount, ZERO) < 0 ? neg(amount) : amount;
+}
+
+/**
+ * ¿Lo de un cobro va en contra de su liquidación? Un pago (total positivo) paga la falta NETA de una parte: lo que
+ * se le pagó de más en un cobro entra con monto negativo y se descuenta del pago. Una devolución (total negativo)
+ * puede llevar, igual, lo que se le debía en otro cobro, que se resta de lo que devuelve. Ni el total ni lo de un
+ * cobro son nunca cero.
+ */
+export function isDiscount(total: Money, part: Money): boolean {
+  return cmp(total, ZERO) * cmp(part, ZERO) < 0;
 }
 
 /** Otro cobro que paga una liquidación, como lo leen las pantallas. */
@@ -50,11 +66,13 @@ export type UndoPayment = {
 
 /**
  * Lo que dice la confirmación de «Deshacer»: si el pago es solo de este cobro, que se borra y vuelve a faltar; si
- * cubre varios, cuáles se desmarcan y cuánto de cada uno. Una devolución (negativa) se nombra como tal.
+ * cubre varios, cuáles se desmarcan y cuánto de cada uno. Qué se deshace lo dice el total: un pago, o una devolución
+ * (negativa), que se nombra como tal. Lo de un cobro que va en contra del total (`isDiscount`) se dice como descuento.
  */
 export function undoPayoutText(p: UndoPayment): string {
-  const refund = cmp(p.amount, "0.00") < 0;
-  const money = (amount: Money) => formatMoney(refund ? neg(amount) : amount, p.currency);
+  const refund = cmp(p.amount, ZERO) < 0;
+  const money = (amount: Money) => formatMoney(unsigned(amount), p.currency);
+  const part = (amount: Money) => (isDiscount(p.amount, amount) ? `descuento de ${money(amount)}` : money(amount));
   const what = refund ? `la devolución de ${p.beneficiaryName}` : `el pago a ${p.beneficiaryName}`;
   const head = `${what} de ${money(p.amount)} del ${formatDate(p.paidOn)}`;
   if (p.others.length === 0) {
@@ -63,10 +81,7 @@ export function undoPayoutText(p: UndoPayment): string {
   }
   const count = p.others.length + 1;
   const all = COUNT_WORDS[count] ?? `los ${count}`;
-  const covered = [
-    `este (${money(p.here)})`,
-    ...p.others.map((tx) => `${coveredTxName(tx)} (${money(tx.amount)})`),
-  ];
+  const covered = [`este (${part(p.here)})`, ...p.others.map((tx) => `${coveredTxName(tx)} (${part(tx.amount)})`)];
   const sentence = `${head.charAt(0).toUpperCase()}${head.slice(1)}`;
   return `${sentence} cubre ${count} cobros, y se desmarcan ${all}: ${listed(covered)}. No se puede deshacer.`;
 }

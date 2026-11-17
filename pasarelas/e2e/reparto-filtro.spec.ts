@@ -350,4 +350,56 @@ test.describe("el reparto del filtro de Cobros", () => {
     await expect(party(section, "Socio Uno").getByRole("button")).toHaveCount(0);
     await checkScreen(page);
   });
+
+  test("D1: el cobro descontado de un pago lo dice como descuento, no como devolución; y su «Deshacer», también", async ({
+    page,
+  }) => {
+    const book = await setupBook();
+    const tag = `D1-${randomUUID().slice(0, 6)}`;
+    const [first] = await r1(book, tag);
+    // Como en R5: a Socio Uno se le pagó lo del primero y después se reembolsó entero (le sobran 50,00 ahí).
+    await paid(book, [[book.ids["Socio Uno"], first, "48.40"]]);
+    await serverData().setRefundTotalTx(book.db, first, "100.00");
+    await login(page, book.user);
+    await page.goto(r1Url(book));
+    const section = await openSplit(page);
+    await party(section, "Socio Uno").getByRole("button", { name: "Pagar… a Socio Uno en USD" }).click();
+    const dialog = page.getByRole("dialog", { name: "Pagar a Socio Uno" });
+    await expect(dialog).toContainText("En 1 cobro del filtro se le pagó de más $50,00: se descuenta de este pago.");
+    await dialog.getByRole("button", { name: "Registrar 1 pago" }).click();
+    await expect(toastWith(page, "Pago registrado")).toBeVisible();
+    await expect(dialog).toBeHidden();
+
+    // En el detalle del primero: un descuento del pago de 532,35 (en positivo), no una devolución.
+    await page.goto(`/pasarelas/cobros/${first}`);
+    const share = page.getByRole("list", { name: "Reparto" }).getByRole("listitem").filter({ hasText: "Socio Uno" });
+    const line = share.getByText(/^Descontado del pago del /);
+    await expect(line).toHaveText(/^Descontado del pago del .+: \$50,00 \(de un pago de \$532,35 por 3 cobros\)$/);
+    await expect(share).not.toContainText("Devolvió");
+    await expect(share).not.toContainText("-$532,35");
+    await checkScreen(page);
+
+    // Su «Deshacer» es el del pago, y en los cobros que cubre el descontado se dice como descuento.
+    await line.locator("..").getByRole("button", { name: /^Deshacer el pago a Socio Uno del / }).click();
+    const confirm = page.getByRole("alertdialog", { name: "¿Deshacer este pago?" });
+    await expect(confirm).toContainText("El pago a Socio Uno de $532,35 del ");
+    await expect(confirm).toContainText(
+      `cubre 3 cobros, y se desmarcan los tres: este (descuento de $50,00), el cobro ${tag}-2 ($485,40) y el cobro ` +
+        `${tag}-3 ($96,95).`,
+    );
+    await checkScreen(page);
+    await confirm.getByRole("button", { name: "Cancelar" }).click();
+    await expect(confirm).toBeHidden();
+
+    // En la ficha de Socio Uno: un «Pago» de $532,35, con el primero como descuento.
+    await page.goto(`/pasarelas/repartos/beneficiarios/${book.ids["Socio Uno"]}`);
+    const settlements = page.getByRole("region", { name: "Liquidaciones" });
+    const payment = settlements.getByRole("listitem").filter({ hasText: "$532,35" });
+    await expect(payment.getByText("Pago", { exact: true })).toBeVisible();
+    const covered = payment.getByRole("list", { name: "Cobros que paga" }).getByRole("listitem");
+    await expect(covered.filter({ hasText: `${tag}-1` })).toHaveText(new RegExp(`^${tag}-1.*descuento de \\$50,00$`));
+    await expect(covered.filter({ hasText: `${tag}-2` })).toContainText("$485,40");
+    await expect(settlements).not.toContainText("-$50,00");
+    await checkScreen(page);
+  });
 });

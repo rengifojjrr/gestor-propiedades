@@ -1606,10 +1606,12 @@ después se reembolsó entero. Su parte de la pérdida (3,20) es −1,60, así q
 48,40 + 1,60 = 50,00. Con los tres cobros le falta 485,40 + 96,95 − 50,00 = **532,35**.
 
 - «Pagar…» registra **un** pago de 532,35 por 3 cobros: 485,40, 96,95 y −50,00. En la ficha de Socio Uno, en
-  «Liquidaciones», es un «Pago» de $532,35, «De estos 3 cobros:», y el primero con «-$50,00».
-- En el detalle del primer cobro, la línea de ese pago dice «Devolvió el …: $50,00 (de un pago de -$532,35 por 3
-  cobros)»: el total sale con signo menos aunque fue un pago. Pasa igual con «Pagar repartos…» (está en
-  [Lo que queda](#lo-que-queda)).
+  «Liquidaciones», es un «Pago» de $532,35, «De estos 3 cobros:», y el primero con «descuento de $50,00».
+- En el detalle del primer cobro, la línea de ese pago dice «Descontado del pago del …: $50,00 (de un pago de
+  $532,35 por 3 cobros)». Nadie devolvió nada, y el pago sale en positivo. Su «Deshacer» deshace el pago entero:
+  «El pago a Socio Uno de $532,35 del … cubre 3 cobros, y se desmarcan los tres: este (descuento de $50,00), …». Pasa
+  igual con «Pagar repartos…». Qué es lo de cada cobro lo dicen los dos signos: el del pago (pago o devolución) y el
+  de ese cobro (va con el pago, o se descuenta: `isDiscount`, en `tx/payoutText.ts`).
 
 **Con más de 500 cobros y lo pagado de más.** 520 cobros como E1 y su Grupo B, con 27,09 en cada uno. A Grupo B se le
 pagó uno y después se reembolsó entero: su parte de la pérdida (3,20) es −0,96, así que se le pagó de más
@@ -2467,9 +2469,6 @@ están en [«Pasar a producción»](../README.md#pasar-a-producción), en el REA
   [(ar)](#decisiones-tomadas-y-por-confirmar)).
 - El «Reparto del filtro» se calcula en cada carga de Cobros, aunque esté plegado: en local, una décima de segundo
   más con 1000 cobros y medio segundo con 5000. Si un día pesa, se puede leer al abrirlo.
-- En el detalle de un cobro donde se descontó lo pagado de más (con «Pagar…» o con «Pagar repartos…»), la línea de
-  ese pago dice «Devolvió el …: $50,00 (de un pago de -$532,35 por 3 cobros)»: el total sale con signo menos aunque
-  fue un pago ([El reparto del filtro](#el-reparto-del-filtro)).
 - Con más de 500 cobros y algo pagado de más, «Pagar…» registra el descuento como una liquidación aparte, de monto
   negativo. En la ficha del beneficiario sale como «Devolución», aunque nadie devolvió nada (fila
   [(au)](#decisiones-tomadas-y-por-confirmar)).

@@ -9,7 +9,7 @@ import type { AllocLine, Breakdown, Currency, ISODate, Money as MoneyValue } fro
 import type { TxPayout } from "@/server/pasarelas/queries/settlements";
 import { PayAllButton, PayPartButton, UndoPayoutButton } from "./tx/PayoutActions";
 import { PayoutBadge } from "./tx/PayoutState";
-import { undoPayoutText } from "./tx/payoutText";
+import { isDiscount, undoPayoutText, unsigned } from "./tx/payoutText";
 
 /*
  * El reparto de un cobro tal como lo calculó el motor: sobre qué se reparte y cuánto le toca a cada beneficiario.
@@ -112,21 +112,36 @@ export type PayoutsView = {
   today: ISODate;
 };
 
-/** «Pagado el sáb 14 nov 2026: $25,00», con lo que cubre si paga otros cobros, y su «Deshacer». */
+/**
+ * Cómo empieza la línea de un pago, según los dos signos: el del total dice si fue un pago o una devolución, y el de
+ * este cobro, si va con él o se descontó (`isDiscount`). «Pagar…» paga la falta neta: lo pagado de más en un cobro
+ * entra en el mismo pago con monto negativo, y ahí nadie devolvió nada.
+ */
+function paymentLead(refund: boolean, discount: boolean): string {
+  if (refund) return discount ? "Descontado de la devolución del " : "Devolvió el ";
+  return discount ? "Descontado del pago del " : "Pagado el ";
+}
+
+/**
+ * «Pagado el sáb 14 nov 2026: $25,00», con lo que cubre si paga otros cobros, y su «Deshacer», que deshace el pago (o
+ * la devolución) entero. Los montos van sin signo: las palabras dicen qué son, y el total nunca cambia de signo por lo
+ * de este cobro.
+ */
 function PaymentLine({ payment, name }: { payment: TxPayout; name: string }) {
-  const refund = cmp(payment.here, ZERO) < 0;
+  const refund = cmp(payment.amount, ZERO) < 0;
+  const discount = isDiscount(payment.amount, payment.here);
   const what = refund ? `la devolución de ${name}` : `el pago a ${name}`;
-  const shown = (amount: MoneyValue) => (refund ? neg(amount) : amount);
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-3">
       <p className="min-w-0 text-sm text-ink-soft">
-        {refund ? "Devolvió el " : "Pagado el "}
-        <DateText value={payment.paidOn} />: <Money value={shown(payment.here)} currency={payment.currency} />
+        {paymentLead(refund, discount)}
+        <DateText value={payment.paidOn} />: <Money value={unsigned(payment.here)} currency={payment.currency} />
         {payment.others.length === 0 ? null : (
           <>
             {" "}
-            (de un pago de <Money value={shown(payment.amount)} currency={payment.currency} /> por{" "}
-            {payment.others.length + 1} cobros)
+            ({refund && discount ? "de una devolución de " : "de un pago de "}
+            <Money value={unsigned(payment.amount)} currency={payment.currency} /> por {payment.others.length + 1}{" "}
+            cobros)
           </>
         )}
       </p>

@@ -398,6 +398,70 @@ describe("AllocationList", () => {
       );
     });
 
+    describe("lo de este cobro según los dos signos: el del pago y el de este cobro", () => {
+      const refunded = recompute(E10, { refunded: "1000.00" });
+      /** Otro cobro que paga el mismo pago. */
+      const cobro = (transactionId: string, amount: string) => ({
+        transactionId,
+        amount,
+        occurredOn: "2026-11-10",
+        currency: "USD",
+        grossOriginal: "1000.00",
+        reference: transactionId,
+      });
+      /** El pago de P2 a Grupo A (580,53): con el reembolso total, se le pagó de más 600,00 en este cobro. */
+      const before = payment("ga", "580.53");
+      /** Un pago o una devolución posterior, el martes 17. */
+      const later = (here: string, others: TxPayout["others"]): TxPayout => ({
+        ...payment("ga", here, others),
+        settlementId: "s-ga-17",
+        paidOn: "2026-11-17",
+      });
+
+      it("D1: un pago con descuento: este cobro se descontó del pago, que fue en positivo; nada de «Devolvió»", () => {
+        // «Pagar…» en otros dos cobros (580,53 y 290,27) con los 600,00 de más de este descontados: un pago de 270,80.
+        const discounted = later("-600.00", [cobro("E10-b", "580.53"), cobro("E10-c", "290.27")]);
+        const markup = withPayouts(refunded, payouts(refunded, [discounted, before]));
+        expect(rows(markup)[0]).toBe(
+          "Grupo A 60 % -$19,47 Pagado Descontado del pago del mar 17 nov 2026: $600,00 (de un pago de $270,80 por 3 " +
+            "cobros) Deshacer el pago a Grupo A del mar 17 nov 2026 Pagado el sáb 14 nov 2026: $580,53 Deshacer el " +
+            "pago a Grupo A del sáb 14 nov 2026",
+        );
+        expect(all(markup)).not.toContain("Devolvió");
+        expect(all(markup)).not.toContain("-$270,80");
+      });
+
+      it("pago y aquí positivo: como siempre, aunque el pago descuente algo de otro cobro", () => {
+        const paid = later("580.53", [cobro("E10-b", "-600.00"), cobro("E10-c", "290.27")]);
+        const markup = withPayouts(E10, payouts(E10, [paid]));
+        expect(rows(markup)[0]).toBe(
+          "Grupo A 60 % $580,53 Pagado Pagado el mar 17 nov 2026: $580,53 (de un pago de $270,80 por 3 cobros) " +
+            "Deshacer el pago a Grupo A del mar 17 nov 2026",
+        );
+      });
+
+      it("D2: una devolución de verdad se dice como hoy, con lo devuelto y el total en positivo", () => {
+        const alone = later("-600.00", []);
+        expect(rows(withPayouts(refunded, payouts(refunded, [alone, before])))[0]).toContain(
+          "Pagado Devolvió el mar 17 nov 2026: $600,00 Deshacer la devolución de Grupo A del mar 17 nov 2026 Pagado el",
+        );
+        const several = later("-600.00", [cobro("E10-b", "-300.00")]);
+        expect(rows(withPayouts(refunded, payouts(refunded, [several, before])))[0]).toContain(
+          "Devolvió el mar 17 nov 2026: $600,00 (de un pago de $900,00 por 2 cobros) Deshacer la devolución de Grupo A " +
+            "del mar 17 nov 2026",
+        );
+      });
+
+      it("en una devolución, lo que se le debía aquí se descontó de ella: el total no cambia de signo", () => {
+        // Se le pagaron 600,00 de más en otro cobro y aquí se le deben 580,53: devuelve la diferencia, 19,47.
+        const refund = later("580.53", [cobro("E10-b", "-600.00")]);
+        expect(rows(withPayouts(E10, payouts(E10, [refund])))[0]).toBe(
+          "Grupo A 60 % $580,53 Pagado Descontado de la devolución del mar 17 nov 2026: $580,53 (de una devolución de " +
+            "$19,47 por 2 cobros) Deshacer la devolución de Grupo A del mar 17 nov 2026",
+        );
+      });
+    });
+
     it("sin pagos que mostrar, la vista previa de «Registrar» sigue igual", () => {
       expect(items(html(E10))[2]).toBe(
         "Titular A no paga comisión 5 % $50,00 ya recibió $25,00 de la retención · falta $25,00",

@@ -3,8 +3,10 @@ import { Suspense, type ReactNode } from "react";
 import { Badge, Card, CardBody, CardHeader, CardTitle, DateText, Money, Pagination, Percent } from "@/components/ui";
 import { formatDate } from "@/lib/pasarelas/dates";
 import { cmp, formatMoney, neg } from "@/lib/pasarelas/money";
+import type { Money as MoneyValue } from "@/lib/pasarelas/types";
 import type { SettlementItemView, SettlementView } from "@/server/pasarelas/queries/settlements";
 import type { AllocationMovement } from "@/server/pasarelas/queries/splits";
+import { isDiscount, unsigned } from "../tx/payoutText";
 import { SettlementActions } from "./SettlementActions";
 
 /** Una tarjeta de movimientos con su lista, su vacío y su paginación (en la URL, con su propio parámetro). */
@@ -108,9 +110,19 @@ export function AllocationMovements({
 
 /**
  * De qué cobros es una liquidación ligada a sus cobros: cada uno con su enlace (por su referencia o su fecha) y lo
- * de ese cobro.
+ * de ese cobro. Lo que va en contra de la liquidación (`isDiscount`: en un pago, lo pagado de más en un cobro, que se
+ * descontó) se dice como descuento, no como un monto negativo suelto.
  */
-function CoveredTxs({ items, currency }: { items: readonly SettlementItemView[]; currency: string }) {
+function CoveredTxs({
+  items,
+  currency,
+  total,
+}: {
+  items: readonly SettlementItemView[];
+  currency: string;
+  /** El monto de la liquidación. */
+  total: MoneyValue;
+}) {
   return (
     <div className="flex flex-col">
       <p className="text-sm text-ink-soft">{items.length === 1 ? "De este cobro:" : `De estos ${items.length} cobros:`}</p>
@@ -132,7 +144,13 @@ function CoveredTxs({ items, currency }: { items: readonly SettlementItemView[];
                 de {formatMoney(item.grossOriginal, item.currency)}
               </span>
             </Link>
-            <Money value={item.amount} currency={currency} className="text-sm" />
+            {isDiscount(total, item.amount) ? (
+              <span className="text-sm">
+                descuento de <Money value={unsigned(item.amount)} currency={currency} />
+              </span>
+            ) : (
+              <Money value={item.amount} currency={currency} className="text-sm" />
+            )}
           </li>
         ))}
       </ul>
@@ -178,7 +196,9 @@ export function SettlementMovements({
               </div>
               <Money value={row.amount} currency={row.currency} className="font-semibold" />
             </div>
-            {row.items.length === 0 ? null : <CoveredTxs items={row.items} currency={row.currency} />}
+            {row.items.length === 0 ? null : (
+              <CoveredTxs items={row.items} currency={row.currency} total={row.amount} />
+            )}
             <SettlementActions
               id={row.id}
               covers={row.items.length}
