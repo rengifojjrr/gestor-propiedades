@@ -2,15 +2,15 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { payoutChunks } from "@/components/pasarelas/tx/payoutChunks";
 import { PAYOUT_CHANGED_TEXT } from "@/components/pasarelas/splits/settlementText";
-import { ZERO, add, type Currency, type Money, type PayConfig } from "@/lib/pasarelas";
+import { ZERO, add, totalsOf, type Currency, type ISODate, type Money, type PayConfig } from "@/lib/pasarelas";
 import { recordPayouts, type PayoutInput } from "@/server/pasarelas/ops/settlements";
-import { createTx, failTx, setRefundTotalTx } from "@/server/pasarelas/ops/transactions";
+import { createTx, disputeTx, failTx, setRefundTotalTx } from "@/server/pasarelas/ops/transactions";
 import { txPdfModel } from "@/server/pasarelas/pdf/cobros";
 import { pdfRequestOf } from "@/server/pasarelas/pdf/scope";
 import { loadPayConfig } from "@/server/pasarelas/queries/config";
 import { SPLIT_MAX, filterSplit, owedInFilter, type CurrencySplit } from "@/server/pasarelas/queries/filter-split";
 import { listOwed, listTxPayouts, payoutStatuses } from "@/server/pasarelas/queries/settlements";
-import { listTx, parseTxFilters, txRefs } from "@/server/pasarelas/queries/transactions";
+import { leanTx, listTx, parseTxFilters, txRefs } from "@/server/pasarelas/queries/transactions";
 import { createUser, e1Item, saveTransactions, seedBasics, unwrap, type Db } from "./helpers";
 
 /**
@@ -37,7 +37,10 @@ type Book = {
   ids: Record<Who, string>;
   loaderId: string;
   cfg: () => Promise<PayConfig>;
-  /** Registra un cobro de «Tienda Demo» ese día de noviembre (al mediodía de Nueva York). */
+  /**
+   * Registra un cobro de «Tienda Demo» ese día de noviembre (al mediodía de Nueva York). Con `depositedOn`, ya
+   * depositado ese día; con `estimatedOn`, esa fecha estimada.
+   */
   charge: (a: {
     gross: Money;
     day: number;
@@ -45,6 +48,9 @@ type Book = {
     loader?: boolean;
     currency?: Currency;
     schemeId?: string;
+    reference?: string;
+    depositedOn?: ISODate;
+    estimatedOn?: ISODate;
   }) => Promise<string>;
 };
 
@@ -86,7 +92,8 @@ async function book(): Promise<Book> {
   ) as { scheme_id: string };
   const loader = await db.from("pay_loaders").insert({ name: "Cargador Uno" }).select("id").single();
   const loaderId = unwrap(loader, "cargador").id;
-  const charge: Book["charge"] = async ({ gross, day, gateway: which, loader = true, currency = "USD", schemeId }) => {
+  const charge: Book["charge"] = async (a) => {
+    const { gross, day, gateway: which, loader = true, currency = "USD", schemeId, depositedOn, estimatedOn } = a;
     const id = randomUUID();
     const on = `2026-11-${String(day).padStart(2, "0")}`;
     await createTx(db, {
@@ -100,9 +107,11 @@ async function book(): Promise<Book> {
       occurredOn: on,
       currency,
       grossOriginal: gross,
-      reference: `ref-${day}-${gross}-${id.slice(0, 4)}`,
+      reference: a.reference ?? `ref-${day}-${gross}-${id.slice(0, 4)}`,
       note: null,
       loaderId: loader ? loaderId : null,
+      ...(depositedOn === undefined ? {} : { status: "depositado" as const, depositedOn }),
+      ...(estimatedOn === undefined ? {} : { estimatedDepositOn: estimatedOn }),
     });
     return id;
   };
@@ -480,5 +489,101 @@ describe("«Pagar…» desde el reparto del filtro", () => {
     const split = await filterSplit(db, await txRefs(db, filters, TODAY), await loadPayConfig(db));
     if (!split.ok) throw new Error("debía sumar");
     expect(partyOf(split.currencies[0], "Grupo B")).toEqual(["14058.75", "0.00", "14058.75", "0.00"]);
+  });
+});
+
+describe("«Fechas de: el depósito» + «Depositado» + «Reparto pendiente», con una búsqueda y un cargador", () => {
+  /**
+   * La combinación que la documentación recomienda para pagar solo lo que ya llegó. Mete varios `or=` en la misma
+   * consulta a PostgREST (la fecha del depósito, el estado sin disputa abierta y la búsqueda), que se suman con «y».
+   * Prueba de caracterización: comprueba lo que ya hace, cobro a cobro.
+   */
+  it("trae justo lo que llegó y falta pagar: la lista, los totales, el reparto del filtro y lo que lee «Pagar…»", async () => {
+    const b = await book();
+    const stripe = (reference: string, more: Partial<Parameters<Book["charge"]>[0]> = {}) =>
+      b.charge({ gross: "100.00", day: 10, gateway: "stripe", reference, depositedOn: "2026-11-12", ...more });
+    // Los dos que pasan todo: depositados en el período, con el reparto pendiente, «lote-a» y de Cargador Uno.
+    const first = await stripe("lote-a-1");
+    const second = await stripe("lote-a-2", { gross: "200.00", day: 11, depositedOn: "2026-11-15" });
+    // Cada uno de estos falla una sola condición.
+    await stripe("lote-a-3", { day: 11, depositedOn: "2026-11-16" }); // vendido en el período, depositado después
+    await stripe("lote-a-4", { depositedOn: undefined, estimatedOn: "2026-11-13" }); // por caer: no está «Depositado»
+    const paidOff = await stripe("lote-a-5"); // reparto pagado
+    await stripe("lote-b-6"); // otra búsqueda
+    await stripe("lote-a-7", { loader: false }); // sin cargador
+    const disputed = await stripe("lote-a-8"); // depositado, pero en disputa
+    await disputeTx(b.db, disputed, { action: "abrir", on: "2026-11-14" });
+    const refunded = await stripe("lote-a-9"); // depositado, pero reembolsado
+    await setRefundTotalTx(b.db, refunded, "100.00");
+    // Pagado: todo lo del quinto, y a Socio Dos lo suyo del segundo.
+    await recordPayouts(b.db, [
+      payment(b.ids["Socio Uno"], paidOff, "48.40"),
+      payment(b.ids["Socio Dos"], paidOff, "38.72"),
+      payment(b.ids["Titular A"], paidOff, "9.68"),
+      payment(b.ids["Socio Dos"], second, "77.56"),
+    ]);
+
+    const query = {
+      fechas: "deposito",
+      periodo: "personalizado",
+      desde: "2026-11-10",
+      hasta: "2026-11-15",
+      estado: "depositado",
+      reparto: "pendiente",
+      q: "lote-a",
+      cargador: b.loaderId,
+    };
+    const cfg = await b.cfg();
+    const refs = async (url: Record<string, string>) => {
+      const { filters, sort } = parseTxFilters(url, TODAY);
+      const { rows, total } = await listTx(b.db, filters, sort, 1, TODAY, 50, cfg);
+      expect(total).toBe(rows.length);
+      return rows.map((row) => row.reference ?? "").sort();
+    };
+
+    // La lista: justo los dos.
+    expect(await refs(query)).toEqual(["lote-a-1", "lote-a-2"]);
+    // Cada condición deja fuera justo los suyos: sin ella, vuelven.
+    const without = (key: keyof typeof query) => Object.fromEntries(Object.entries(query).filter(([k]) => k !== key));
+    expect(await refs(without("estado"))).toEqual(["lote-a-1", "lote-a-2", "lote-a-4", "lote-a-8", "lote-a-9"]);
+    expect(await refs(without("reparto"))).toEqual(["lote-a-1", "lote-a-2", "lote-a-5"]);
+    expect(await refs(without("q"))).toEqual(["lote-a-1", "lote-a-2", "lote-b-6"]);
+    expect(await refs(without("cargador"))).toEqual(["lote-a-1", "lote-a-2", "lote-a-7"]);
+    expect(await refs({ ...query, hasta: "2026-11-16" })).toEqual(["lote-a-1", "lote-a-2", "lote-a-3"]);
+
+    // Los totales del filtro: 100,00 y 200,00 por Stripe Demo (3,20 y 6,10 de comisión).
+    const { filters } = parseTxFilters(query, TODAY);
+    expect(totalsOf(await leanTx(b.db, filters, TODAY, cfg))).toEqual({
+      USD: { count: 2, gross: "300.00", fees: "9.30", net: "290.70" },
+    });
+
+    // El reparto del filtro: 48,40 + 96,95 · 38,72 + 77,56 (este, ya pagado) · 9,68 + 19,39.
+    const split = await splitOf(b, query);
+    if (!split.ok) throw new Error("debía sumar");
+    expect(split.currencies.map((item) => item.currency)).toEqual(["USD"]);
+    const [usd] = split.currencies;
+    expect(partyOf(usd, "Socio Uno")).toEqual(["145.35", "0.00", "0.00", "145.35"]);
+    expect(partyOf(usd, "Socio Dos")).toEqual(["116.28", "0.00", "77.56", "38.72"]);
+    expect(partyOf(usd, "Titular A")).toEqual(["29.07", "0.00", "0.00", "29.07"]);
+
+    // «Pagar…» lee esos mismos cobros: a Socio Dos solo le falta el primero; a Socio Uno, los dos.
+    expect(await owedInFilter(b.db, filters, TODAY, b.ids["Socio Dos"], "USD")).toEqual({
+      kind: "debe",
+      beneficiaryId: b.ids["Socio Dos"],
+      name: "Socio Dos",
+      currency: "USD",
+      owed: "38.72",
+      items: [{ transactionId: first, amount: "38.72" }],
+      overpaid: null,
+    });
+    const socioUno = await owedInFilter(b.db, filters, TODAY, b.ids["Socio Uno"], "USD");
+    expect(socioUno).toMatchObject({ kind: "debe", owed: "145.35", overpaid: null });
+    if (socioUno.kind !== "debe") return;
+    expect(sorted(socioUno.items)).toEqual(
+      sorted([
+        { transactionId: first, amount: "48.40" },
+        { transactionId: second, amount: "96.95" },
+      ]),
+    );
   });
 });
