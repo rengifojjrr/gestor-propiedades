@@ -141,8 +141,10 @@ export function cleanSearch(q: string): string {
  * es entrada no confiable: lo que no se entiende se ignora, nunca lanza.
  *
  * Sin `periodo` rige «este mes»; `desde` y `hasta` solo cuentan con `periodo=personalizado`. «Mañana» y «próximos 7
- * días» solo valen con `fechas=deposito`: con la venta, rige «este mes». La papelera no se pide por la URL: la pone
- * la pantalla que la muestra.
+ * días» solo valen con `fechas=deposito`: con la venta, rige «este mes». Las fechas elegidas sí pueden ser futuras
+ * con la venta: hay ventas registradas a futuro, y «Ver sus cobros» de una empresa llega hasta la última
+ * (`companyTxHref`); recortarlas a hoy las escondería. La papelera no se pide por la URL: la pone la pantalla que la
+ * muestra.
  */
 export function parseTxFilters(
   sp: Record<string, string | string[] | undefined>,

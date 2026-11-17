@@ -4,8 +4,10 @@ import type { PeriodPreset } from "@/lib/pasarelas/dates";
 /**
  * El período de la lista de Cobros, que puede ser de la venta (lo de siempre) o del depósito (`fechas=deposito`).
  * A los períodos de siempre se suman ayer y hoy y, solo por depósito —el dinero que va a caer—, mañana y los próximos
- * 7 días: con la venta no hay ventas futuras que buscar. Son solo de Cobros: el Resumen y Cargadores siguen con los
- * de siempre. Lo mismo lee el servidor (`parseTxFilters`): con la venta, mañana y los próximos 7 días son «Este mes».
+ * 7 días. Son solo de Cobros: el Resumen y Cargadores siguen con los de siempre. Lo mismo lee el servidor
+ * (`parseTxFilters`): con la venta, mañana y los próximos 7 días son «Este mes». «Elegir fechas», en cambio, admite
+ * fechas futuras con las dos, como antes: hay ventas registradas a futuro, y «Ver sus cobros» de una empresa llega
+ * hasta la última (`companyTxHref`).
  */
 
 /** La línea discreta que explica qué fecha cuenta con «El depósito». */

@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
+import { companyTxHref } from "@/components/pasarelas/companies/txHref";
 import type { Db } from "../dto";
+import type { CompanyTotal } from "./companies";
 import { applyTxFilters, cleanSearch, leanTx, listTx, parseTxFilters } from "./transactions";
 
 /** Viernes 13 de noviembre de 2026. */
@@ -105,6 +107,26 @@ describe("parseTxFilters", () => {
         dateBasis: "deposito",
       });
       expect(filtersOf(custom)).toEqual({ from: "2026-11-16", to: "2026-11-30" });
+    });
+
+    test("«Ver sus cobros» de una empresa con una venta a futuro llega hasta ese día: con la venta no se recorta", () => {
+      const total: CompanyTotal = {
+        currency: "USD",
+        count: 2,
+        gross: "200.00",
+        sale: "200.00",
+        fees: "6.40",
+        buyerFees: "0.00",
+        net: "193.60",
+        firstOn: "2026-10-01",
+        lastOn: "2026-12-20",
+      };
+      const href = new URL(companyTxHref(ID, [total], TODAY), "http://localhost");
+      expect(filtersOf(Object.fromEntries(href.searchParams))).toEqual({
+        from: "2026-10-01",
+        to: "2026-12-20",
+        companyId: ID,
+      });
     });
   });
 
