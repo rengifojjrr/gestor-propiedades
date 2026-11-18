@@ -123,9 +123,9 @@ function paymentLead(refund: boolean, discount: boolean): string {
 }
 
 /**
- * «Pagado el sáb 14 nov 2026: $25,00», con lo que cubre si paga otros cobros, y su «Deshacer», que deshace el pago (o
- * la devolución) entero. Los montos van sin signo: las palabras dicen qué son, y el total nunca cambia de signo por lo
- * de este cobro.
+ * «Pagado el sáb 14 nov 2026: $25,00», con lo que cubre si paga otros cobros («de un pago de…», o «de una devolución
+ * de…»: lo dice el total), y su «Deshacer», que deshace el pago (o la devolución) entero. Los montos van sin signo: las
+ * palabras dicen qué son, y el total nunca cambia de signo por lo de este cobro.
  */
 function PaymentLine({ payment, name }: { payment: TxPayout; name: string }) {
   const refund = cmp(payment.amount, ZERO) < 0;
@@ -139,7 +139,7 @@ function PaymentLine({ payment, name }: { payment: TxPayout; name: string }) {
         {payment.others.length === 0 ? null : (
           <>
             {" "}
-            ({refund && discount ? "de una devolución de " : "de un pago de "}
+            ({refund ? "de una devolución de " : "de un pago de "}
             <Money value={unsigned(payment.amount)} currency={payment.currency} /> por {payment.others.length + 1}{" "}
             cobros)
           </>

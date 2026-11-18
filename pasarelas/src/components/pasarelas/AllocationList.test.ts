@@ -440,15 +440,15 @@ describe("AllocationList", () => {
         );
       });
 
-      it("D2: una devolución de verdad se dice como hoy, con lo devuelto y el total en positivo", () => {
+      it("D2: una devolución de verdad dice «Devolvió…»; si cubre otros cobros, «de una devolución de» su total", () => {
         const alone = later("-600.00", []);
         expect(rows(withPayouts(refunded, payouts(refunded, [alone, before])))[0]).toContain(
           "Pagado Devolvió el mar 17 nov 2026: $600,00 Deshacer la devolución de Grupo A del mar 17 nov 2026 Pagado el",
         );
         const several = later("-600.00", [cobro("E10-b", "-300.00")]);
         expect(rows(withPayouts(refunded, payouts(refunded, [several, before])))[0]).toContain(
-          "Devolvió el mar 17 nov 2026: $600,00 (de un pago de $900,00 por 2 cobros) Deshacer la devolución de Grupo A " +
-            "del mar 17 nov 2026",
+          "Devolvió el mar 17 nov 2026: $600,00 (de una devolución de $900,00 por 2 cobros) Deshacer la devolución de " +
+            "Grupo A del mar 17 nov 2026",
         );
       });
 

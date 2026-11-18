@@ -268,7 +268,7 @@ Las cuentas, en [Lo pagado a cada parte de un cobro](#lo-pagado-a-cada-parte-de-
     y «En total». La fecha y el medio valen para todas → **«Marcar 4 pagos»**: un pago por parte, con una sola
     confirmación ([P2](#lo-pagado-a-cada-parte-de-un-cobro)).
   - Cada pago queda bajo su parte: «Pagado el sáb 14 nov 2026: $500,00». Si cubre otros cobros, añade «(de un pago
-    de $580,54 por 2 cobros)». Una devolución dice «Devolvió el …».
+    de $580,54 por 2 cobros)». Una devolución dice «Devolvió el …» y, si cubre otros, «(de una devolución de …)».
   - **«Deshacer»** borra el pago entero, tras confirmar. Si es solo de este cobro: «Se borra el pago a Grupo A de
     $500,00 del sáb 14 nov 2026, y en este cobro vuelve a faltarle eso.» Si cubre varios, dice cuáles se desmarcan
     y cuánto ([P5](#lo-pagado-a-cada-parte-de-un-cobro)).
