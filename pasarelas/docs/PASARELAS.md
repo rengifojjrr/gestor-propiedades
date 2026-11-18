@@ -1505,9 +1505,9 @@ retenido, a 0,00.
   $25,00. Si se marcan, cada una registra su devolución: una liquidación negativa.
 
 **P5**, sobre P3, «Deshacer» el pago de Grupo B desde el detalle del primer cobro. Ese pago dice «Pagado el sáb 14
-nov 2026: $290,27 (de un pago de $580,54 por 2 cobros)». La confirmación avisa que desmarca los dos: «El pago a
-Grupo B de $580,54 del sáb 14 nov 2026 cubre 2 cobros, y se desmarcan los dos: este ($290,27) y el cobro E10-b
-($290,27). No se puede deshacer.»
+nov 2026: $290,27 (de un pago de $580,54 por 2 cobros)». La confirmación avisa que desmarca los dos: «Se borra el
+pago a Grupo B de $580,54 del sáb 14 nov 2026, que cubre 2 cobros, y se desmarcan los dos: este ($290,27) y el cobro
+E10-b ($290,27). No se puede deshacer.»
 
 - Se borra la liquidación con sus dos partes.
 - En los dos cobros, Grupo B vuelve a «Falta $290,27». Las otras tres partes siguen pagadas: «Reparto: 3 de 4
@@ -1609,9 +1609,9 @@ después se reembolsó entero. Su parte de la pérdida (3,20) es −1,60, así q
   «Liquidaciones», es un «Pago» de $532,35, «De estos 3 cobros:», y el primero con «descuento de $50,00».
 - En el detalle del primer cobro, la línea de ese pago dice «Descontado del pago del …: $50,00 (de un pago de
   $532,35 por 3 cobros)». Nadie devolvió nada, y el pago sale en positivo. Su «Deshacer» deshace el pago entero:
-  «El pago a Socio Uno de $532,35 del … cubre 3 cobros, y se desmarcan los tres: este (descuento de $50,00), …». Pasa
-  igual con «Pagar repartos…». Qué es lo de cada cobro lo dicen los dos signos: el del pago (pago o devolución) y el
-  de ese cobro (va con el pago, o se descuenta: `isDiscount`, en `tx/payoutText.ts`).
+  «Se borra el pago a Socio Uno de $532,35 del …, que cubre 3 cobros, y se desmarcan los tres: este (descuento de
+  $50,00), …». Pasa igual con «Pagar repartos…». Qué es lo de cada cobro lo dicen los dos signos: el del pago (pago
+  o devolución) y el de ese cobro (va con el pago, o se descuenta: `isDiscount`, en `tx/payoutText.ts`).
 
 **Con más de 500 cobros y lo pagado de más.** 520 cobros como E1 y su Grupo B, con 27,09 en cada uno. A Grupo B se le
 pagó uno y después se reembolsó entero: su parte de la pérdida (3,20) es −0,96, así que se le pagó de más

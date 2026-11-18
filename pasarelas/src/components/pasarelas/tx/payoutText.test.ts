@@ -52,15 +52,16 @@ describe("undoPayoutText: qué desmarca «Deshacer»", () => {
     );
   });
 
-  it("P5: si cubre varios cobros, dice cuáles se desmarcan y cuánto", () => {
+  it("P5: si cubre varios cobros, se borra el pago entero, y dice cuáles se desmarcan y cuánto", () => {
     expect(undoPayoutText(payment)).toBe(
-      "El pago a Grupo B de $580,54 del sáb 14 nov 2026 cubre 2 cobros, y se desmarcan los dos: este ($290,27) y el " +
-        "cobro E10-b ($290,27). No se puede deshacer.",
+      "Se borra el pago a Grupo B de $580,54 del sáb 14 nov 2026, que cubre 2 cobros, y se desmarcan los dos: este " +
+        "($290,27) y el cobro E10-b ($290,27). No se puede deshacer.",
     );
     const three = { ...payment, amount: "870.81", others: [...payment.others, { ...payment.others[0]!, reference: null }] };
     expect(undoPayoutText(three)).toBe(
-      "El pago a Grupo B de $870,81 del sáb 14 nov 2026 cubre 3 cobros, y se desmarcan los tres: este ($290,27), el " +
-        "cobro E10-b ($290,27) y el cobro del mar 10 nov 2026 por $1.000,00 ($290,27). No se puede deshacer.",
+      "Se borra el pago a Grupo B de $870,81 del sáb 14 nov 2026, que cubre 3 cobros, y se desmarcan los tres: este " +
+        "($290,27), el cobro E10-b ($290,27) y el cobro del mar 10 nov 2026 por $1.000,00 ($290,27). No se puede " +
+        "deshacer.",
     );
   });
 
@@ -90,10 +91,10 @@ describe("undoPayoutText: qué desmarca «Deshacer»", () => {
       others: [covered("ref-2", "485.40"), covered("ref-3", "96.95")],
     };
 
-    it("desde el cobro descontado: se deshace EL PAGO de $532,35, y ese cobro se dice como descuento", () => {
+    it("desde el cobro descontado: se borra EL PAGO de $532,35, y ese cobro se dice como descuento", () => {
       expect(undoPayoutText(discounted)).toBe(
-        "El pago a Socio Uno de $532,35 del mar 17 nov 2026 cubre 3 cobros, y se desmarcan los tres: este (descuento " +
-          "de $50,00), el cobro ref-2 ($485,40) y el cobro ref-3 ($96,95). No se puede deshacer.",
+        "Se borra el pago a Socio Uno de $532,35 del mar 17 nov 2026, que cubre 3 cobros, y se desmarcan los tres: " +
+          "este (descuento de $50,00), el cobro ref-2 ($485,40) y el cobro ref-3 ($96,95). No se puede deshacer.",
       );
     });
 
@@ -101,16 +102,16 @@ describe("undoPayoutText: qué desmarca «Deshacer»", () => {
       const others = [covered("ref-1", "-50.00"), covered("ref-3", "96.95")];
       const fromSecond = { ...discounted, here: "485.40", others };
       expect(undoPayoutText(fromSecond)).toBe(
-        "El pago a Socio Uno de $532,35 del mar 17 nov 2026 cubre 3 cobros, y se desmarcan los tres: este ($485,40), " +
-          "el cobro ref-1 (descuento de $50,00) y el cobro ref-3 ($96,95). No se puede deshacer.",
+        "Se borra el pago a Socio Uno de $532,35 del mar 17 nov 2026, que cubre 3 cobros, y se desmarcan los tres: " +
+          "este ($485,40), el cobro ref-1 (descuento de $50,00) y el cobro ref-3 ($96,95). No se puede deshacer.",
       );
     });
 
-    it("D2: una devolución de verdad se dice como hoy; lo que se le debía en otro cobro, como descuento", () => {
+    it("D2: una devolución de verdad se borra como devolución; lo que se le debía en otro cobro, como descuento", () => {
       const refund = { ...discounted, amount: "-40.00", here: "-50.00", others: [covered("ref-2", "10.00")] };
       expect(undoPayoutText(refund)).toBe(
-        "La devolución de Socio Uno de $40,00 del mar 17 nov 2026 cubre 2 cobros, y se desmarcan los dos: este " +
-          "($50,00) y el cobro ref-2 (descuento de $10,00). No se puede deshacer.",
+        "Se borra la devolución de Socio Uno de $40,00 del mar 17 nov 2026, que cubre 2 cobros, y se desmarcan los " +
+          "dos: este ($50,00) y el cobro ref-2 (descuento de $10,00). No se puede deshacer.",
       );
     });
   });

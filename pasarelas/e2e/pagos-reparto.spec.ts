@@ -335,13 +335,14 @@ test.describe("pagos a las partes del reparto", () => {
       ["50.00", 2],
     ]);
 
-    // P5: «Deshacer» el pago de Grupo B avisa que desmarca los dos cobros.
+    // P5: «Deshacer» el pago de Grupo B avisa que se borra el pago entero y desmarca los dos cobros.
     await page.goto(`/pasarelas/cobros/${firstId}`);
     await expect(share(page, "Grupo B")).toContainText("(de un pago de $580,54 por 2 cobros)");
     await share(page, "Grupo B").getByRole("button", { name: /^Deshacer el pago a Grupo B/ }).click();
     const confirm = page.getByRole("alertdialog", { name: "¿Deshacer este pago?" });
+    await expect(confirm).toContainText("Se borra el pago a Grupo B de $580,54 del ");
     await expect(confirm).toContainText(
-      `cubre 2 cobros, y se desmarcan los dos: este ($290,27) y el cobro ${second} ($290,27).`,
+      `que cubre 2 cobros, y se desmarcan los dos: este ($290,27) y el cobro ${second} ($290,27).`,
     );
     await checkScreen(page);
     await confirm.getByRole("button", { name: "Deshacer el pago" }).click();

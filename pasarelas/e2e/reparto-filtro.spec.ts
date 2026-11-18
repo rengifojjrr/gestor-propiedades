@@ -379,13 +379,13 @@ test.describe("el reparto del filtro de Cobros", () => {
     await expect(share).not.toContainText("-$532,35");
     await checkScreen(page);
 
-    // Su «Deshacer» es el del pago, y en los cobros que cubre el descontado se dice como descuento.
+    // Su «Deshacer» borra el pago de 532,35, y en los cobros que cubre el descontado se dice como descuento.
     await line.locator("..").getByRole("button", { name: /^Deshacer el pago a Socio Uno del / }).click();
     const confirm = page.getByRole("alertdialog", { name: "¿Deshacer este pago?" });
-    await expect(confirm).toContainText("El pago a Socio Uno de $532,35 del ");
+    await expect(confirm).toContainText("Se borra el pago a Socio Uno de $532,35 del ");
     await expect(confirm).toContainText(
-      `cubre 3 cobros, y se desmarcan los tres: este (descuento de $50,00), el cobro ${tag}-2 ($485,40) y el cobro ` +
-        `${tag}-3 ($96,95).`,
+      `que cubre 3 cobros, y se desmarcan los tres: este (descuento de $50,00), el cobro ${tag}-2 ($485,40) y el ` +
+        `cobro ${tag}-3 ($96,95).`,
     );
     await checkScreen(page);
     await confirm.getByRole("button", { name: "Cancelar" }).click();

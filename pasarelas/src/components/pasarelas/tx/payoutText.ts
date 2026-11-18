@@ -67,9 +67,10 @@ export type UndoPayment = {
 };
 
 /**
- * Lo que dice la confirmación de «Deshacer»: si el pago es solo de este cobro, que se borra y vuelve a faltar; si
- * cubre varios, cuáles se desmarcan y cuánto de cada uno. Qué se deshace lo dice el total: un pago, o una devolución
- * (negativa), que se nombra como tal. Lo de un cobro que va en contra del total (`isDiscount`) se dice como descuento.
+ * Lo que dice la confirmación de «Deshacer»: que se borra el pago entero; si es solo de este cobro, que vuelve a
+ * faltar, y si cubre varios, cuáles se desmarcan y cuánto de cada uno. Qué se borra lo dice el total: un pago, o una
+ * devolución (negativa), que se nombra como tal. Lo de un cobro que va en contra del total (`isDiscount`) se dice como
+ * descuento.
  */
 export function undoPayoutText(p: UndoPayment): string {
   const refund = cmp(p.amount, ZERO) < 0;
@@ -84,8 +85,8 @@ export function undoPayoutText(p: UndoPayment): string {
   const count = p.others.length + 1;
   const all = COUNT_WORDS[count] ?? `los ${count}`;
   const covered = [`este (${part(p.here)})`, ...p.others.map((tx) => `${coveredTxName(tx)} (${part(tx.amount)})`)];
-  const sentence = `${head.charAt(0).toUpperCase()}${head.slice(1)}`;
-  return `${sentence} cubre ${count} cobros, y se desmarcan ${all}: ${listed(covered)}. No se puede deshacer.`;
+  const unmarked = `se desmarcan ${all}: ${listed(covered)}`;
+  return `Se borra ${head}, que cubre ${count} cobros, y ${unmarked}. No se puede deshacer.`;
 }
 
 /**
