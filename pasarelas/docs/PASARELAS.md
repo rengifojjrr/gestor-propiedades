@@ -1618,7 +1618,8 @@ pagó uno y después se reembolsó entero: su parte de la pérdida (3,20) es −
 27,09 + 0,96 = 28,05. Le falta 519 × 27,09 − 28,05 = **14.031,66**.
 
 - «Pagar…» avisa que son más de 500 y registra **3 pagos** juntos: 13.545,00 por 500 cobros, 514,71 por 19 y
-  **−28,05** por el pagado de más.
+  **−28,05** por el pagado de más. Lo dice antes de registrarlo: «En 1 cobro del filtro se le pagó de más $28,05: se
+  descuenta del total y va en un pago aparte, que en su ficha sale como «Devolución».»
 - Ese tercero tiene monto negativo. En la ficha de Grupo B, en «Liquidaciones», sale como una devolución: la marca
   «Devolución», «-$28,05» y «De este cobro:». En el detalle de ese cobro: «Devolvió el …: $28,05».
 - Nadie devolvió nada: es el descuento de ese mismo pago, en una liquidación aparte. El saldo queda igual que con un
